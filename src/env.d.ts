@@ -95,6 +95,10 @@ interface Window {
       close: () => void
       openDetached: (panelId: string) => Promise<boolean>
     }
+    updater: {
+      install: () => Promise<boolean>
+      onDownloaded: (callback: () => void) => () => void
+    }
     terminal: {
       create: (cwd: string, type: TerminalTypeEnum) => Promise<string>
       write: (id: string, data: string) => Promise<void>

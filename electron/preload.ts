@@ -89,6 +89,14 @@ const electronAPI = {
     close: () => ipcRenderer.send('window:close'),
     openDetached: (panelId: string) => ipcRenderer.invoke('window:openDetached', panelId)
   },
+  updater: {
+    install: () => ipcRenderer.invoke('update:install'),
+    onDownloaded: (callback: () => void) => {
+      const handler = () => callback()
+      ipcRenderer.on('update:downloaded', handler)
+      return () => ipcRenderer.removeListener('update:downloaded', handler)
+    }
+  },
   terminal: {
     create: (cwd: string, type: TerminalType) => ipcRenderer.invoke('terminal:create', cwd, type),
     write: (id: string, data: string) => ipcRenderer.invoke('terminal:write', id, data),

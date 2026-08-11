@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, clipboard, nativeImage } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { join, normalize } from 'path'
 import { readdir, readFile, writeFile, stat, rm, mkdir } from 'fs/promises'
 import { exec } from 'child_process'
@@ -16,6 +17,32 @@ let roslynService: RoslynService | null = null
 
 function appIcon(): Electron.NativeImage {
   return nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.ico'))
+}
+
+// Auto-update via electron-updater (GitHub releases). Only active in the packaged app:
+// downloads updates in the background and lets the user install from the renderer.
+function setupAutoUpdater(): void {
+  if (!app.isPackaged) return
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.logger = null
+
+  autoUpdater.on('update-downloaded', () => {
+    mainWindow?.webContents.send('update:downloaded')
+  })
+  autoUpdater.on('error', (e) => {
+    console.error('[updater]', e?.message)
+  })
+
+  ipcMain.handle('update:install', () => {
+    autoUpdater.quitAndInstall(false, true)
+    return true
+  })
+
+  // check on startup (with a short delay) and then periodically
+  const check = () => autoUpdater.checkForUpdates().catch(() => {})
+  setTimeout(check, 8000)
+  setInterval(check, 30 * 60 * 1000)
 }
 
 function createWindow(): void {
@@ -62,6 +89,7 @@ app.whenReady().then(() => {
 
   registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, roslynService)
   createWindow()
+  setupAutoUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

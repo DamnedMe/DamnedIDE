@@ -254,6 +254,30 @@ export interface AppSettings {
   }
 }
 
+// The user's chosen theme standard: primary color + editor colors.
+// Persisted separately so "reset default theme settings" can restore it.
+export interface ThemeDefaults {
+  accentColor: string
+  themeColors: AppSettings['themeColors']
+}
+
+const THEME_DEFAULTS_KEY = 'damnedide_theme_defaults'
+
+function loadThemeDefaults(): ThemeDefaults | null {
+  try {
+    const raw = localStorage.getItem(THEME_DEFAULTS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      if (p && typeof p.accentColor === 'string' && p.themeColors?.dark && p.themeColors?.light) return p
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+function saveThemeDefaults(d: ThemeDefaults) {
+  try { localStorage.setItem(THEME_DEFAULTS_KEY, JSON.stringify(d)) } catch { /* ignore */ }
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   fontSize: 12.5,
@@ -273,8 +297,11 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 interface SettingsState {
   settings: AppSettings
+  themeDefaults: ThemeDefaults
   updateSettings: (patch: Partial<AppSettings>) => void
   resetSettings: () => void
+  setThemeDefaults: () => void
+  resetThemeToDefaults: () => void
 }
 
 function loadSettings(): AppSettings {
@@ -301,18 +328,41 @@ function saveSettings(s: AppSettings) {
   } catch { /* ignore */ }
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
-  settings: loadSettings(),
-  updateSettings: (patch) => set((state) => {
-    const next = { ...state.settings, ...patch }
-    saveSettings(next)
-    return { settings: next }
-  }),
-  resetSettings: () => {
-    saveSettings(DEFAULT_SETTINGS)
-    return { settings: DEFAULT_SETTINGS }
+export const useSettingsStore = create<SettingsState>((set) => {
+  const settings = loadSettings()
+  // On first run with this feature, the user's CURRENT theme config becomes the standard.
+  const existingDefaults = loadThemeDefaults()
+  const themeDefaults = existingDefaults ?? { accentColor: settings.accentColor, themeColors: settings.themeColors }
+  if (!existingDefaults) saveThemeDefaults(themeDefaults)
+
+  return {
+    settings,
+    themeDefaults,
+    updateSettings: (patch) => set((state) => {
+      const next = { ...state.settings, ...patch }
+      saveSettings(next)
+      return { settings: next }
+    }),
+    resetSettings: () => {
+      saveSettings(DEFAULT_SETTINGS)
+      return { settings: DEFAULT_SETTINGS }
+    },
+    setThemeDefaults: () => set((state) => {
+      const td: ThemeDefaults = { accentColor: state.settings.accentColor, themeColors: state.settings.themeColors }
+      saveThemeDefaults(td)
+      return { themeDefaults: td }
+    }),
+    resetThemeToDefaults: () => set((state) => {
+      const next = {
+        ...state.settings,
+        accentColor: state.themeDefaults.accentColor,
+        themeColors: state.themeDefaults.themeColors
+      }
+      saveSettings(next)
+      return { settings: next }
+    })
   }
-}))
+})
 
 export const useEditorStore = create<EditorState>((set) => ({
   editorNav: null,

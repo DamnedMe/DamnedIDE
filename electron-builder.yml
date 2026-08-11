@@ -1,0 +1,28 @@
+appId: com.damned.ide
+productName: DamnedIDE
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**/*
+  - resources/icon.ico
+  - resources/icon.png
+  - "!node_modules/**/*"
+win:
+  target:
+    - nsis
+  icon: resources/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: resources/icon.png
+mac:
+  target:
+    - dmg
+  icon: resources/icon.png

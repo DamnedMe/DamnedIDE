@@ -1,0 +1,418 @@
+import { create } from 'zustand'
+import { WorktreeEntry, WorktreeWithStatus } from '../types/worktree'
+import { GitStatus, GitFileStatus, BranchInfo, CommitInfo } from '../types/git'
+import { AdoConnection, AdoWorkItem, AdoPullRequest } from '../types/ado'
+import { SqlConnection, SqlQueryResult } from '../types/sql'
+
+interface UIState {
+  activePanel: string
+  sidebarCollapsed: boolean
+  theme: 'dark' | 'light'
+  setActivePanel: (panel: string) => void
+  toggleSidebar: () => void
+  setTheme: (theme: 'dark' | 'light') => void
+}
+
+interface WorktreeState {
+  entries: WorktreeEntry[]
+  entriesWithStatus: WorktreeWithStatus[]
+  selectedWorktree: string | null
+  isLoading: boolean
+  setEntries: (entries: WorktreeEntry[]) => void
+  setEntriesWithStatus: (entries: WorktreeWithStatus[]) => void
+  selectWorktree: (path: string | null) => void
+  setLoading: (loading: boolean) => void
+}
+
+interface GitState {
+  status: GitStatus | null
+  files: GitFileStatus[]
+  branches: BranchInfo[]
+  commits: CommitInfo[]
+  stagedFiles: string[]
+  isLoading: boolean
+  setStatus: (status: GitStatus | null) => void
+  setFiles: (files: GitFileStatus[]) => void
+  setBranches: (branches: BranchInfo[]) => void
+  setCommits: (commits: CommitInfo[]) => void
+  setStagedFiles: (files: string[]) => void
+  setLoading: (loading: boolean) => void
+}
+
+interface AdoState {
+  connection: AdoConnection | null
+  workItems: AdoWorkItem[]
+  pullRequests: AdoPullRequest[]
+  isLoading: boolean
+  setConnection: (connection: AdoConnection | null) => void
+  setWorkItems: (workItems: AdoWorkItem[]) => void
+  setPullRequests: (prs: AdoPullRequest[]) => void
+  setLoading: (loading: boolean) => void
+}
+
+const ADO_CONNECTION_KEY = 'damnedide_ado_connection'
+
+function loadAdoConnection(): AdoConnection | null {
+  try {
+    const raw = localStorage.getItem(ADO_CONNECTION_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && parsed.isConnected) return parsed as AdoConnection
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+function saveAdoConnection(conn: AdoConnection | null) {
+  try {
+    if (conn) localStorage.setItem(ADO_CONNECTION_KEY, JSON.stringify(conn))
+    else localStorage.removeItem(ADO_CONNECTION_KEY)
+  } catch { /* ignore */ }
+}
+
+interface SqlState {
+  connections: SqlConnection[]
+  activeConnection: string | null
+  queryResults: SqlQueryResult | null
+  isLoading: boolean
+  addConnection: (conn: SqlConnection) => void
+  updateConnection: (id: string, patch: Partial<SqlConnection>) => void
+  removeConnection: (id: string) => void
+  setActiveConnection: (id: string | null) => void
+  setQueryResults: (results: SqlQueryResult | null) => void
+  setLoading: (loading: boolean) => void
+}
+
+const SQL_CONNECTIONS_KEY = 'damnedide_sql_connections'
+
+function loadSqlConnections(): SqlConnection[] {
+  try {
+    const raw = localStorage.getItem(SQL_CONNECTIONS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        return parsed.map((c) => ({ ...c, isConnected: false }))
+      }
+    }
+  } catch { /* ignore */ }
+  return []
+}
+
+function saveSqlConnections(connections: SqlConnection[]) {
+  try {
+    localStorage.setItem(SQL_CONNECTIONS_KEY, JSON.stringify(connections))
+  } catch { /* ignore */ }
+}
+
+export interface EditorNav {
+  rootPath: string
+  filePath: string
+  line: number
+}
+
+interface EditorState {
+  editorNav: EditorNav | null
+  setEditorNav: (nav: EditorNav | null) => void
+}
+
+export const useUIStore = create<UIState>((set) => ({
+  activePanel: 'worktree',
+  sidebarCollapsed: false,
+  theme: 'dark',
+  setActivePanel: (panel) => set({ activePanel: panel }),
+  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setTheme: (theme) => set({ theme })
+}))
+
+export const useWorktreeStore = create<WorktreeState>((set) => ({
+  entries: [],
+  entriesWithStatus: [],
+  selectedWorktree: null,
+  isLoading: false,
+  setEntries: (entries) => set({ entries }),
+  setEntriesWithStatus: (entries) => set({ entriesWithStatus: entries }),
+  selectWorktree: (path) => set({ selectedWorktree: path }),
+  setLoading: (loading) => set({ isLoading: loading })
+}))
+
+export const useGitStore = create<GitState>((set) => ({
+  status: null,
+  files: [],
+  branches: [],
+  commits: [],
+  stagedFiles: [],
+  isLoading: false,
+  setStatus: (status) => set({ status }),
+  setFiles: (files) => set({ files }),
+  setBranches: (branches) => set({ branches }),
+  setCommits: (commits) => set({ commits }),
+  setStagedFiles: (stagedFiles) => set({ stagedFiles }),
+  setLoading: (loading) => set({ isLoading: loading })
+}))
+
+export const useAdoStore = create<AdoState>((set) => ({
+  connection: loadAdoConnection(),
+  workItems: [],
+  pullRequests: [],
+  isLoading: false,
+  setConnection: (connection) => {
+    saveAdoConnection(connection)
+    set({ connection })
+  },
+  setWorkItems: (workItems) => set({ workItems }),
+  setPullRequests: (pullRequests) => set({ pullRequests }),
+  setLoading: (loading) => set({ isLoading: loading })
+}))
+
+export const useSqlStore = create<SqlState>((set) => ({
+  connections: loadSqlConnections(),
+  activeConnection: null,
+  queryResults: null,
+  isLoading: false,
+  addConnection: (conn) => set((s) => {
+    const connections = [...s.connections, conn]
+    saveSqlConnections(connections)
+    return { connections }
+  }),
+  updateConnection: (id, patch) => set((s) => {
+    const connections = s.connections.map((c) => c.id === id ? { ...c, ...patch } : c)
+    saveSqlConnections(connections)
+    return { connections }
+  }),
+  removeConnection: (id) => set((s) => {
+    const connections = s.connections.filter((c) => c.id !== id)
+    saveSqlConnections(connections)
+    return {
+      connections,
+      activeConnection: s.activeConnection === id ? null : s.activeConnection
+    }
+  }),
+  setActiveConnection: (id) => set({ activeConnection: id }),
+  setQueryResults: (results) => set({ queryResults: results }),
+  setLoading: (loading) => set({ isLoading: loading })
+}))
+
+export interface ThemeColorConfig {
+  keyword: string
+  controlFlow: string
+  linq: string
+  type: string
+  identifier: string
+  namespace: string
+  number: string
+  string: string
+  comment: string
+  delimiter: string
+  method: string
+  staticClass: string
+}
+
+export const DEFAULT_DARK_COLORS: ThemeColorConfig = {
+  keyword: '#d2a8ff',
+  controlFlow: '#ff7b72',
+  linq: '#ff7b72',
+  type: '#4ec9b0',
+  identifier: '#c9d1d9',
+  namespace: '#79c0ff',
+  number: '#d2a8ff',
+  string: '#a5d6ff',
+  comment: '#8b949e',
+  delimiter: '#ff7b72',
+  method: '#dcdcaa',
+  staticClass: '#79c0ff'
+}
+
+export const DEFAULT_LIGHT_COLORS: ThemeColorConfig = {
+  keyword: '#7722ee',
+  controlFlow: '#cc2244',
+  linq: '#cc2244',
+  type: '#008855',
+  identifier: '#111122',
+  namespace: '#0055dd',
+  number: '#7722ee',
+  string: '#0088cc',
+  comment: '#8899aa',
+  delimiter: '#cc2244',
+  method: '#bb7700',
+  staticClass: '#0055dd'
+}
+
+export interface AppSettings {
+  theme: 'dark' | 'light'
+  fontSize: number
+  minimap: boolean
+  tabSize: number
+  autoSave: boolean
+  lineNumbers: 'on' | 'off' | 'relative'
+  wordWrap: 'on' | 'off'
+  fontLigatures: boolean
+  navKeybindings: 'vs-studio' | 'vs-code'
+  accentColor: string
+  themeColors: {
+    dark: ThemeColorConfig
+    light: ThemeColorConfig
+  }
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'dark',
+  fontSize: 12.5,
+  minimap: true,
+  tabSize: 2,
+  autoSave: false,
+  lineNumbers: 'on',
+  wordWrap: 'off',
+  fontLigatures: false,
+  navKeybindings: 'vs-studio',
+  accentColor: '#00ffff',
+  themeColors: {
+    dark: { ...DEFAULT_DARK_COLORS },
+    light: { ...DEFAULT_LIGHT_COLORS }
+  }
+}
+
+interface SettingsState {
+  settings: AppSettings
+  updateSettings: (patch: Partial<AppSettings>) => void
+  resetSettings: () => void
+}
+
+function loadSettings(): AppSettings {
+  try {
+    const raw = localStorage.getItem('damnedide_settings')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        themeColors: {
+          dark: { ...DEFAULT_DARK_COLORS, ...(parsed.themeColors?.dark || {}) },
+          light: { ...DEFAULT_LIGHT_COLORS, ...(parsed.themeColors?.light || {}) }
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_SETTINGS
+}
+
+function saveSettings(s: AppSettings) {
+  try {
+    localStorage.setItem('damnedide_settings', JSON.stringify(s))
+  } catch { /* ignore */ }
+}
+
+export const useSettingsStore = create<SettingsState>((set) => ({
+  settings: loadSettings(),
+  updateSettings: (patch) => set((state) => {
+    const next = { ...state.settings, ...patch }
+    saveSettings(next)
+    return { settings: next }
+  }),
+  resetSettings: () => {
+    saveSettings(DEFAULT_SETTINGS)
+    return { settings: DEFAULT_SETTINGS }
+  }
+}))
+
+export const useEditorStore = create<EditorState>((set) => ({
+  editorNav: null,
+  setEditorNav: (nav) => set({ editorNav: nav })
+}))
+
+const RECENT_REPOS_KEY = 'damnedide_recent_repos'
+const RECENT_REPOS_MAX = 5
+
+function loadRecentRepos(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_REPOS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed.filter((p) => typeof p === 'string').slice(0, RECENT_REPOS_MAX)
+    }
+  } catch { /* ignore */ }
+  return []
+}
+
+function saveRecentRepos(list: string[]) {
+  try {
+    localStorage.setItem(RECENT_REPOS_KEY, JSON.stringify(list.slice(0, RECENT_REPOS_MAX)))
+  } catch { /* ignore */ }
+}
+
+interface RecentReposState {
+  repos: string[]
+  addRepo: (path: string) => void
+  clearRepos: () => void
+}
+
+export const useRecentReposStore = create<RecentReposState>((set) => ({
+  repos: loadRecentRepos(),
+  addRepo: (path) => set((s) => {
+    const next = [path, ...s.repos.filter((p) => p !== path)].slice(0, RECENT_REPOS_MAX)
+    saveRecentRepos(next)
+    return { repos: next }
+  }),
+  clearRepos: () => {
+    saveRecentRepos([])
+    return { repos: [] }
+  }
+}))
+
+const DIFF_KEY = 'damnedide_diff'
+
+interface DiffState {
+  fontSize: number
+  sideBySide: boolean
+  setFontSize: (n: number) => void
+  setSideBySide: (b: boolean) => void
+}
+
+function loadDiffState(): { fontSize: number; sideBySide: boolean } {
+  try {
+    const raw = localStorage.getItem(DIFF_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      return {
+        fontSize: typeof p.fontSize === 'number' ? p.fontSize : 12.5,
+        sideBySide: typeof p.sideBySide === 'boolean' ? p.sideBySide : true
+      }
+    }
+  } catch { /* ignore */ }
+  return { fontSize: 12.5, sideBySide: true }
+}
+
+function saveDiffState(s: { fontSize: number; sideBySide: boolean }) {
+  try { localStorage.setItem(DIFF_KEY, JSON.stringify(s)) } catch { /* ignore */ }
+}
+
+export const useDiffStore = create<DiffState>((set) => ({
+  ...loadDiffState(),
+  setFontSize: (n) => set((s) => { saveDiffState({ fontSize: n, sideBySide: s.sideBySide }); return { fontSize: n } }),
+  setSideBySide: (b) => set((s) => { saveDiffState({ fontSize: s.fontSize, sideBySide: b }); return { sideBySide: b } })
+}))
+
+export interface Toast {
+  id: number
+  message: string
+  type: 'success' | 'error' | 'info'
+}
+
+interface ToastState {
+  toasts: Toast[]
+  showToast: (message: string, type?: Toast['type']) => void
+  removeToast: (id: number) => void
+}
+
+let toastId = 0
+
+export const useToastStore = create<ToastState>((set) => ({
+  toasts: [],
+  showToast: (message, type = 'success') => {
+    const id = ++toastId
+    set((s) => ({ toasts: [...s.toasts, { id, message, type }] }))
+    setTimeout(() => {
+      set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
+    }, 3500)
+  },
+  removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
+}))

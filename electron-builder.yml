@@ -8,6 +8,10 @@ files:
   - resources/icon.ico
   - resources/icon.png
   - "!node_modules/**/*"
+publish:
+  provider: github
+  owner: DamnedMe
+  repo: DamnedIDE
 win:
   target:
     - nsis

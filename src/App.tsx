@@ -44,6 +44,7 @@ export default function App() {
   const recentRepos = useRecentReposStore(s => s.repos)
   const addRepo = useRecentReposStore(s => s.addRepo)
   const clearRepos = useRecentReposStore(s => s.clearRepos)
+  const [updateReady, setUpdateReady] = useState(false)
 
   const detachedPanel = useMemo<PanelId | null>(() => {
     const match = window.location.hash.match(/^#\/panel\/(\w+)/)
@@ -103,6 +104,12 @@ export default function App() {
       }
     })()
     return () => { cancelled = true }
+  }, [])
+
+  // Listen for a downloaded update: offer to restart and install.
+  useEffect(() => {
+    const unsub = window.electronAPI.updater.onDownloaded(() => setUpdateReady(true))
+    return unsub
   }, [])
 
   const handleRepoSelected = (path: string) => {
@@ -174,6 +181,27 @@ export default function App() {
     >
       {renderPanel(activePanel)}
       <ToastHost />
+
+      {updateReady && (
+        <div style={{
+          position: 'fixed', bottom: '28px', right: '16px', zIndex: 300,
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: '10px 14px', background: 'var(--bg-card)',
+          border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-md)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)', fontFamily: 'var(--font-mono)',
+          fontSize: '11px', color: 'var(--text-primary)'
+        }}>
+          <span>🔄 nuova versione scaricata</span>
+          <button onClick={() => window.electronAPI.updater.install()}
+            style={{
+              padding: '5px 12px', background: 'var(--accent-color)', color: 'var(--text-inverse)',
+              border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+              fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 600
+            }}>
+            riavvia e aggiorna
+          </button>
+        </div>
+      )}
 
       {showRecent && !detachedPanel && (
         <RecentReposDialog

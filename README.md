@@ -29,7 +29,7 @@
 
 **DamnedIDE** nasce per lo sviluppatore **.NET** che vuole un IDE **veloce da avviare**, **comodo da usare** e **senza limitazioni** — un'alternativa open source a Visual Studio, pensata attorno a un flusso di lavoro reale: *branch, worktree, Pull Request e query al database senza mai lasciare l'editor*.
 
-> ⚡ *"Se serve fare una cosa in più di tre click, probabilmente siamo sbagliando."*
+> ⚡ *"Se serve fare una cosa in più di tre click, probabilmente stiamo sbagliando."*
 
 ---
 

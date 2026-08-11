@@ -86,7 +86,7 @@ function SelectInput({ value, options, onChange }: {
 }
 
 export function SettingsPanel() {
-  const { settings, updateSettings, resetSettings } = useSettingsStore()
+  const { settings, themeDefaults, updateSettings, resetSettings, setThemeDefaults, resetThemeToDefaults } = useSettingsStore()
   const showToast = useToastStore(s => s.showToast)
   const s = settings
   const [showColors, setShowColors] = useState(false)
@@ -223,6 +223,33 @@ export function SettingsPanel() {
             </span>
           </div>
         </SettingRow>
+
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <button onClick={() => { setThemeDefaults(); showToast('tema corrente salvato come standard') }}
+            title="salva colore primario e colori editor correnti come standard"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
+              background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+              cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--accent-color)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
+            <Save size={11} /> set current as standard theme
+          </button>
+          <button onClick={() => { resetThemeToDefaults(); showToast('tema ripristinato allo standard') }}
+            title="ripristina colore primario e colori editor allo standard salvato"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
+              background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+              cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--warning-color)'; e.currentTarget.style.color = 'var(--warning-color)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
+            <RotateCcw size={11} /> reset default theme settings
+          </button>
+        </div>
 
         <SettingRow icon={<Type size={13} />} label="font size">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

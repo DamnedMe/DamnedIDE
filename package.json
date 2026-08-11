@@ -1,0 +1,42 @@
+{
+  "name": "damned-ide",
+  "version": "0.1.0",
+  "description": "IDE leggero per backend .NET con gestione worktree Git, Azure DevOps e SQL Server",
+  "main": "./out/main/index.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "electron-vite build && electron-builder --config electron-builder.yml",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "lucide-react": "^0.344.0",
+    "mssql": "^11.0.1",
+    "simple-git": "^3.25.0",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@types/mssql": "^12.3.0",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "electron": "^28.2.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sharp": "^0.35.3",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.0"
+  }
+}

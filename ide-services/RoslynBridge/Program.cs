@@ -658,58 +658,86 @@ internal static class BridgeHandler
         res.AddRange(bag);
         if (res.Count == 0)
         {
-            var refs = await SymbolFinder.FindReferencesAsync(symbol, _solution);
-            res.AddRange(refs.SelectMany(r => r.Locations.Select(l => l.Location)).Where(l => l.IsInSource).Select(ToTarget));
+            // bounded fallback: SymbolFinder can hang on odd symbols (keywords, namespaces)
+            var refTask = SymbolFinder.FindReferencesAsync(symbol, _solution);
+            if (await Task.WhenAny(refTask, Task.Delay(5000)) == refTask)
+                res.AddRange((await refTask).SelectMany(r => r.Locations.Select(l => l.Location)).Where(l => l.IsInSource).Select(ToTarget));
         }
         return res;
     }
 
     // Fast implementations: candidates with the same name whose containing type
     // implements the interface member (or overrides the virtual/abstract member).
+    // For override chains only the MOST-DERIVED override is returned (the effective
+    // implementation actually used), not the intermediate base classes.
     private static async Task<List<BridgeTarget>> FindImplementationsFastAsync(ISymbol symbol)
     {
         var res = new List<BridgeTarget>();
         var ifaceMember = symbol as IMethodSymbol;
         var iface = symbol.ContainingType is { TypeKind: TypeKind.Interface } ? symbol.ContainingType : null;
         var candidates = _nameIndex.TryGetValue(symbol.Name, out var list) ? list : [];
-        var bag = new System.Collections.Concurrent.ConcurrentBag<BridgeTarget>();
         var memberSig = ifaceMember?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
         var symbolSig = symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+
+        var matched = new System.Collections.Concurrent.ConcurrentBag<IMethodSymbol>();
         Parallel.ForEach(candidates, c =>
         {
             if (BindAt(c.File, c.Offset) is not IMethodSymbol m) return;
             if (!string.Equals(m.Name, symbol.Name, StringComparison.Ordinal)) return;
-            var isImpl = false;
             if (iface != null && ifaceMember != null)
             {
                 var t = m.ContainingType;
-                isImpl = t.TypeKind == TypeKind.Class &&
-                         t.AllInterfaces.Any(i => string.Equals(i.ToDisplayString(), iface.ToDisplayString(), StringComparison.Ordinal)) &&
-                         string.Equals(m.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), memberSig, StringComparison.Ordinal);
+                if (t.TypeKind == TypeKind.Class &&
+                    t.AllInterfaces.Any(i => DisplayEquals(i, iface)) &&
+                    DisplayEquals(m, ifaceMember)) matched.Add(m);
             }
             else if (m.IsOverride && m.OverriddenMethod != null)
             {
                 var cur = m.OverriddenMethod;
                 while (cur != null)
                 {
-                    if (string.Equals(cur.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), symbolSig, StringComparison.Ordinal)) { isImpl = true; break; }
+                    if (DisplayEquals(cur, symbol)) { matched.Add(m); break; }
                     cur = cur.OverriddenMethod;
                 }
             }
-            else if (string.Equals(m.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), symbolSig, StringComparison.Ordinal))
+            else if (DisplayEquals(m, symbol))
             {
-                isImpl = true; // the declaration itself
+                matched.Add(m); // the declaration itself
             }
-            if (!isImpl) return;
-            var loc = m.Locations.FirstOrDefault(l => l.IsInSource);
-            if (loc != null) bag.Add(ToTarget(loc));
         });
-        res.AddRange(bag);
+
+        var all = matched.ToList();
+        // keep only the most-derived: a method overridden by another matched method
+        // is an intermediate base, not the effective implementation
+        foreach (var m in all)
+        {
+            var overridden = all.Any(o => !ReferenceEquals(o, m) && OverrideChainContains(o, m));
+            if (!overridden)
+            {
+                var loc = m.Locations.FirstOrDefault(l => l.IsInSource);
+                if (loc != null) res.Add(ToTarget(loc));
+            }
+        }
         if (res.Count == 0)
         {
-            var impls = await SymbolFinder.FindImplementationsAsync(symbol, _solution);
-            res.AddRange(impls.SelectMany(i => i.Locations).Where(l => l.IsInSource).Select(ToTarget));
+            var implTask = SymbolFinder.FindImplementationsAsync(symbol, _solution);
+            if (await Task.WhenAny(implTask, Task.Delay(5000)) == implTask)
+                res.AddRange((await implTask).SelectMany(i => i.Locations).Where(l => l.IsInSource).Select(ToTarget));
         }
         return res;
+    }
+
+    private static bool DisplayEquals(ISymbol a, ISymbol b) =>
+        string.Equals(a.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), b.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), StringComparison.Ordinal);
+
+    private static bool OverrideChainContains(IMethodSymbol derived, IMethodSymbol target)
+    {
+        var cur = derived.OverriddenMethod;
+        while (cur != null)
+        {
+            if (DisplayEquals(cur, target)) return true;
+            cur = cur.OverriddenMethod;
+        }
+        return false;
     }
 }

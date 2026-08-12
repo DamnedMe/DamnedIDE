@@ -26,6 +26,18 @@ import {
 type LeftPanel = 'explorer' | 'search' | 'changes'
 type MonacoEditor = Parameters<OnMount>[0]
 
+// C# keywords: the Roslyn bridge cannot resolve these, and the fallback would hang
+const CSharpKeywordSet = new Set([
+  'using', 'namespace', 'class', 'interface', 'struct', 'enum', 'record', 'public', 'private',
+  'protected', 'internal', 'static', 'void', 'int', 'string', 'bool', 'var', 'return', 'new',
+  'if', 'else', 'for', 'foreach', 'while', 'switch', 'case', 'break', 'continue', 'async',
+  'await', 'readonly', 'const', 'get', 'set', 'this', 'base', 'null', 'true', 'false', 'override',
+  'virtual', 'abstract', 'sealed', 'partial', 'ref', 'out', 'in', 'yield', 'try', 'catch',
+  'throw', 'finally', 'typeof', 'nameof', 'default', 'is', 'as', 'when', 'where', 'params',
+  'lock', 'unsafe', 'fixed', 'checked', 'unchecked', 'operator', 'implicit', 'explicit',
+  'event', 'delegate', 'namespace'
+])
+
 interface EditorCtxMenu {
   show: boolean
   x: number
@@ -83,6 +95,7 @@ export function CodeEditor() {
   const roslynReadyRef = useRef(false)
   const roslynOffRef = useRef(false)
   const roslynStartingRef = useRef(false)
+  const roslynReadyPromiseRef = useRef<Promise<boolean> | null>(null)
   const [roslynStatus, setRoslynStatus] = useState<'off' | 'indexing' | 'ready'>('off')
   const [csErrorCount, setCsErrorCount] = useState<DiagnosticCounts>({ errors: 0, warnings: 0 })
 
@@ -101,7 +114,9 @@ export function CodeEditor() {
     if (!root) return
     roslynStartingRef.current = true
     setRoslynStatus('indexing')
-    window.electronAPI.roslyn.ensure(root)
+    const ensurePromise = window.electronAPI.roslyn.ensure(root)
+    roslynReadyPromiseRef.current = ensurePromise
+    ensurePromise
       .then(ok => {
         roslynStartingRef.current = false
         if (ok) {
@@ -206,7 +221,12 @@ export function CodeEditor() {
 
   useEffect(() => {
     if (!ctxMenu?.show) return
-    const handler = () => setCtxMenu(null)
+    const handler = (e: MouseEvent) => {
+      // clicks inside the menu are handled by its items (don't close before the click fires)
+      const inside = (e.target as HTMLElement)?.closest?.('[data-role="editor-ctx-menu"]')
+      if (inside) return
+      setCtxMenu(null)
+    }
     document.addEventListener('mousedown', handler, true)
     return () => document.removeEventListener('mousedown', handler, true)
   }, [ctxMenu?.show])
@@ -349,22 +369,29 @@ export function CodeEditor() {
 
     // Roslyn fast path for .cs files: semantic resolution instead of heuristics
     const currentFile = activeFileRef.current
-    if (currentFile?.toLowerCase().endsWith('.cs') && roslynReadyRef.current) {
-      try {
-        const r = kind === 'definition'
-          ? await window.electronAPI.roslyn.definition(currentFile, pos.lineNumber, pos.column)
-          : await window.electronAPI.roslyn.implementation(currentFile, pos.lineNumber, pos.column)
-        if (r && r.targets.length > 0) {
-          const norm = (p: string) => p.replace(/\\/g, '/')
-          const filtered = r.targets.filter(t => !(norm(t.file).toLowerCase() === norm(currentFile).toLowerCase() && t.line === pos.lineNumber))
-          if (filtered.length === 1) {
-            openFileRef.current(filtered[0].file, filtered[0].line)
-          } else if (filtered.length > 1) {
-            setImplPicker({ symbol: r.symbol || symbol, hits: filtered })
+    if (currentFile?.toLowerCase().endsWith('.cs')) {
+      // first use of the sidecar is slow (solution load): wait for the warm-up
+      // already running instead of falling back to the slow heuristic scan
+      if (!roslynReadyRef.current && roslynReadyPromiseRef.current) {
+        await roslynReadyPromiseRef.current
+      }
+      if (roslynReadyRef.current) {
+        try {
+          const r = kind === 'definition'
+            ? await window.electronAPI.roslyn.definition(currentFile, pos.lineNumber, pos.column)
+            : await window.electronAPI.roslyn.implementation(currentFile, pos.lineNumber, pos.column)
+          if (r && r.targets.length > 0) {
+            const norm = (p: string) => p.replace(/\\/g, '/')
+            const filtered = r.targets.filter(t => !(norm(t.file).toLowerCase() === norm(currentFile).toLowerCase() && t.line === pos.lineNumber))
+            if (filtered.length === 1) {
+              openFileRef.current(filtered[0].file, filtered[0].line)
+            } else if (filtered.length > 1) {
+              setImplPicker({ symbol: r.symbol || symbol, hits: filtered })
+            }
+            return
           }
-          return
-        }
-      } catch { /* fall back to heuristics */ }
+        } catch { /* fall back to heuristics */ }
+      }
     }
 
     // 1) current file
@@ -429,9 +456,10 @@ export function CodeEditor() {
     const symbol = word.word
     const lines = model.getValue().split('\n')
 
-    // Roslyn fast path for .cs files: semantic references
+    // Roslyn fast path for .cs files: semantic references (skip C# keywords — the
+    // bridge cannot resolve them and the fallback would hang)
     const currentFile = activeFileRef.current
-    if (currentFile?.toLowerCase().endsWith('.cs') && roslynReadyRef.current) {
+    if (currentFile?.toLowerCase().endsWith('.cs') && roslynReadyRef.current && !CSharpKeywordSet.has(symbol.toLowerCase())) {
       try {
         const r = await window.electronAPI.roslyn.references(currentFile, pos.lineNumber, pos.column)
         if (r && r.targets.length > 0) {
@@ -453,7 +481,6 @@ export function CodeEditor() {
         hits.push({ file: m.uri.fsPath || m.uri.path, line: ln })
       }
     }
-    // 3) workspace scan
     const ws = await searchWorkspaceReferences(rootPathRef.current || '', symbol)
     const seen = new Set<string>()
     const unique: WorkspaceHit[] = []
@@ -470,8 +497,7 @@ export function CodeEditor() {
   const zoomOut = () => { const f = Math.max(fontSizeRef.current - 1, 6); fontSizeRef.current = f; setFontSize(f); editorRef.current?.updateOptions({ fontSize: f }) }
   const zoomReset = () => { fontSizeRef.current = 12.5; setFontSize(12.5); editorRef.current?.updateOptions({ fontSize: 12.5 }) }
 
-  const goBack = () => {
-    const back = navBackRef.current
+  const goBack = () => {    const back = navBackRef.current
     if (back.length === 0) return
     const entry = back[back.length - 1]
     navBackRef.current = back.slice(0, -1)
@@ -492,6 +518,29 @@ export function CodeEditor() {
     if (current) navBackRef.current = [...navBackRef.current, { path: current, line: editor?.getPosition()?.lineNumber ?? 1 }].slice(-100)
     setNavVersion(v => v + 1)
     openFileRef.current(entry.path, entry.line, true)
+  }
+
+  // reveal a line with retries: at open the model may still be loading and the
+  // viewport can be collapsed to ~1 line, so a single revealLineInCenter is a
+  // no-op and the file lands at the top (fix: first Go to Implementation)
+  const revealLineInEditor = (editor: monacoEditor.IStandaloneCodeEditor, line: number) => {
+    let tries = 0
+    const attempt = () => {
+      try {
+        const vr = editor.getVisibleRanges()?.[0]
+        const viewReady = !!vr && (vr.endLineNumber - vr.startLineNumber) >= 4
+        const modelReady = (editor.getModel()?.getLineCount() ?? 0) >= line
+        if ((viewReady && modelReady) || tries > 40) {
+          editor.setPosition({ lineNumber: line, column: 1 })
+          editor.revealLineInCenter(line)
+          editor.focus()
+        } else {
+          tries++
+          setTimeout(attempt, 60)
+        }
+      } catch { /* ignore */ }
+    }
+    attempt()
   }
 
   const handleEditorMount: OnMount = (editor, monaco) => {
@@ -535,45 +584,43 @@ export function CodeEditor() {
         scheduleCSharpDiagnostics(editor, monaco, file, 700, setCsErrorCount)
       })
     }
-    editor.onMouseDown((e) => {
-      if ((e.event.buttons & 2) === 0 || !e.target.position) return
+    // right-click: show ONLY our custom menu (Monaco's native one is suppressed
+    // by preventDefault on the `contextmenu` event in capture phase)
+    editor.getDomNode()?.addEventListener('contextmenu', (e: MouseEvent) => {
+      const target = editor.getTargetAtClientPoint(e.clientX, e.clientY)
+      const position = target?.position
       const file = activeFileRef.current
-      const position = e.target.position
       const model = editor.getModel()
-      const word = model?.getWordAtPosition(position)
+      const word = position ? model?.getWordAtPosition(position) : undefined
       const mlines = file ? modifiedLinesRef.current.get(file) : undefined
-      const isModified = !!mlines?.has(position.lineNumber)
-      if (!word?.word && !isModified) return
-      e.event.preventDefault()
-      e.event.stopPropagation()
+      const isModified = position ? !!mlines?.has(position.lineNumber) : false
+      if (!word?.word && !isModified) return // whitespace → let Monaco's native menu handle it
+      e.preventDefault()
+      e.stopPropagation()
       setCtxMenu({
         show: true,
-        x: e.event.browserEvent.clientX,
-        y: e.event.browserEvent.clientY,
-        lineNumber: position.lineNumber,
+        x: e.clientX,
+        y: e.clientY,
+        lineNumber: position!.lineNumber,
         symbol: word?.word || null,
         isModified
       })
-    })
+    }, true)
     if (pendingLineRef.current) {
       const line = pendingLineRef.current
       pendingLineRef.current = null
-      setTimeout(() => {
-        editor.setPosition({ lineNumber: line, column: 1 })
-        editor.revealLineInCenter(line)
-        editor.focus()
-      }, 50)
+      revealLineInEditor(editor, line)
     }
   }
 
   useEffect(() => {
-    if (pendingLineRef.current && editorRef.current) {
-      const line = pendingLineRef.current
-      pendingLineRef.current = null
-      editorRef.current.setPosition({ lineNumber: line, column: 1 })
-      editorRef.current.revealLineInCenter(line)
-      editorRef.current.focus()
-    }
+    if (!pendingLineRef.current) return
+    const editor = editorRef.current
+    // editor not mounted yet (first navigation) → handleEditorMount reveals it
+    if (!editor) return
+    const line = pendingLineRef.current
+    pendingLineRef.current = null
+    revealLineInEditor(editor, line)
   }, [activeFile])
 
   const theme = useUIStore(s => s.theme)
@@ -1116,9 +1163,9 @@ export function CodeEditor() {
           <pre style={{
             flex: 1, overflow: 'auto', margin: 0, padding: '6px 10px',
             fontSize: '10px', fontFamily: "'JetBrains Mono', monospace",
-            color: 'var(--text-primary)', background: '#060606',
+            color: 'var(--text-primary)', background: 'var(--bg-card)',
             whiteSpace: 'pre-wrap', wordBreak: 'break-all'
-          }}>{quickOutput?.replace(/\x1b\[[0-9;]*m/g, '')}</pre>
+          }}>{renderAnsi(quickOutput)}</pre>
         </div>
       )}
     </div>
@@ -1183,8 +1230,29 @@ export function CodeEditor() {
   )
 }
 
-function MenuItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
-  return (
+// ANSI SGR → colored spans using theme variables (used for build/run output)
+function renderAnsi(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = []
+  const re = /\x1b\[([0-9;]*)m/g
+  let last = 0
+  let color: string | undefined
+  let key = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    if (m.index > last) nodes.push(<span key={key++} style={{ color }}>{text.slice(last, m.index)}</span>)
+    const codes = m[1].split(';')
+    if (codes.includes('0')) color = undefined
+    else if (codes.includes('31')) color = 'var(--error-color)'
+    else if (codes.includes('32')) color = 'var(--success-color)'
+    else if (codes.includes('33')) color = 'var(--warning-color)'
+    else if (codes.includes('36')) color = 'var(--accent-color)'
+    last = re.lastIndex
+  }
+  if (last < text.length) nodes.push(<span key={key++} style={{ color }}>{text.slice(last)}</span>)
+  return nodes
+}
+
+function MenuItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {  return (
     <div
       style={{
         padding: '5px 14px', fontSize: '11px', fontFamily: 'var(--font-mono)', cursor: 'pointer',
@@ -1200,39 +1268,75 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
   )
 }
 
-function EditorContextMenu({ x, y, lineNumber, symbol, isModified, onGoDefinition, onGoImplementation, onFindReferences, onRevertLine, onRevertBlock, onClose }: {
+function EditorContextMenu({ x, y, lineNumber, symbol, onGoDefinition, onGoImplementation, onFindReferences, onRevertLine, onRevertBlock }: {
   x: number; y: number; lineNumber: number
   symbol: string | null
   isModified: boolean
+  onClose: () => void
   onGoDefinition: () => void
   onGoImplementation: () => void
   onFindReferences: () => void
   onRevertLine: (line: number) => void
   onRevertBlock: (line: number) => void
-  onClose: () => void
 }) {
+  const menuRef = useRef<HTMLDivElement>(null)
+  // pages in the SAME space; the mouse wheel switches between them
+  const pages: { label: string; onClick: () => void; danger?: boolean }[][] = []
+  const symbolPage = symbol ? [
+    { label: `Go to Definition — ${symbol}`, onClick: onGoDefinition },
+    { label: `Go to Implementation — ${symbol}`, onClick: onGoImplementation },
+    { label: `Find All References — ${symbol}`, onClick: onFindReferences }
+  ] : []
+  if (symbolPage.length > 0) pages.push(symbolPage)
+  // page 2 is always present when a symbol is shown, so the wheel can switch to it
+  pages.push([
+    { label: 'Revert this line', onClick: () => onRevertLine(lineNumber) },
+    { label: 'Revert modified block', onClick: () => onRevertBlock(lineNumber) }
+  ])
+  const [page, setPage] = useState(0)
+  const count = pages.length
+  const current = pages[Math.min(page, count - 1)]
+
+  // native non-passive wheel listener: React registers onWheel as passive, so
+  // preventDefault (blocking scroll under the menu) and reliable page switching
+  // need a direct listener on the menu node
+  useEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setPage(p => (p + (e.deltaY > 0 ? 1 : -1) + count) % count)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [count])
+
   return (
-    <div style={{
+    <div ref={menuRef} data-role="editor-ctx-menu" style={{
       position: 'fixed', left: x, top: y, zIndex: 10001,
       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
       padding: '4px 0', minWidth: '200px', display: 'flex', flexDirection: 'column'
     }}>
-      {symbol && (
-        <>
-          <MenuItem label={`Go to Definition — ${symbol}`} onClick={onGoDefinition} />
-          <MenuItem label={`Go to Implementation — ${symbol}`} onClick={onGoImplementation} />
-          <MenuItem label={`Find All References — ${symbol}`} onClick={onFindReferences} />
-        </>
-      )}
-      {symbol && isModified && (
-        <div style={{ height: '1px', margin: '4px 8px', background: 'var(--border-subtle)' }} />
-      )}
-      {isModified && (
-        <>
-          <MenuItem label="Revert this line" onClick={() => onRevertLine(lineNumber)} />
-          <MenuItem label="Revert modified block" onClick={() => onRevertBlock(lineNumber)} />
-        </>
+      {current.map((item, i) => (
+        <MenuItem key={i} label={item.label} onClick={item.onClick} danger={item.danger} />
+      ))}
+      {count > 1 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+          padding: '4px 8px', borderTop: '1px solid var(--border-subtle)', marginTop: '2px'
+        }}>
+          {pages.map((_, i) => (
+            <span key={i} style={{
+              width: '5px', height: '5px', borderRadius: '50%', display: 'inline-block',
+              background: i === page ? 'var(--accent-color)' : 'var(--text-muted)'
+            }} />
+          ))}
+          <span style={{ fontSize: '9px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+            {page + 1}/{count}
+          </span>
+        </div>
       )}
     </div>
   )

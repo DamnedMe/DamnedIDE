@@ -8,6 +8,7 @@ import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
 
 export interface DiffViewerHandle {
   getVisibleLine: () => number | null
+  getScrollLine: () => number | null
 }
 
 interface DiffViewerProps {
@@ -97,7 +98,9 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
           const viewReady = !!vr && (vr.endLineNumber - vr.startLineNumber) >= 4
           const modelReady = (modEd.getModel()?.getLineCount() ?? 0) >= initialLine
           if ((viewReady && modelReady) || tries > 30) {
-            modEd.revealLineInCenter(initialLine)
+            // reveal at the TOP so a previously-scrolled file resumes where it
+            // was left (scroll position is line-based, per file)
+            modEd.revealLine(initialLine, monaco.ScrollType.Immediate)
             modEd.setPosition({ lineNumber: initialLine, column: 1 })
           } else {
             tries++
@@ -116,6 +119,10 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
       const pos = modEd?.getPosition()
       if (pos?.lineNumber) return pos.lineNumber
       return modEd?.getVisibleRanges()?.[0]?.startLineNumber ?? null
+    },
+    getScrollLine: () => {
+      // the line at the TOP of the viewport = the actual scroll position
+      return diffEditorRef.current?.getModifiedEditor()?.getVisibleRanges()?.[0]?.startLineNumber ?? null
     }
   }))
 

@@ -51,6 +51,9 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   const [selectedIndex, setSelectedIndex] = useState(0)
   const diffViewerRef = useRef<DiffViewerHandle>(null)
   const pendingScrollLineRef = useRef<number | null>(null)
+  // scroll position (top visible line) kept per file, so switching away and
+  // back resumes exactly where the file was left
+  const scrollLinesRef = useRef<Record<string, number>>({})
   const editEditorRef = useRef<any>(null)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
 
@@ -117,6 +120,11 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
 
   const handleViewDiff = async (filePath: string) => {
     if (diffFileRef.current === filePath) return
+    // remember where the file we're leaving was scrolled
+    if (diffFileRef.current) {
+      const lastLine = diffViewerRef.current?.getScrollLine()
+      if (lastLine != null) scrollLinesRef.current[diffFileRef.current] = lastLine
+    }
     diffFileRef.current = filePath
     setDiffFile(filePath)
     setSelectedIndex(files.findIndex(f => f.path === filePath))
@@ -124,14 +132,16 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
     setIsLoadingDiff(true)
     setDiffOriginal('')
     setDiffModified('')
-    // open the diff at the line the main editor is on (same file), if any
+    // restore the file's own scroll (if already viewed), else jump to the line
+    // the main editor is on when the same file is open there
     const nav = useEditorStore.getState().editorNav
     const full = `${worktreePath}/${filePath}`
-    setDiffInitialLine(
+    const stored = scrollLinesRef.current[filePath]
+    const navLine =
       nav && nav.filePath.replace(/\\/g, '/').toLowerCase() === full.replace(/\\/g, '/').toLowerCase()
         ? nav.line
         : undefined
-    )
+    setDiffInitialLine(stored ?? navLine)
     try {
       const file = files.find(f => f.path === filePath)
       const fsPath = `${worktreePath}/${filePath}`
@@ -156,6 +166,10 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   }
 
   const openFile = async (absPath: string) => {
+    if (diffFileRef.current) {
+      const lastLine = diffViewerRef.current?.getScrollLine()
+      if (lastLine != null) scrollLinesRef.current[diffFileRef.current] = lastLine
+    }
     const normalized = absPath.replace(/\\/g, '/')
     const prefix = worktreePath.replace(/\\/g, '/') + '/'
     const rel = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized
@@ -517,7 +531,10 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                 filePath={diffFile}
                 onClose={() => setDiffFile(null)}
                 onPopOut={() => setIsDiffFullscreen(true)}
-                onVisibleLineChange={(line) => updateEditorNav(line)}
+                onVisibleLineChange={(line) => {
+                  if (diffFile) scrollLinesRef.current[diffFile] = line
+                  updateEditorNav(line)
+                }}
                 initialLine={diffInitialLine}
               />
             </div>
@@ -575,6 +592,11 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
               modified={diffModified}
               filePath={diffFile}
               onClose={() => setIsDiffFullscreen(false)}
+              onVisibleLineChange={(line) => {
+                if (diffFile) scrollLinesRef.current[diffFile] = line
+                updateEditorNav(line)
+              }}
+              initialLine={diffInitialLine}
             />
           )}
         </div>

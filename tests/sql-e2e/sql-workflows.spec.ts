@@ -24,6 +24,37 @@ test('query output exposes persistent SSMS-style results and messages', async ({
   await expect(messages).toContainText('Completion time')
 })
 
+test('a newly added LocalDB connection disables encryption before the first attempt', async ({ page }) => {
+  await page.getByRole('button', { name: 'Connection', exact: true }).click()
+  await page.getByText('new connection', { exact: true }).click()
+  await page.getByPlaceholder(/localhost/).fill('(localdb)\\MSSQLLocalDB')
+  await page.getByRole('button', { name: 'connection properties' }).click()
+  await expect(page.getByLabel('encrypt connection')).toBeDisabled()
+  await page.getByRole('button', { name: 'connect', exact: true }).click()
+
+  const config = await page.evaluate(() => {
+    const values = (window as unknown as { __sqlMock: { connectConfigs: Array<{ server?: string; encrypt?: boolean; port?: number }> } }).__sqlMock.connectConfigs
+    return values.at(-1)
+  })
+  expect(config).toMatchObject({ server: '(localdb)\\MSSQLLocalDB', encrypt: false })
+  expect(config?.port).toBeUndefined()
+})
+
+test('sp_help renders every returned table vertically instead of hiding them behind result tabs', async ({ page }) => {
+  await openMockDatabase(page)
+  const editor = page.locator('.monaco-editor').first()
+  await editor.click()
+  await page.keyboard.press('Control+A')
+  await page.keyboard.insertText("sp_help 'dbo.MassiveRows'")
+  await page.keyboard.press('F5')
+
+  await expect(page.getByTestId('sql-multi-result')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Result set 1' })).toContainText('MassiveRows')
+  await expect(page.getByRole('region', { name: 'Result set 2' })).toContainText('Column_name')
+  await expect(page.getByRole('region', { name: 'Result set 3' })).toContainText('PK_MassiveRows')
+  await expect(page.getByRole('button', { name: /set 1/ })).toHaveCount(0)
+})
+
 test('essentials mode leaves only tables, diagram and programmability', async ({ page }) => {
   await openMockDatabase(page)
   await expect(page.getByText('views', { exact: true })).toBeVisible()

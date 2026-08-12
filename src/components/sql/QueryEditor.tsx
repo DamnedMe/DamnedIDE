@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from '../editor/monaco-theme'
-import { useSettingsStore, useSqlStore } from '../../store'
-import { Play, Square, Loader2, Database, Plus, X, History } from 'lucide-react'
+import { useSettingsStore, useSqlStore, useToastStore } from '../../store'
+import { Play, Square, Loader2, Database, Plus, X, History, Pencil, Save, Trash2 } from 'lucide-react'
 import { registerSqlAssistant } from './sqlAssistant'
 import { SqlQuerySource, SqlWorkspaceTab } from '../../types/sql'
 
@@ -49,6 +49,8 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
   const firstTab = useRef(newTab(1))
   const [tabs, setTabs] = useState<QueryTab[]>([firstTab.current])
   const [activeTabId, setActiveTabId] = useState(firstTab.current.id)
+  const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [renameTab, setRenameTab] = useState<{ id: string; title: string; x: number; y: number } | null>(null)
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null)
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null)
   const runRef = useRef<() => void>(() => {})
@@ -63,6 +65,7 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
   const restoredRef = useRef(false)
   const { isRunning } = useSqlStore()
   const settings = useSettingsStore(s => s.settings)
+  const showToast = useToastStore(s => s.showToast)
 
   useEffect(() => { tabsRef.current = tabs }, [tabs])
   useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
@@ -95,7 +98,7 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
     if (restoredRef.current || !restoredWorkspace) return
     restoredRef.current = true
     if (restoredWorkspace.tabs.length === 0) return
-    const restoredTabs = restoredWorkspace.tabs.map(tab => ({ ...tab, dirty: tab.query.trim().length > 0 }))
+    const restoredTabs = restoredWorkspace.tabs.map(tab => ({ ...tab, dirty: Boolean(tab.dirty) }))
     const restoredActive = restoredTabs.some(tab => tab.id === restoredWorkspace.activeTabId)
       ? restoredWorkspace.activeTabId!
       : restoredTabs[0].id
@@ -123,6 +126,23 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
     }
     return onExecuteRef.current(query, context, tabId)
   }, [])
+
+  const saveTab = useCallback(async (id = activeTabIdRef.current) => {
+    const tab = tabsRef.current.find(item => item.id === id)
+    if (!tab) return
+    const baseTitle = tab.title.replace(/\.sql$/i, '').trim() || 'query'
+    try {
+      const filePath = await window.electronAPI.dialog.saveSqlQuery(`${baseTitle}.sql`, tab.query)
+      if (!filePath) return
+      const fileName = filePath.split(/[\\/]/).pop() || `${baseTitle}.sql`
+      const title = fileName.replace(/\.sql$/i, '') || baseTitle
+      tabsRef.current = tabsRef.current.map(item => item.id === id ? { ...item, title, filePath, dirty: false } : item)
+      setTabs(tabsRef.current)
+      showToast(`query salvata: ${fileName}`)
+    } catch (error) {
+      showToast(`salvataggio query fallito: ${(error as Error).message}`, 'error')
+    }
+  }, [showToast])
 
   const run = useCallback(() => {
     const editor = editorRef.current
@@ -158,6 +178,7 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
     })
     editor.addCommand(monaco.KeyCode.F5, () => runRef.current())
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runRef.current())
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { void saveTab(activeTabIdRef.current) })
     editor.focus()
   }
 
@@ -202,7 +223,7 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
   const closeTab = (id: string) => {
     const current = tabsRef.current
     if (current.length === 1) {
-      const cleared = { ...current[0], query: '', dirty: false, context: undefined }
+      const cleared = { ...current[0], title: 'Query 1', query: '', dirty: false, context: undefined, filePath: undefined }
       tabsRef.current = [cleared]
       setTabs([cleared])
       replaceEditorValue('')
@@ -238,7 +259,8 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
     renameTab: (id, title) => {
       const normalized = title.trim().slice(0, 120)
       if (!normalized) return
-      setTabs(current => current.map(tab => tab.id === id ? { ...tab, title: normalized } : tab))
+      tabsRef.current = tabsRef.current.map(tab => tab.id === id ? { ...tab, title: normalized } : tab)
+      setTabs(tabsRef.current)
     },
     activateTab
   }
@@ -264,6 +286,16 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
         <div style={{ display: 'flex', flex: 1, overflowX: 'auto', minWidth: 0 }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => activateTab(tab.id)} title={tab.title}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                activateTab(tab.id)
+                setTabMenu({ id: tab.id, x: event.clientX, y: event.clientY })
+              }}
+              onAuxClick={(event) => {
+                if (event.button !== 1) return
+                event.preventDefault()
+                closeTab(tab.id)
+              }}
               style={{
                 display: 'flex', alignItems: 'center', gap: '6px', minWidth: '96px', maxWidth: '180px',
                 padding: '0 8px 0 10px', border: 'none', borderRight: '1px solid var(--border-subtle)',
@@ -332,6 +364,55 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
           }}
         />
       </div>
+      {tabMenu && (
+        <>
+          <div onMouseDown={() => setTabMenu(null)} onContextMenu={(event) => { event.preventDefault(); setTabMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
+          <div role="menu" aria-label="query tab actions" style={{
+            position: 'fixed', left: Math.min(tabMenu.x, window.innerWidth - 190), top: Math.min(tabMenu.y, window.innerHeight - 132), zIndex: 300,
+            width: 180, padding: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)'
+          }}>
+            <button className="sql-tab-menu-item" role="menuitem" onClick={() => {
+              const tab = tabsRef.current.find(item => item.id === tabMenu.id)
+              if (tab) setRenameTab({ id: tab.id, title: tab.title, x: tabMenu.x, y: tabMenu.y })
+              setTabMenu(null)
+            }} style={menuItemStyle}><Pencil size={11} /> Rename</button>
+            <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); void saveTab(id) }} style={menuItemStyle}><Save size={11} /> Save query</button>
+            <div style={{ height: 1, background: 'var(--border-subtle)', margin: '3px 2px' }} />
+            <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); closeTab(id) }} style={{ ...menuItemStyle, color: 'var(--error-color)' }}><Trash2 size={11} /> Close</button>
+          </div>
+        </>
+      )}
+      {renameTab && (
+        <>
+          <div onMouseDown={() => setRenameTab(null)} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
+          <form onSubmit={(event) => {
+            event.preventDefault()
+            const normalized = renameTab.title.trim().slice(0, 120)
+            if (normalized) {
+              tabsRef.current = tabsRef.current.map(tab => tab.id === renameTab.id ? { ...tab, title: normalized } : tab)
+              setTabs(tabsRef.current)
+            }
+            setRenameTab(null)
+          }} style={{
+            position: 'fixed', left: Math.min(renameTab.x, window.innerWidth - 270), top: Math.min(renameTab.y, window.innerHeight - 82), zIndex: 300,
+            width: 260, padding: 8, display: 'flex', gap: 5, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)'
+          }}>
+            <input autoFocus aria-label={`rename ${tabsRef.current.find(tab => tab.id === renameTab.id)?.title || 'query'}`} value={renameTab.title}
+              onChange={(event) => setRenameTab(current => current ? { ...current, title: event.target.value } : current)}
+              onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setRenameTab(null) } }}
+              style={{ minWidth: 0, flex: 1, height: 27, padding: '0 7px', background: 'var(--bg-input)', border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', outline: 'none' }} />
+            <button type="submit" style={{ ...menuItemStyle, width: 'auto', border: '1px solid var(--accent-color)', color: 'var(--accent-color)' }}>rename</button>
+          </form>
+        </>
+      )}
     </div>
   )
+}
+
+const menuItemStyle: React.CSSProperties = {
+  width: '100%', height: 28, padding: '0 8px', display: 'flex', alignItems: 'center', gap: 7,
+  border: 0, borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--text-primary)',
+  cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, textAlign: 'left'
 }

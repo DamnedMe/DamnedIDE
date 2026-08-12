@@ -93,11 +93,7 @@ export default function App() {
       for (const c of conns) {
         if (cancelled || c.isConnected) continue
         try {
-          await window.electronAPI.sql.connect({
-            server: c.server, database: c.database,
-            user: c.user, password: c.password, port: c.port,
-            connectionId: c.id
-          })
+          await window.electronAPI.sql.connect({ ...c, connectionId: c.id })
           if (cancelled) break
           useSqlStore.getState().updateConnection(c.id, { isConnected: true })
         } catch { /* server offline */ }

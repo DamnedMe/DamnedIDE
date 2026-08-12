@@ -7,6 +7,7 @@ type WorkspaceTab = {
   query: string
   context?: { connectionId?: string; database?: string }
   dirty: boolean
+  filePath?: string
   gridQueryState?: unknown
 }
 
@@ -52,6 +53,7 @@ export function normalizeSqlWorkspace(input: unknown, now = Date.now()): SqlWork
           database: typeof tab.context.database === 'string' ? tab.context.database : undefined
         } : undefined,
         dirty: Boolean(tab.dirty),
+        filePath: typeof tab.filePath === 'string' ? tab.filePath : undefined,
         gridQueryState: tab.gridQueryState && typeof tab.gridQueryState === 'object' ? tab.gridQueryState : undefined
       }))
     : []

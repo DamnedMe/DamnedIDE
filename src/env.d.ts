@@ -81,6 +81,7 @@ interface Window {
     }
     dialog: {
       openFolder: () => Promise<string | null>
+      saveSqlQuery: (defaultName: string, content: string) => Promise<string | null>
     }
     fs: {
       readDir: (dirPath: string) => Promise<{ name: string; isDirectory: boolean; isFile: boolean }[]>

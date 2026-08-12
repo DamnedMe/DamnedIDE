@@ -17,6 +17,7 @@ import { SqlWorkspaceDrawer } from './SqlWorkspaceDrawer'
 import { addHistoryEntry, EMPTY_SQL_WORKSPACE, favoriteHistoryEntry, updateWorkspaceTabs } from './sqlWorkspace'
 import { buildGridQuery, canRewriteGridQuery } from './sqlGridQuery'
 import { SqlQueryMessage, SqlQueryOutput, SqlRunningQuery } from './SqlQueryOutput'
+import { normalizeSqlConnectionConfig } from '../../shared/sqlConnection'
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -283,26 +284,27 @@ export function SqlPanel() {
 
   const handleConnect = async (config: SqlConnectionConfig): Promise<{ ok: boolean; error?: string }> => {
     if (!config.server) return { ok: false, error: 'server name is required' }
+    const normalized = normalizeSqlConnectionConfig(config)
     const connId = edit?.id ?? crypto.randomUUID()
-    const label = connectionLabel(config.server, config.database)
+    const label = connectionLabel(normalized.server, normalized.database)
     let ok = false
     let error = ''
     try {
       await trackOperation(`Connecting to ${label}`, async () => {
         if (edit?.id) await window.electronAPI.sql.disconnect(edit.id).catch(() => {})
-        await window.electronAPI.sql.connect({ ...config, connectionId: connId })
+        await window.electronAPI.sql.connect({ ...normalized, connectionId: connId })
       })
       ok = true
     } catch (e) {
       error = cleanError(e)
     }
-    const conn = configToConnection(config, ok, connId)
+    const conn = configToConnection(normalized, ok, connId)
     if (edit?.id) updateConnection(connId, conn)
     else addConnection(conn)
     if (ok) {
       setActiveConnection(connId)
-      setActiveDatabase(connId, config.database || '')
-      addRecent({ server: config.server, database: config.database, user: config.user, authType: config.authType, lastConnected: Date.now() })
+      setActiveDatabase(connId, normalized.database || '')
+      addRecent({ server: normalized.server, database: normalized.database, user: normalized.user, authType: normalized.authType, lastConnected: Date.now() })
       showToast(`connesso a ${label}`)
     } else {
       showToast(`connessione fallita: ${error || 'server non raggiungibile'}`, 'error')
@@ -312,9 +314,10 @@ export function SqlPanel() {
   }
 
   const handleTest = async (config: SqlConnectionConfig): Promise<SqlTestResult> =>
-    trackOperation(`Testing ${config.server}`, () => window.electronAPI.sql.testConnection(config))
+    trackOperation(`Testing ${config.server}`, () => window.electronAPI.sql.testConnection(normalizeSqlConnectionConfig(config)))
 
   const handleListDatabases = async (config: SqlConnectionConfig): Promise<string[]> => {
+    config = normalizeSqlConnectionConfig(config)
     const tmpId = crypto.randomUUID()
     await trackOperation(`Loading databases from ${config.server}`, () => window.electronAPI.sql.connect({ ...config, database: undefined, connectionId: tmpId }))
     try {

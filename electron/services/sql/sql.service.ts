@@ -4,6 +4,7 @@ import net from 'net'
 import { execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { connectPoolWithRetry, normalizeSqlConnectionConfig, parseSqlServerTarget, sqlTimeoutMilliseconds } from '../../../src/shared/sqlConnection'
 
 export type SqlAuthType =
   | 'windows'
@@ -32,7 +33,9 @@ export interface SqlConnectionConfig {
   clientSecret?: string
   accessToken?: string
   encrypt?: boolean
+  /** Seconds; mssql receives milliseconds only in buildPoolConfig. */
   connectTimeout?: number
+  /** Seconds; mssql receives milliseconds only in buildPoolConfig. */
   requestTimeout?: number
   protocol?: SqlProtocol
 }
@@ -297,6 +300,16 @@ function stripPipePrefix(pipe: string): string {
   return p
 }
 
+const localDbPipeCache = new Map<string, { pipe: string; expiresAt: number }>()
+
+function localDbInstanceName(server: string): string {
+  return parseSqlServerTarget(server).instanceName || 'MSSQLLocalDB'
+}
+
+function invalidateLocalDbPipe(server: string): void {
+  localDbPipeCache.delete(localDbInstanceName(server).toLocaleLowerCase())
+}
+
 function pipeFromRegistry(instance: string): string | null {
   try {
     const out = execSync(
@@ -327,14 +340,18 @@ function resolveLocalDbPipe(server: string): string | null {
 
   // Normalize the instance: `(localdb)\X`, `(localdb)\\X` and trailing slashes
   // must all yield `X` (empty → MSSQLLocalDB).
-  let instance = s.replace(/^\(localdb\)\\*/i, '').replace(/\\+$/, '').trim()
-  if (!instance) instance = 'MSSQLLocalDB'
-
-  const regPipe = pipeFromRegistry(instance)
-  if (regPipe) return regPipe
+  const instance = localDbInstanceName(s)
+  const cacheKey = instance.toLocaleLowerCase()
+  const cached = localDbPipeCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.pipe
 
   const sqllocaldb = findSqlLocalDb()
   if (!sqllocaldb) {
+    const regPipe = pipeFromRegistry(instance)
+    if (regPipe) {
+      localDbPipeCache.set(cacheKey, { pipe: regPipe, expiresAt: Date.now() + 5_000 })
+      return regPipe
+    }
     console.error('[sql] SqlLocalDB.exe non trovato')
     return null
   }
@@ -350,11 +367,12 @@ function resolveLocalDbPipe(server: string): string | null {
     const idx = pipeName.indexOf(':')
     if (idx >= 0) pipeName = pipeName.slice(idx + 1).trim()
     pipeName = stripPipePrefix(pipeName)
+    localDbPipeCache.set(cacheKey, { pipe: pipeName, expiresAt: Date.now() + 30_000 })
     console.log('[sql] LocalDB pipe risolto:', pipeName)
     return pipeName
   } catch (e) {
     console.error('[sql] risoluzione LocalDB fallita:', (e as Error).message)
-    return null
+    return pipeFromRegistry(instance)
   }
 }
 
@@ -403,23 +421,22 @@ export class SqlService {
   }
 
   private buildPoolConfig(config: SqlConnectionConfig): sqlConfig {
-    const pipe = resolveLocalDbPipe(config.server)
-    const isLocalDb = /^\(localdb\)/i.test((config.server || '').trim())
+    const normalized = normalizeSqlConnectionConfig(config)
+    const target = parseSqlServerTarget(normalized.server)
+    const pipe = resolveLocalDbPipe(normalized.server)
     const base: sqlConfig = {
-      // LocalDB without a resolvable pipe falls back to local TCP (like the
-      // original connector); anything else connects to the given server.
-      server: pipe || isLocalDb ? 'localhost' : config.server,
-      database: config.database,
-      user: config.user,
-      password: config.password,
-      port: config.port || 1433,
-      connectionTimeout: config.connectTimeout ?? 15000,
-      requestTimeout: config.requestTimeout ?? 30000,
+      server: pipe ? 'localhost' : target.host,
+      database: normalized.database,
+      user: normalized.user,
+      password: normalized.password,
+      port: normalized.port || target.port || 1433,
+      connectionTimeout: sqlTimeoutMilliseconds(normalized.connectTimeout, 15_000),
+      requestTimeout: sqlTimeoutMilliseconds(normalized.requestTimeout, 30_000),
       pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
       options: {
-        trustServerCertificate: config.trustServerCertificate ?? true,
-        // Azure SQL requires encryption; LocalDB (named pipe) works without it.
-        encrypt: config.encrypt ?? !pipe
+        trustServerCertificate: normalized.trustServerCertificate ?? true,
+        encrypt: pipe ? false : normalized.encrypt ?? true,
+        ...(!pipe && target.instanceName ? { instanceName: target.instanceName } : {})
       }
     }
     if (pipe) {
@@ -446,20 +463,28 @@ export class SqlService {
     // Remote TCP: honor the chosen authentication type.
     base.authentication = (pipe
       ? { type: 'default', options: {} }
-      : authOptions(config)) as sqlConfig['authentication']
+      : authOptions(normalized)) as sqlConfig['authentication']
     return base
   }
 
+  private openPool(config: SqlConnectionConfig): Promise<ConnectionPool> {
+    const normalized = normalizeSqlConnectionConfig(config)
+    return connectPoolWithRetry((attempt) => {
+      if (attempt > 1 && parseSqlServerTarget(normalized.server).isLocalDb) invalidateLocalDbPipe(normalized.server)
+      return new ConnectionPool(this.buildPoolConfig(normalized))
+    })
+  }
+
   async connect(config: SqlConnectionConfig): Promise<string> {
-    const id = config.connectionId || `conn_${++this.counter}`
+    const normalized = normalizeSqlConnectionConfig(config)
+    const id = normalized.connectionId || `conn_${++this.counter}`
     const existing = this.connections.get(id)
     if (existing) {
       try { await existing.pool.close() } catch { /* ignore */ }
       this.connections.delete(id)
     }
-    const pool = new ConnectionPool(this.buildPoolConfig(config))
-    await pool.connect()
-    this.connections.set(id, { pool, config })
+    const pool = await this.openPool(normalized)
+    this.connections.set(id, { pool, config: normalized })
     return id
   }
 
@@ -479,22 +504,20 @@ export class SqlService {
   private async openScopedPool(connectionId: string, database: string): Promise<ConnectionPool> {
     const entry = this.connections.get(connectionId)
     if (!entry) throw new Error('Connessione non trovata')
-    const pool = new ConnectionPool(this.buildPoolConfig({ ...entry.config, database }))
-    await pool.connect()
-    return pool
+    return this.openPool({ ...entry.config, database })
   }
 
   async testConnection(config: SqlConnectionConfig): Promise<{ ok: boolean; error?: string; version?: string }> {
-    const pool = new ConnectionPool(this.buildPoolConfig(config))
+    let pool: ConnectionPool | null = null
     try {
-      await pool.connect()
+      pool = await this.openPool(config)
       const r = await pool.request().query('SELECT @@VERSION AS version')
       const version = r.recordset[0]?.version as string | undefined
       return { ok: true, version }
     } catch (e) {
       return { ok: false, error: (e as Error).message }
     } finally {
-      try { await pool.close() } catch { /* ignore */ }
+      try { await pool?.close() } catch { /* ignore */ }
     }
   }
 
@@ -536,11 +559,12 @@ export class SqlService {
     this.activeRequests.set(qid, request)
     try {
       const result = await request.query(query)
-      const rsets = (result as { recordsets?: (Record<string, unknown>[] | null)[] }).recordsets
-      const recordsets: Record<string, unknown>[][] = (rsets && rsets.length > 0
+      type RawRecordset = Record<string, unknown>[] & { columns?: Record<string, unknown> }
+      const rsets = (result as { recordsets?: (RawRecordset | null)[] }).recordsets
+      const recordsets: RawRecordset[] = (rsets && rsets.length > 0
         ? rsets
-        : [result.recordset])
-        .filter(rs => rs !== null && rs !== undefined) as Record<string, unknown>[][]
+        : [result.recordset as RawRecordset])
+        .filter(rs => rs !== null && rs !== undefined) as RawRecordset[]
       let truncated = false
       const results: SqlQueryResult[] = []
       for (let i = 0; i < recordsets.length; i++) {
@@ -549,7 +573,8 @@ export class SqlService {
           rows = rows.slice(0, maxRows)
           truncated = true
         }
-        results.push(await this.toQueryResult(connectionId, pool, query, rows, i === 0, database))
+        const declaredColumns = Object.keys(recordsets[i].columns || {})
+        results.push(await this.toQueryResult(connectionId, pool, query, rows, i === 0, database, declaredColumns))
       }
       return {
         queryId: qid,
@@ -584,9 +609,10 @@ export class SqlService {
     query: string,
     rows: Record<string, unknown>[],
     isFirst: boolean,
-    database?: string
+    database?: string,
+    declaredColumns: string[] = []
   ): Promise<SqlQueryResult> {
-    const columns: string[] = rows.length > 0 ? Object.keys(rows[0] ?? {}) : []
+    const columns: string[] = rows.length > 0 ? Object.keys(rows[0] ?? {}) : declaredColumns
     const colTypes: Record<string, string> = {}
     if (rows.length > 0) {
       const sample = rows[0]

@@ -74,3 +74,15 @@ test('SQL IntelliSense qualifies ambiguous columns and ranks columns from visibl
   await expect(suggestions.filter({ hasText: 'm.Id' }).first()).toBeVisible()
   await expect(suggestions.filter({ hasText: 'p.Id' }).first()).toBeVisible()
 })
+
+test('SQL IntelliSense offers SQL Server system procedure snippets', async ({ page }) => {
+  await openMockDatabase(page)
+  const editor = page.locator('.monaco-editor').first()
+  await editor.click()
+  await page.keyboard.insertText('sp_')
+  await page.keyboard.press('Control+Space')
+  const suggestions = page.locator('.suggest-widget .monaco-list-row')
+  await expect(suggestions.filter({ hasText: 'sp_help' }).first()).toBeVisible()
+  await expect(suggestions.filter({ hasText: 'sp_helptext' }).first()).toBeVisible()
+  await expect(suggestions.filter({ hasText: 'sp_who2' }).first()).toBeVisible()
+})

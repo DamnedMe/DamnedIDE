@@ -88,7 +88,8 @@ const electronAPI = {
     hover: (file: string, line: number, column: number, text?: string) => ipcRenderer.invoke('roslyn:hover', file, line, column, text)
   },
   dialog: {
-    openFolder: () => ipcRenderer.invoke('dialog:openFolder')
+    openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+    saveSqlQuery: (defaultName: string, content: string) => ipcRenderer.invoke('dialog:saveSqlQuery', defaultName, content)
   },
   fs: {
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:readDir', dirPath),

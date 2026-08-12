@@ -359,11 +359,11 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
   }
 
   return (
-    <section data-testid="sql-diagram-view" style={{
+    <section className="sql-diagram sql-surface" data-testid="sql-diagram-view" style={{
       flex: 1, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0
     }}>
-      <header style={{
+      <header className="sql-diagram__toolbar" style={{
         minHeight: '42px', padding: '6px 8px 6px 12px', borderBottom: '1px solid var(--border-subtle)',
         display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, background: 'var(--bg-secondary)'
       }}>
@@ -421,7 +421,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
       </header>
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
-        <div ref={containerRef} style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative', background: 'var(--bg-primary)' }}>
+        <div className="sql-diagram__canvas" ref={containerRef} style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative', background: 'var(--bg-primary)' }}>
           {loading && !data && (
             <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 2 }}>
               <div style={{ width: 'min(420px, 72%)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textAlign: 'center' }}>
@@ -563,7 +563,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
         </div>
 
         {selected && (
-          <aside aria-label={`table details ${selected.name}`} style={{
+          <aside className="sql-diagram__inspector" aria-label={`table details ${selected.name}`} style={{
             width: '286px', minWidth: '240px', maxWidth: '34%', borderLeft: '1px solid var(--border-subtle)',
             background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', minHeight: 0
           }}>

@@ -1,15 +1,18 @@
 import { ReactNode } from 'react'
 
 interface PanelContainerProps {
-  title: string
+  title: ReactNode
   actions?: ReactNode
   children: ReactNode
+  className?: string
+  headerClassName?: string
+  contentClassName?: string
 }
 
-export function PanelContainer({ title, actions, children }: PanelContainerProps) {
+export function PanelContainer({ title, actions, children, className, headerClassName, contentClassName }: PanelContainerProps) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <div style={{
+    <div className={className} style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <div className={headerClassName} style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 0 12px 0', flexShrink: 0
       }}>
@@ -22,7 +25,7 @@ export function PanelContainer({ title, actions, children }: PanelContainerProps
         </h2>
         {actions && <div style={{ display: 'flex', gap: '6px' }}>{actions}</div>}
       </div>
-      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+      <div className={contentClassName} style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
         {children}
       </div>
     </div>

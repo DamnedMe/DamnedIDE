@@ -11,8 +11,10 @@ import { CodeEditor } from './components/editor/CodeEditor'
 import { TerminalPanel } from './components/terminal/TerminalPanel'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ToastHost } from './components/layout/ToastHost'
+import { TooltipHost } from './components/layout/TooltipHost'
 import { RecentReposDialog } from './components/layout/RecentReposDialog'
 import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore } from './store'
+import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from './components/editor/monaco-theme'
 import {
@@ -21,8 +23,7 @@ import {
   Database,
   Code2,
   Boxes,
-  Terminal,
-  Settings
+  Terminal
 } from 'lucide-react'
 import './styles/themes/dark.css'
 import './styles/themes/light.css'
@@ -36,6 +37,8 @@ export default function App() {
   const { theme, setTheme } = useUIStore()
   const settingsTheme = useSettingsStore(s => s.settings.theme)
   const accentColor = useSettingsStore(s => s.settings.accentColor)
+  const iconSize = useSettingsStore(s => s.settings.iconSize)
+  const fontSize = useSettingsStore(s => s.settings.fontSize)
   const updateSettings = useSettingsStore(s => s.updateSettings)
   const gitStatus = useGitStore(s => s.status)
   const gitFiles = useGitStore(s => s.files)
@@ -120,15 +123,33 @@ export default function App() {
 
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
 
+  // Global icon scale (lucide) and base font for the whole UI, from settings.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--icon-zoom', String(iconSize / 14))
+  }, [iconSize])
+
+  useEffect(() => {
+    document.body.style.fontSize = `${fontSize}px`
+  }, [fontSize])
+
+  const t = useI18n()
   const tabs: SidebarTab[] = [
-    { id: 'worktree', icon: Boxes, label: 'Worktree' },
-    { id: 'git', icon: GitBranch, label: 'Git' },
-    { id: 'ado', icon: Network, label: 'Azure DevOps' },
-    { id: 'sql', icon: Database, label: 'SQL Server' },
-    { id: 'editor', icon: Code2, label: 'Editor' },
-    { id: 'terminal', icon: Terminal, label: 'Terminal' },
-    { id: 'settings', icon: Settings, label: 'Settings' }
+    { id: 'worktree', icon: Boxes, label: t('worktree') },
+    { id: 'editor', icon: Code2, label: t('editor') },
+    { id: 'git', icon: GitBranch, label: t('git') },
+    { id: 'ado', icon: Network, label: t('ado') },
+    { id: 'sql', icon: Database, label: t('sql') },
+    { id: 'terminal', icon: Terminal, label: t('terminal') }
   ]
+
+  const lastPanelRef = useRef<PanelId>('worktree')
+  const handleSettingsToggle = () => {
+    setActivePanel(prev => {
+      if (prev === 'settings') return lastPanelRef.current
+      lastPanelRef.current = prev
+      return 'settings'
+    })
+  }
 
   const renderPanel = (panel: PanelId) => {
     switch (panel) {
@@ -152,19 +173,20 @@ export default function App() {
   if (detachedPanel) {
     return (
       <AppShell
-        titleBar={<TitleBar title={`DamnedIDE — ${detachedPanel}`} />}
+        titleBar={<TitleBar title={`DamnedIDE — ${detachedPanel}`} onSettings={handleSettingsToggle} settingsActive={detachedPanel === 'settings'} />}
         sidebar={null}
         statusBar={null}
       >
         {renderPanel(detachedPanel)}
         <ToastHost />
+        <TooltipHost />
       </AppShell>
     )
   }
 
   return (
     <AppShell
-      titleBar={<TitleBar title={`DamnedIDE${repoPath ? ` — ${repoPath}` : ''}`} />}
+      titleBar={<TitleBar title={`DamnedIDE${repoPath ? ` — ${repoPath}` : ''}`} onSettings={handleSettingsToggle} settingsActive={activePanel === 'settings'} />}
       sidebar={<Sidebar tabs={tabs} activeTab={activePanel} onTabChange={(id) => setActivePanel(id as PanelId)} onOpenFolder={handleOpenFolder} />}
       statusBar={
         <StatusBar
@@ -178,6 +200,7 @@ export default function App() {
     >
       {renderPanel(activePanel)}
       <ToastHost />
+      <TooltipHost />
 
       {updateReady && (
         <div style={{

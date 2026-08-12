@@ -338,6 +338,8 @@ export const DEFAULT_LIGHT_COLORS: ThemeColorConfig = {
 export interface AppSettings {
   theme: 'dark' | 'light'
   fontSize: number
+  iconSize: number
+  language: 'en' | 'it'
   minimap: boolean
   tabSize: number
   autoSave: boolean
@@ -379,6 +381,8 @@ function saveThemeDefaults(d: ThemeDefaults) {
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   fontSize: 12.5,
+  iconSize: 14,
+  language: 'en',
   minimap: true,
   tabSize: 2,
   autoSave: false,
@@ -509,34 +513,28 @@ export const useRecentReposStore = create<RecentReposState>((set) => ({
 const DIFF_KEY = 'damnedide_diff'
 
 interface DiffState {
-  fontSize: number
   sideBySide: boolean
-  setFontSize: (n: number) => void
   setSideBySide: (b: boolean) => void
 }
 
-function loadDiffState(): { fontSize: number; sideBySide: boolean } {
+function loadDiffState(): { sideBySide: boolean } {
   try {
     const raw = localStorage.getItem(DIFF_KEY)
     if (raw) {
       const p = JSON.parse(raw)
-      return {
-        fontSize: typeof p.fontSize === 'number' ? p.fontSize : 12.5,
-        sideBySide: typeof p.sideBySide === 'boolean' ? p.sideBySide : true
-      }
+      return { sideBySide: typeof p.sideBySide === 'boolean' ? p.sideBySide : true }
     }
   } catch { /* ignore */ }
-  return { fontSize: 12.5, sideBySide: true }
+  return { sideBySide: true }
 }
 
-function saveDiffState(s: { fontSize: number; sideBySide: boolean }) {
+function saveDiffState(s: { sideBySide: boolean }) {
   try { localStorage.setItem(DIFF_KEY, JSON.stringify(s)) } catch { /* ignore */ }
 }
 
 export const useDiffStore = create<DiffState>((set) => ({
   ...loadDiffState(),
-  setFontSize: (n) => set((s) => { saveDiffState({ fontSize: n, sideBySide: s.sideBySide }); return { fontSize: n } }),
-  setSideBySide: (b) => set((s) => { saveDiffState({ fontSize: s.fontSize, sideBySide: b }); return { sideBySide: b } })
+  setSideBySide: (b) => set((s) => { saveDiffState({ sideBySide: b }); return { sideBySide: b } })
 }))
 
 export interface Toast {

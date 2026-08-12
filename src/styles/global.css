@@ -97,6 +97,11 @@ a:hover { text-decoration: underline; }
   box-shadow: var(--shadow-lg) !important;
 }
 
+.sql-tab-menu-item:hover,
+.sql-tab-menu-item:focus-visible {
+  background: var(--bg-hover) !important;
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

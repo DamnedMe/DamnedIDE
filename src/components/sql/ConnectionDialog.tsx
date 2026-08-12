@@ -57,6 +57,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
   }, [form])
 
   const canConnect = form.server.trim().length > 0
+  const isLocalDb = /^\(localdb\)/i.test(form.server.trim())
 
   const handleTest = async () => {
     if (!canConnect || testing) return
@@ -174,7 +175,10 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                 <input
                   ref={serverRef}
                   value={form.server}
-                  onChange={(e) => set({ server: e.target.value })}
+                  onChange={(e) => {
+                    const server = e.target.value
+                    set({ server, ...(/^\(localdb\)/i.test(server.trim()) ? { encrypt: false } : {}) })
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleTest()
                   }}
@@ -207,6 +211,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                   ))}
                 </div>
               )}
+              {isLocalDb && <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 9 }}>LocalDB uses its local named pipe; transport encryption is disabled automatically.</div>}
             </Field>
 
             <Field label="authentication">
@@ -350,7 +355,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
-              <Checkbox label="encrypt connection" checked={form.encrypt} onChange={(v) => set({ encrypt: v })} />
+              <Checkbox label="encrypt connection" checked={isLocalDb ? false : form.encrypt} disabled={isLocalDb} onChange={(v) => set({ encrypt: v })} />
               <Checkbox label="trust server certificate" checked={form.trustServerCertificate} onChange={(v) => set({ trustServerCertificate: v })} />
             </div>
           </>
@@ -449,14 +454,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Checkbox({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: disabled ? 'not-allowed' : 'pointer', color: disabled ? 'var(--text-muted)' : 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        style={{ accentColor: 'var(--accent-color)', cursor: 'pointer' }}
+        style={{ accentColor: 'var(--accent-color)', cursor: disabled ? 'not-allowed' : 'pointer' }}
       />
       {label}
     </label>

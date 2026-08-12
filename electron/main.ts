@@ -213,6 +213,17 @@ function registerIpcHandlers(
     })
     return result.canceled ? null : result.filePaths[0]
   })
+  ipcMain.handle('dialog:saveSqlQuery', async (_e, defaultName: string, content: string) => {
+    const safeName = (defaultName || 'query.sql').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/[. ]+$/, '') || 'query.sql'
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Save SQL query',
+      defaultPath: safeName.toLocaleLowerCase().endsWith('.sql') ? safeName : `${safeName}.sql`,
+      filters: [{ name: 'SQL query', extensions: ['sql'] }, { name: 'All files', extensions: ['*'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    await writeFile(result.filePath, content, 'utf-8')
+    return result.filePath
+  })
 
   // ─── Filesystem ─────────────────────────────────────
   ipcMain.handle('fs:readDir', async (_e, dirPath: string) => {

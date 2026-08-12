@@ -27,7 +27,9 @@ export interface SqlConnection {
   accessToken?: string
   encrypt?: boolean
   trustServerCertificate?: boolean
+  /** Connection timeout in seconds (converted to milliseconds at the driver boundary). */
   connectTimeout?: number
+  /** Query/request timeout in seconds (converted to milliseconds at the driver boundary). */
   requestTimeout?: number
   protocol?: SqlProtocol
   lastConnected?: number
@@ -48,7 +50,9 @@ export interface SqlConnectionConfig {
   clientSecret?: string
   accessToken?: string
   encrypt?: boolean
+  /** Connection timeout in seconds (converted to milliseconds at the driver boundary). */
   connectTimeout?: number
+  /** Query/request timeout in seconds (converted to milliseconds at the driver boundary). */
   requestTimeout?: number
   protocol?: SqlProtocol
   /** renderer-only: when false the password is not persisted in the saved connection */
@@ -165,6 +169,7 @@ export interface SqlWorkspaceTab {
   query: string
   context?: { connectionId?: string; database?: string }
   dirty: boolean
+  filePath?: string
   gridQueryState?: SqlGridQueryState
 }
 

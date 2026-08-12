@@ -666,6 +666,45 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     )
   }
 
+  if (execution.results.length > 1) {
+    return (
+      <div data-testid="sql-multi-result" style={{
+        flex: 1, minHeight: 0, overflow: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 10,
+        background: 'var(--bg-secondary)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 9.5 }}>
+          <span>{execution.results.length} result sets · {execution.totalRowCount} rows total</span>
+          {onClear && <button style={{ ...btnStyle, marginLeft: 'auto' }} title="clear results" onClick={onClear}><X size={10} /></button>}
+        </div>
+        {execution.results.map((set, index) => {
+          const height = Math.min(500, Math.max(190, 112 + Math.min(set.rowCount, 14) * 25))
+          const singleExecution: SqlExecutionResult = {
+            ...execution,
+            results: [set],
+            totalRowCount: set.rowCount,
+            truncated: execution.truncated && set.rowCount >= execution.maxRows
+          }
+          return (
+            <section key={index} role="region" aria-label={`Result set ${index + 1}`} style={{
+              height, minHeight: 190, flexShrink: 0, display: 'flex', flexDirection: 'column',
+              borderRadius: 'var(--radius-md)', boxShadow: '0 1px 0 var(--border-subtle)'
+            }}>
+              <div style={{ height: 25, flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 9px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderBottom: 0, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 600 }}>
+                Result set {index + 1} · {set.rowCount} row{set.rowCount === 1 ? '' : 's'}
+              </div>
+              <ResultViewer
+                execution={singleExecution}
+                getResultTableName={() => undefined}
+                onExecuteSql={onExecuteSql}
+                gridQuerySupported={{ supported: false, reason: 'Filtering is available only for a single compatible SELECT result.' }}
+              />
+            </section>
+          )
+        })}
+      </div>
+    )
+  }
+
   // ─── Edit rows ───────────────────────────────────────────────────────────
   const requestDelete = (rowIdx: number) => {
     if (!result || !onDeleteRequest) return

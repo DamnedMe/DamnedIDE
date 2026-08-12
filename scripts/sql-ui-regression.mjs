@@ -4,6 +4,7 @@ import { appendJoinedSelectColumns, appendRelatedJoin, buildExplicitSelect, extr
 import { calculateColumnMetrics, calculateVisibleRange } from '../src/components/sql/sqlGridUtils.ts'
 import { layoutSqlDiagram } from '../src/components/sql/sqlDiagramLayout.ts'
 import { analyzeSqlCompletionContext, extractSqlAliases, stripSqlCommentsAndStrings } from '../src/components/sql/sqlAssistant.ts'
+import { connectPoolWithRetry, normalizeSqlConnectionConfig, parseSqlServerTarget, sqlTimeoutMilliseconds } from '../src/shared/sqlConnection.ts'
 
 const fk = {
   table: 'dbo.Child',
@@ -18,6 +19,40 @@ assert.equal(assistantContext.clause, 'select')
 assert.deepEqual([...assistantContext.aliases], [['m', 'dbo.MassiveRows'], ['p', 'dbo.Parent']])
 assert.deepEqual([...extractSqlAliases("SELECT fake.value FROM dbo.Real AS r -- JOIN dbo.Hidden AS h\nWHERE r.Name = 'FROM dbo.StringTable s'")], [['r', 'dbo.Real']])
 assert.equal(stripSqlCommentsAndStrings("SELECT 'JOIN dbo.Nope n' -- FROM x\nFROM dbo.Real r").includes('dbo.Nope'), false)
+
+assert.deepEqual(parseSqlServerTarget('(localdb)\\MSSQLLocalDB'), { host: '(localdb)', instanceName: 'MSSQLLocalDB', isLocalDb: true })
+assert.deepEqual(parseSqlServerTarget('DEV-SQL\\SQLEXPRESS'), { host: 'DEV-SQL', instanceName: 'SQLEXPRESS', isLocalDb: false })
+assert.deepEqual(parseSqlServerTarget('tcp:sql.example.test,1444'), { host: 'sql.example.test', port: 1444, isLocalDb: false })
+assert.deepEqual(normalizeSqlConnectionConfig({ server: '(localdb)\\MSSQLLocalDB', encrypt: true, port: 1433 }), {
+  server: '(localdb)\\MSSQLLocalDB', encrypt: false, port: undefined
+})
+assert.equal(sqlTimeoutMilliseconds(15, 15_000), 15_000)
+assert.equal(sqlTimeoutMilliseconds(30, 30_000), 30_000)
+assert.equal(sqlTimeoutMilliseconds(undefined, 15_000), 15_000)
+assert.equal(sqlTimeoutMilliseconds(0, 15_000), 15_000)
+
+let poolAttempts = 0
+let failedPoolClosed = false
+const recoveredPool = await connectPoolWithRetry(() => {
+  const attempt = ++poolAttempts
+  return {
+    async connect() {
+      if (attempt === 1) throw Object.assign(new Error('Connection lost - write EPIPE'), { code: 'EPIPE' })
+      return this
+    },
+    async close() { if (attempt === 1) failedPoolClosed = true }
+  }
+})
+assert.equal(poolAttempts, 2)
+assert.equal(failedPoolClosed, true)
+assert.ok(recoveredPool)
+
+let authAttempts = 0
+await assert.rejects(() => connectPoolWithRetry(() => ({
+  async connect() { authAttempts++; throw Object.assign(new Error('Login failed'), { code: 'ELOGIN' }) },
+  async close() {}
+})), /Login failed/)
+assert.equal(authAttempts, 1)
 
 const explicitSelect = buildExplicitSelect('dbo.Child', ['Id', 'ParentId'], 1000)
 assert.match(explicitSelect, /SELECT TOP \(1000\)[\s\S]*\[Child\]\.\[Id\][\s\S]*\[Child\]\.\[ParentId\]/)

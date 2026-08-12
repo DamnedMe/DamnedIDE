@@ -201,6 +201,9 @@ const CLAUSE_KEYWORDS: Record<SqlCompletionClause, string[]> = {
 }
 
 const SQL_SNIPPETS: Array<{ label: string; detail: string; insertText: string }> = [
+  { label: 'sp_help', detail: 'Show object metadata in multiple result sets', insertText: "EXEC sys.sp_help N'${1:schema.object}';" },
+  { label: 'sp_helptext', detail: 'Show the definition of a SQL object', insertText: "EXEC sys.sp_helptext N'${1:schema.object}';" },
+  { label: 'sp_who2', detail: 'Show current SQL Server sessions', insertText: 'EXEC sys.sp_who2;' },
   { label: 'cte', detail: 'Common table expression', insertText: 'WITH ${1:cte_name} AS (\n\tSELECT ${2:*}\n\tFROM ${3:schema.table}\n)\nSELECT *\nFROM ${1:cte_name};' },
   { label: 'trycatch', detail: 'T-SQL TRY/CATCH', insertText: "BEGIN TRY\n\t${1:-- statement}\nEND TRY\nBEGIN CATCH\n\tTHROW;\nEND CATCH;" },
   { label: 'transaction', detail: 'Safe transaction block', insertText: "BEGIN TRANSACTION;\nBEGIN TRY\n\t${1:-- statement}\n\tCOMMIT;\nEND TRY\nBEGIN CATCH\n\tIF @@TRANCOUNT > 0 ROLLBACK;\n\tTHROW;\nEND CATCH;" },
@@ -318,7 +321,7 @@ export function registerSqlAssistant(
         range
       })
 
-      if (analysis.clause === 'statement' || analysis.clause === 'select') {
+      if (analysis.clause === 'statement' || analysis.clause === 'select' || analysis.clause === 'exec') {
         for (const snippet of SQL_SNIPPETS) suggestions.push({
           label: snippet.label,
           detail: snippet.detail,

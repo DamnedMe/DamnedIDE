@@ -20,10 +20,21 @@ async function installElectronMock(page: Page) {
 
     const emptyAsync = async () => undefined
     const sql = {
-      connect: async (config: { connectionId?: string }) => config.connectionId || connectionId,
+      connect: async (config: { connectionId?: string; server?: string; encrypt?: boolean; port?: number }) => {
+        ;(window as unknown as { __sqlMock: { connectConfigs: unknown[] } }).__sqlMock.connectConfigs.push(config)
+        return config.connectionId || connectionId
+      },
       disconnect: emptyAsync,
       query: async (_connection: string, query: string, queryId = 'mock-query') => {
         await new Promise(resolve => setTimeout(resolve, 150))
+        if (/\bsp_help\b/i.test(query)) {
+          const results = [
+            { columns: ['Name', 'Owner', 'Type'], rows: [{ Name: 'MassiveRows', Owner: 'dbo', Type: 'user table' }], rowCount: 1, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [] },
+            { columns: ['Column_name', 'Type', 'Nullable'], rows: [{ Column_name: 'Id', Type: 'int', Nullable: 'no' }, { Column_name: 'Code', Type: 'nvarchar', Nullable: 'yes' }], rowCount: 2, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [] },
+            { columns: ['Index_name', 'Index_description'], rows: [{ Index_name: 'PK_MassiveRows', Index_description: 'clustered, unique, primary key' }], rowCount: 1, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [] }
+          ]
+          return { queryId, results, totalRowCount: 4, truncated: false, maxRows: 250000, elapsedMs: 8, canceled: false, rowsAffected: [] }
+        }
         if (/MassiveRows/i.test(query)) {
           const baseColumns = ['Id', 'ParentId', 'Code', 'Region', 'City', 'Street', 'PostalCode', 'Amount', 'IsActive', 'CreatedAt', 'UpdatedAt', 'Notes']
           const joined = /JOIN\s+\[dbo\]\.\[Parent\]\s+AS\s+\[fk1\]/i.test(query)
@@ -211,15 +222,23 @@ async function installElectronMock(page: Page) {
         sql,
         updater: { install: async () => true, onDownloaded: () => () => {} },
         window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
-        dialog: { openFolder: async () => null },
+        dialog: {
+          openFolder: async () => null,
+          saveSqlQuery: async (defaultName: string, content: string) => {
+            ;(window as unknown as { __sqlMock: { savedQueries: Array<{ defaultName: string; content: string }> } }).__sqlMock.savedQueries.push({ defaultName, content })
+            return `C:\\mock\\${defaultName}`
+          }
+        },
         ado: { connect: async () => true },
         clipboard: { write(text: string) { navigator.clipboard.writeText(text).catch(() => {}) } }
       }
     })
-    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number } }).__sqlMock = {
+    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }> } }).__sqlMock = {
       queries: [],
       completedQueries: [],
-      diagramCalls: 0
+      diagramCalls: 0,
+      connectConfigs: [],
+      savedQueries: []
     }
     const originalQuery = sql.query
     sql.query = async (connection: string, query: string, queryId?: string) => {

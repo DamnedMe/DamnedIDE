@@ -547,7 +547,7 @@ export function SqlPanel() {
             <small>Query workspace</small>
           </span>
           <span className={`sql-active-context ${activeConnectionInfo?.isConnected ? 'is-online' : 'is-offline'}`}>
-            <span className="sql-status-light" role="status" aria-label={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} title={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} />
+            <span className="sql-status-light" role="img" aria-label={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} title={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} />
             <span className="sql-active-context__item">
               <small>Active connection</small>
               <strong>{activeConnectionInfo?.server || 'No connection'}</strong>

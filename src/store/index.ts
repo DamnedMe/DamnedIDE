@@ -2,7 +2,12 @@ import { create } from 'zustand'
 import { WorktreeEntry, WorktreeWithStatus } from '../types/worktree'
 import { GitStatus, GitFileStatus, BranchInfo, CommitInfo } from '../types/git'
 import { AdoConnection, AdoWorkItem, AdoPullRequest } from '../types/ado'
-import { SqlConnection, SqlQueryResult } from '../types/sql'
+import {
+  SqlConnection,
+  SqlExecutionResult,
+  SqlColumnInfo,
+  SqlRecentConnection
+} from '../types/sql'
 
 interface UIState {
   activePanel: string
@@ -73,17 +78,24 @@ function saveAdoConnection(conn: AdoConnection | null) {
 interface SqlState {
   connections: SqlConnection[]
   activeConnection: string | null
-  queryResults: SqlQueryResult | null
+  activeDatabases: Record<string, string>
+  execution: SqlExecutionResult | null
+  isRunning: boolean
+  runningQueryId: string | null
   isLoading: boolean
   addConnection: (conn: SqlConnection) => void
   updateConnection: (id: string, patch: Partial<SqlConnection>) => void
   removeConnection: (id: string) => void
   setActiveConnection: (id: string | null) => void
-  setQueryResults: (results: SqlQueryResult | null) => void
+  setActiveDatabase: (connId: string, database: string) => void
+  setExecution: (execution: SqlExecutionResult | null) => void
+  setRunning: (queryId: string | null) => void
   setLoading: (loading: boolean) => void
 }
 
 const SQL_CONNECTIONS_KEY = 'damnedide_sql_connections'
+const SQL_RECENT_KEY = 'damnedide_sql_recent'
+const SQL_RECENT_MAX = 10
 
 function loadSqlConnections(): SqlConnection[] {
   try {
@@ -91,7 +103,12 @@ function loadSqlConnections(): SqlConnection[] {
     if (raw) {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed)) {
-        return parsed.map((c) => ({ ...c, isConnected: false }))
+        return parsed.map((c) => ({
+          authType: 'sql',
+          ...c,
+          isConnected: false,
+          lastConnected: typeof c.lastConnected === 'number' ? c.lastConnected : undefined
+        }))
       }
     }
   } catch { /* ignore */ }
@@ -101,6 +118,23 @@ function loadSqlConnections(): SqlConnection[] {
 function saveSqlConnections(connections: SqlConnection[]) {
   try {
     localStorage.setItem(SQL_CONNECTIONS_KEY, JSON.stringify(connections))
+  } catch { /* ignore */ }
+}
+
+function loadSqlRecent(): SqlRecentConnection[] {
+  try {
+    const raw = localStorage.getItem(SQL_RECENT_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed.slice(0, SQL_RECENT_MAX)
+    }
+  } catch { /* ignore */ }
+  return []
+}
+
+function saveSqlRecent(list: SqlRecentConnection[]) {
+  try {
+    localStorage.setItem(SQL_RECENT_KEY, JSON.stringify(list.slice(0, SQL_RECENT_MAX)))
   } catch { /* ignore */ }
 }
 
@@ -167,7 +201,10 @@ export const useAdoStore = create<AdoState>((set) => ({
 export const useSqlStore = create<SqlState>((set) => ({
   connections: loadSqlConnections(),
   activeConnection: null,
-  queryResults: null,
+  activeDatabases: {},
+  execution: null,
+  isRunning: false,
+  runningQueryId: null,
   isLoading: false,
   addConnection: (conn) => set((s) => {
     const connections = [...s.connections, conn]
@@ -188,8 +225,69 @@ export const useSqlStore = create<SqlState>((set) => ({
     }
   }),
   setActiveConnection: (id) => set({ activeConnection: id }),
-  setQueryResults: (results) => set({ queryResults: results }),
+  setActiveDatabase: (connId, database) => set((s) => ({
+    activeDatabases: { ...s.activeDatabases, [connId]: database }
+  })),
+  setExecution: (execution) => set({ execution }),
+  setRunning: (runningQueryId) => set({ isRunning: !!runningQueryId, runningQueryId }),
   setLoading: (loading) => set({ isLoading: loading })
+}))
+
+// ─── SQL Object Explorer cache ──────────────────────────────────────────────
+// Keys: `<connId>:databases`, `<connId>:tables:<db>`, `<connId>:views:<db>`,
+//       `<connId>:procedures:<db>`, `<connId>:columns:<db>:<table>`
+export interface SqlExplorerEntry {
+  loaded: boolean
+  loading: boolean
+  error?: string
+  data: string[] | SqlColumnInfo[] | null
+}
+
+interface SqlExplorerState {
+  cache: Record<string, SqlExplorerEntry>
+  setEntry: (key: string, entry: Partial<SqlExplorerEntry>) => void
+  invalidate: (key: string) => void
+  invalidateConnection: (connId: string) => void
+  clear: () => void
+}
+
+export const useSqlExplorerStore = create<SqlExplorerState>((set) => ({
+  cache: {},
+  setEntry: (key, entry) => set((s) => ({
+    cache: { ...s.cache, [key]: { ...(s.cache[key] || { loaded: false, loading: false, data: null }), ...entry } }
+  })),
+  invalidate: (key) => set((s) => {
+    const cache = { ...s.cache }
+    delete cache[key]
+    return { cache }
+  }),
+  invalidateConnection: (connId) => set((s) => {
+    const cache: Record<string, SqlExplorerEntry> = {}
+    for (const k of Object.keys(s.cache)) {
+      if (!k.startsWith(`${connId}:`)) cache[k] = s.cache[k]
+    }
+    return { cache }
+  }),
+  clear: () => set({ cache: {} })
+}))
+
+interface SqlRecentState {
+  recent: SqlRecentConnection[]
+  addRecent: (c: SqlRecentConnection) => void
+  clearRecent: () => void
+}
+
+export const useSqlRecentStore = create<SqlRecentState>((set) => ({
+  recent: loadSqlRecent(),
+  addRecent: (c) => set((s) => {
+    const next = [c, ...s.recent.filter(r => r.server !== c.server || r.database !== c.database)].slice(0, SQL_RECENT_MAX)
+    saveSqlRecent(next)
+    return { recent: next }
+  }),
+  clearRecent: () => {
+    saveSqlRecent([])
+    return { recent: [] }
+  }
 }))
 
 export interface ThemeColorConfig {

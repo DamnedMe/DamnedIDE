@@ -7,6 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:sql-e2e": "vite --config vite.sql-e2e.config.ts --host 127.0.0.1 --port 4173",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "package": "electron-vite build && electron-builder --config electron-builder.yml",
@@ -14,10 +15,16 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test:sql-ui": "node --experimental-strip-types scripts/sql-ui-regression.mjs",
+    "test:sql-playwright": "playwright test --config playwright.config.ts",
+    "test:sql": "npm run test:sql-ui && npm run test:sql-playwright",
+    "test:sql-playwright:report": "playwright show-report playwright-report/sql",
     "lint": "eslint . --ext .ts,.tsx"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.1",
     "@monaco-editor/react": "^4.6.0",
+    "@tediousjs/connection-string": "^0.5.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "electron-updater": "^6.8.9",
@@ -27,6 +34,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/mssql": "^12.3.0",
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.55",
@@ -40,5 +48,9 @@
     "sharp": "^0.35.3",
     "typescript": "^5.3.3",
     "vite": "^5.1.0"
+  },
+  "allowScripts": {
+    "electron@28.3.3": true,
+    "esbuild@0.21.5": true
   }
 }

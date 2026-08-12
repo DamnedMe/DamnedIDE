@@ -676,7 +676,7 @@ export function DatabaseExplorer({
                 </span>
                 <span
                   className={`sql-status-light sql-status-light--explorer ${conn.isConnected ? 'is-online' : 'is-offline'}`}
-                  role="status"
+                  role="img"
                   aria-label={`${conn.label} ${conn.isConnected ? 'online' : 'offline'}`}
                   title={conn.isConnected ? 'Connected' : 'Disconnected'}
                 />

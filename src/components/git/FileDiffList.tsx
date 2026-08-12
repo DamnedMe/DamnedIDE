@@ -1,5 +1,6 @@
 import { GitFileStatus } from '../../types/git'
 import { Plus, Minus, Eye, Check, X } from 'lucide-react'
+import { FileTypeIcon } from '../../utils/file-icon'
 
 interface FileDiffListProps {
   files: GitFileStatus[]
@@ -51,9 +52,10 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
             </span>
             <span style={{
               flex: 1, overflow: 'hidden', textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px',
               color: isActive ? 'var(--accent-color)' : 'var(--text-primary)'
             }}>
+              <FileTypeIcon path={f.path} size={11} />
               {f.path}
             </span>
             <div style={{ display: 'flex', gap: '3px', flexShrink: 0, marginLeft: '6px' }}>

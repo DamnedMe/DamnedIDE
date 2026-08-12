@@ -3,6 +3,7 @@ import { PanelContainer } from '../layout/PanelContainer'
 import { ResizableSplitter } from '../layout/ResizableSplitter'
 import { WorktreeList } from './WorktreeList'
 import { WorktreeChanges, type WorktreeChangesHandle } from './WorktreeChanges'
+import { TerminalDock } from '../terminal/TerminalDock'
 import { CompleteWorktreeDialog } from './CompleteWorktreeDialog'
 import { NewWorktreeDialog } from './NewWorktreeDialog'
 import { FileTree } from '../editor/FileTree'
@@ -187,28 +188,32 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
 
   if (!repoPath) {
     return (
-      <PanelContainer title={t('worktree')}>
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', height: '100%', gap: '20px', color: 'var(--text-muted)'
-        }}>
-          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--bg-card)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <FolderOpen size={28} strokeWidth={1} />
+      <PanelContainer>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', flex: 1, minHeight: 0, gap: '20px', color: 'var(--text-muted)'
+          }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--bg-card)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <FolderOpen size={28} strokeWidth={1} />
+            </div>
+            <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
+              <p style={{ margin: '0 0 4px', fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('open a git repository')}</p>
+              <p style={{ margin: 0, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('to manage worktrees')}</p>
+            </div>
+            <button onClick={async () => { const p = await window.electronAPI.dialog.openFolder(); if (p) onRepoSelected(p) }}
+              style={{ padding: '8px 20px', background: 'var(--accent-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+              {t('open repo')}
+            </button>
           </div>
-          <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
-            <p style={{ margin: '0 0 4px', fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('open a git repository')}</p>
-            <p style={{ margin: 0, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('to manage worktrees')}</p>
-          </div>
-          <button onClick={async () => { const p = await window.electronAPI.dialog.openFolder(); if (p) onRepoSelected(p) }}
-            style={{ padding: '8px 20px', background: 'var(--accent-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
-            {t('open repo')}
-          </button>        </div>
+          <TerminalDock repoPath={null} />
+        </div>
       </PanelContainer>
     )
   }
 
   return (
-    <PanelContainer title={t('worktree')}>
+    <PanelContainer>
       <div style={{ height: '100%', display: 'flex', gap: '4px', overflow: 'hidden' }}>
         {ToolStrip}
         {selectedWorktree ? (
@@ -279,7 +284,12 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                     </div>
                   )}
                 </div>
-                <WorktreeChanges worktreePath={selectedWorktree} checkMarks={checkMarks[selectedWorktree] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedWorktree, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef} />
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <div style={{ flex: 1, minHeight: 0 }}>
+                    <WorktreeChanges worktreePath={selectedWorktree} checkMarks={checkMarks[selectedWorktree] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedWorktree, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef} />
+                  </div>
+                  <TerminalDock repoPath={selectedWorktree} />
+                </div>
               </ResizableSplitter>
           </div>
           ) : (

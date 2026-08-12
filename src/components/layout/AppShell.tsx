@@ -31,7 +31,9 @@ export function AppShell({ titleBar, sidebar, statusBar, children }: AppShellPro
           flex: 1,
           minWidth: 0,
           overflow: 'hidden',
-          padding: sidebar ? '24px 28px' : '20px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: sidebar ? '8px 10px' : '6px 8px',
           background: 'var(--bg-secondary)'
         }}>
           {children}

@@ -5,6 +5,7 @@ import { ZoomControls } from './CodeEditor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useUIStore, useSettingsStore, useDiffStore } from '../../store'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
+import { adjustFontSize, attachWheelZoom, resetFontSize } from '../../utils/editor-zoom'
 
 export interface DiffViewerHandle {
   getVisibleLine: () => number | null
@@ -26,8 +27,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   // zoom and view type are persisted so they survive file switches (diff remounts)
   const sideBySide = useDiffStore(s => s.sideBySide)
   const setSideBySide = useDiffStore(s => s.setSideBySide)
-  const fontSize = useDiffStore(s => s.fontSize)
-  const setFontSize = useDiffStore(s => s.setFontSize)
+  const fontSize = useSettingsStore(s => s.settings.fontSize)
   const diffEditorRef = useRef<Parameters<DiffOnMount>[0] | null>(null)
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null)
   const theme = useUIStore(s => s.theme)
@@ -43,21 +43,18 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
     if (monacoRef.current) applyEditorTheme(monacoRef.current)
   }, [theme, themeColors])
 
-  const updateFontSize = (f: number) => {
-    const d = diffEditorRef.current
-    d?.getModifiedEditor()?.updateOptions({ fontSize: f })
-    d?.getOriginalEditor()?.updateOptions({ fontSize: f })
-  }
-
-  const zoomIn = () => { const f = Math.min(fontSize + 1, 28); setFontSize(f); updateFontSize(f) }
-  const zoomOut = () => { const f = Math.max(fontSize - 1, 6); setFontSize(f); updateFontSize(f) }
-  const zoomReset = () => { setFontSize(12.5); updateFontSize(12.5) }
+  const zoomIn = () => adjustFontSize(-1)
+  const zoomOut = () => adjustFontSize(1)
+  const zoomReset = () => resetFontSize()
 
   const handleDiffMount: DiffOnMount = (editor, monaco) => {
     diffEditorRef.current = editor
     monacoRef.current = monaco
     applyEditorTheme(monaco)
     registerCSharpHover(monaco)
+    // Ctrl/Cmd+wheel scales the global font setting instead of Monaco's internal zoom
+    attachWheelZoom(editor.getModifiedEditor()?.getDomNode())
+    attachWheelZoom(editor.getOriginalEditor()?.getDomNode())
     if (filePath) {
       const modEd = editor.getModifiedEditor()
       const origEd = editor.getOriginalEditor()
@@ -251,7 +248,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
             fontSize,
             fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
             fontLigatures: false,
-            mouseWheelZoom: true,
+            mouseWheelZoom: false,
             lineNumbers: 'on',
             renderSideBySide: sideBySide,
             useInlineViewWhenSpaceIsLimited: true,

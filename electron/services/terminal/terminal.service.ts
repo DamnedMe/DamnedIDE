@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, ChildProcess, execSync } from 'child_process'
 import { BrowserWindow } from 'electron'
 
 export type TerminalType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
@@ -12,12 +12,29 @@ interface TerminalSession {
 const sessions = new Map<string, TerminalSession>()
 let nextId = 1
 
+let pwshChecked = false
+let pwshFound = false
+
+function pwshAvailable(): boolean {
+  if (!pwshChecked) {
+    pwshChecked = true
+    try {
+      execSync('where pwsh.exe', { stdio: 'ignore', windowsHide: true })
+      pwshFound = true
+    } catch { /* not installed */ }
+  }
+  return pwshFound
+}
+
 function shellFor(type: TerminalType): { executable: string; args: string[] } {
   switch (type) {
     case 'powershell':
       return { executable: 'powershell.exe', args: ['-NoLogo', '-NoProfile'] }
     case 'pwsh':
-      return { executable: 'pwsh.exe', args: ['-NoLogo', '-NoProfile'] }
+      // PowerShell 7 may not be installed: fall back to Windows PowerShell
+      return pwshAvailable()
+        ? { executable: 'pwsh.exe', args: ['-NoLogo', '-NoProfile'] }
+        : { executable: 'powershell.exe', args: ['-NoLogo', '-NoProfile'] }
     case 'npm':
       return { executable: process.env.ComSpec || 'cmd.exe', args: [] }
     default:
@@ -69,7 +86,7 @@ export function createTerminal(cwd: string, type: TerminalType, targetWindow: Br
 
 export function writeToTerminal(id: string, data: string): void {
   const session = sessions.get(id)
-  if (session && session.process.stdin) {
+  if (session && session.process.stdin && !session.process.stdin.destroyed) {
     session.process.stdin.write(data)
   }
 }

@@ -101,15 +101,37 @@ internal static class BridgeHandler
         }
     }
 
-    // Builds the in-memory symbol index: every source file under the solution root is
-    // parsed in parallel (no MSBuild evaluation) and the compilation is warmed, so the
-    // first semantic query is already instant.
+    // name index (identifier → file+offset) built once at open, used for fast
+    // reference/implementation lookups with parallel semantic binding
+    private static Dictionary<string, List<(string File, int Offset)>> _nameIndex = new(StringComparer.OrdinalIgnoreCase);
+
+    // Builds the in-memory symbol index: one Roslyn project per .csproj (real project
+    // references from the csproj XML + per-project NuGet references from obj/assets),
+    // files parsed in parallel, compilations warmed in parallel. Small compilations →
+    // fast navigation and precise cross-project resolution.
     private static async Task<BridgeResponse> OpenAsync(BridgeRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Solution))
             return new BridgeResponse { Id = req.Id, Ok = false, Error = "no solution" };
 
         var root = Path.GetDirectoryName(req.Solution)!;
+        var projects = DiscoverProjects(root);
+        var sdkRefs = SdkReferences();
+        _refsComplete = false;
+
+        // per-project metadata references (SDK + NuGet from that project's assets)
+        var projRefs = new Dictionary<string, List<MetadataReference>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in projects)
+        {
+            var refs = new List<MetadataReference>(sdkRefs);
+            var assets = Path.Combine(p.Dir, "obj", "project.assets.json");
+            var nuget = NuGetReferencesFromAssets(assets);
+            if (nuget.Count > 0) _refsComplete = true;
+            refs.AddRange(nuget);
+            projRefs[p.Csproj] = refs;
+        }
+
+        // parse every source file in parallel
         var files = EnumerateSourceFiles(root).ToArray();
         var parsed = new (string Path, SyntaxTree? Tree)[files.Length];
         Parallel.For(0, files.Length, i =>
@@ -122,34 +144,159 @@ internal static class BridgeHandler
             catch { /* unreadable */ }
         });
 
+        // map each file to its project (longest directory prefix)
+        var fileProjects = new Dictionary<string, ProjDef>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in files)
+        {
+            var dir = Path.GetDirectoryName(f) ?? "";
+            ProjDef? best = null;
+            var bestLen = -1;
+            foreach (var p in projects)
+            {
+                if (dir.Length >= p.Dir.Length &&
+                    dir.StartsWith(p.Dir, StringComparison.OrdinalIgnoreCase) &&
+                    p.Dir.Length > bestLen)
+                {
+                    best = p;
+                    bestLen = p.Dir.Length;
+                }
+            }
+            if (best != null) fileProjects[f] = best;
+        }
+
         var ws = new AdhocWorkspace();
-        var projInfo = ProjectInfo.Create(
-            ProjectId.CreateNewId(), VersionStamp.Create(), "Fast", "Fast", LanguageNames.CSharp,
-            filePath: null,
-            metadataReferences: BuildReferences(root));
-        ws.AddProject(projInfo);
-        var project = ws.CurrentSolution.GetProject(projInfo.Id)!;
+        var idByCsproj = new Dictionary<string, ProjectId>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in projects) idByCsproj[p.Csproj] = ProjectId.CreateNewId();
+        // add ALL projects first (references are applied after, otherwise Roslyn drops them)
+        foreach (var p in projects)
+        {
+            var info = ProjectInfo.Create(
+                idByCsproj[p.Csproj], VersionStamp.Create(),
+                Path.GetFileNameWithoutExtension(p.Csproj), Path.GetFileNameWithoutExtension(p.Csproj),
+                LanguageNames.CSharp,
+                filePath: p.Csproj,
+                metadataReferences: projRefs[p.Csproj]);
+            ws.AddProject(info);
+        }
+        var sol = ws.CurrentSolution;
+        foreach (var p in projects)
+        {
+            var refs = ParseProjectReferences(p.Csproj)
+                .Where(r => idByCsproj.ContainsKey(r))
+                .Select(r => new ProjectReference(idByCsproj[r]))
+                .ToArray();
+            if (refs.Length > 0) sol = sol.WithProjectReferences(idByCsproj[p.Csproj], refs);
+        }
+        ws.TryApplyChanges(sol);
+        // synthetic global usings: the SDK-generated GlobalUsings.g.cs lives in obj/ and
+        // is excluded from the scan, so implicit usings would break web projects
+        const string GlobalUsings = """
+            global using System;
+            global using System.Collections.Generic;
+            global using System.IO;
+            global using System.Linq;
+            global using System.Net.Http;
+            global using System.Threading;
+            global using System.Threading.Tasks;
+            global using Microsoft.AspNetCore.Builder;
+            global using Microsoft.AspNetCore.Hosting;
+            global using Microsoft.AspNetCore.Http;
+            global using Microsoft.Extensions.Configuration;
+            global using Microsoft.Extensions.DependencyInjection;
+            global using Microsoft.Extensions.Hosting;
+            global using Microsoft.Extensions.Logging;
+            """;
+        foreach (var p in projects)
+        {
+            var proj = sol.GetProject(idByCsproj[p.Csproj])!;
+            sol = proj.AddDocument("_GlobalUsings.cs", GlobalUsings).Project.Solution;
+        }
         foreach (var (path, tree) in parsed)
         {
             if (tree == null) continue;
-            project = project.AddDocument(Path.GetFileName(path), tree.GetRoot(), filePath: path).Project;
+            if (!fileProjects.TryGetValue(path, out var p)) continue;
+            var proj = sol.GetProject(idByCsproj[p.Csproj])!;
+            sol = proj.AddDocument(Path.GetFileName(path), tree.GetRoot(), filePath: path).Project.Solution;
         }
-        _solution = project.Solution;
+        _solution = sol;
         IndexDocuments();
 
-        // warm the compilation so the first query does not pay the one-time bind cost
-        foreach (var p in _solution.Projects)
+        // build the identifier name index (parallel) for fast reference/implementation lookups
+        var index = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentBag<(string File, int Offset)>>(StringComparer.OrdinalIgnoreCase);
+        Parallel.For(0, parsed.Length, i =>
         {
-            var c = await p.GetCompilationAsync();
-            Console.Error.WriteLine($"[roslyn] compilazione pronta: {c?.SyntaxTrees.Count() ?? 0} trees");
-        }
+            var (path, tree) = parsed[i];
+            if (tree == null) return;
+            foreach (var tok in tree.GetRoot().DescendantTokens())
+            {
+                if (!tok.IsKind(SyntaxKind.IdentifierToken)) continue;
+                var t = tok.Text;
+                if (t.Length < 2 || t.Length > 80) continue;
+                index.GetOrAdd(t, _ => new System.Collections.Concurrent.ConcurrentBag<(string, int)>()).Add((path, tok.SpanStart));
+            }
+        });
+        _nameIndex = index.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.OrdinalIgnoreCase);
+        Console.Error.WriteLine($"[roslyn] name index: {_nameIndex.Count} nomi");
+
+        // warm all compilations in parallel so the first query is instant
+        var compTasks = _solution.Projects.Select(p => p.GetCompilationAsync()).ToArray();
+        await Task.WhenAll(compTasks);
+        Console.Error.WriteLine($"[roslyn] {compTasks.Length} progetti compilati, docs={_documents.Count}");
 
         return new BridgeResponse
         {
             Id = req.Id,
             Ok = true,
-            Symbol = $"docs={_documents.Count}"
+            Symbol = $"projects={compTasks.Length}, docs={_documents.Count}"
         };
+    }
+
+    private sealed class ProjDef
+    {
+        public string Csproj = "";
+        public string Dir = "";
+    }
+
+    private static List<ProjDef> DiscoverProjects(string root)
+    {
+        var list = new List<ProjDef>();
+        var stack = new Stack<string>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var dir = stack.Pop();
+            IEnumerable<string> subs;
+            try { subs = Directory.EnumerateDirectories(dir); } catch { continue; }
+            foreach (var d in subs)
+            {
+                var name = Path.GetFileName(d);
+                if (name is not (".git" or ".worktrees" or "node_modules" or ".vs" or "bin" or "obj" or "dist" or "out" or "packages"))
+                    stack.Push(d);
+            }
+            IEnumerable<string> files;
+            try { files = Directory.EnumerateFiles(dir, "*.csproj"); } catch { continue; }
+            foreach (var f in files) list.Add(new ProjDef { Csproj = f, Dir = dir });
+        }
+        return list;
+    }
+
+    private static List<string> ParseProjectReferences(string csproj)
+    {
+        var refs = new List<string>();
+        try
+        {
+            var doc = XDocument.Load(csproj);
+            var csprojDir = Path.GetDirectoryName(csproj) ?? "";
+            foreach (var pr in doc.Descendants().Where(e => e.Name.LocalName == "ProjectReference"))
+            {
+                var inc = pr.Attribute("Include")?.Value;
+                if (string.IsNullOrEmpty(inc)) continue;
+                var full = Path.GetFullPath(Path.Combine(csprojDir, inc));
+                if (!refs.Any(r => string.Equals(r, full, StringComparison.OrdinalIgnoreCase))) refs.Add(full);
+            }
+        }
+        catch { /* malformed csproj */ }
+        return refs;
     }
 
     private static readonly HashSet<string> SkipDirs = new(StringComparer.OrdinalIgnoreCase)
@@ -178,95 +325,85 @@ internal static class BridgeHandler
 
     private static List<MetadataReference>? _sdkRefs;
 
-    // BCL references from the running runtime, so `string`, `Task`, `Guid`… resolve.
+    // BCL references from the running runtime + ASP.NET Core shared framework, so
+    // `string`, `Task`, `Guid`, `ControllerBase`… resolve in web projects too.
     private static List<MetadataReference> SdkReferences()
     {
         if (_sdkRefs != null) return _sdkRefs;
         var refs = new List<MetadataReference>();
-        var dir = Path.GetDirectoryName(typeof(object).Assembly.Location);
-        if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+        var coreDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        if (!string.IsNullOrEmpty(coreDir) && Directory.Exists(coreDir))
         {
-            foreach (var dll in Directory.EnumerateFiles(dir, "*.dll"))
+            foreach (var dll in Directory.EnumerateFiles(coreDir, "*.dll"))
             {
-                try { refs.Add(MetadataReference.CreateFromFile(dll)); } catch { /* skip */ }
+                try { refs.Add(MetadataReference.CreateFromFile(dll)); } catch { /* native dlls */ }
+            }
+            var sharedDir = Directory.GetParent(coreDir)?.Parent?.FullName; // ...\shared
+            if (sharedDir != null)
+            {
+                var aspBase = Path.Combine(sharedDir, "Microsoft.AspNetCore.App");
+                var aspVer = Directory.Exists(aspBase)
+                    ? Directory.EnumerateDirectories(aspBase).OrderByDescending(d => d).FirstOrDefault()
+                    : null;
+                if (aspVer != null)
+                {
+                    foreach (var dll in Directory.EnumerateFiles(aspVer, "*.dll"))
+                    {
+                        try { refs.Add(MetadataReference.CreateFromFile(dll)); } catch { /* skip */ }
+                    }
+                }
             }
         }
         _sdkRefs = refs;
         return refs;
     }
 
-    // Real NuGet references from `obj/project.assets.json` under the solution root:
+    private static readonly HashSet<string> _seenRefs = new(StringComparer.OrdinalIgnoreCase);
+
+    // Real NuGet references from ONE `obj/project.assets.json`:
     // compile assemblies live under `targets.{tfm}.{pkg}.compile`, package folders in
     // `packageFolders`, package relative paths in `libraries.{pkg}.path`.
-    private static List<MetadataReference> NuGetReferences(string root)
+    private static List<MetadataReference> NuGetReferencesFromAssets(string assetsPath)
     {
         var refs = new List<MetadataReference>();
-        var packageFolders = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        var stack = new Stack<string>();
-        stack.Push(root);
-        while (stack.Count > 0)
+        if (!File.Exists(assetsPath)) return refs;
+        try
         {
-            var dir = stack.Pop();
-            IEnumerable<string> subs;
-            try { subs = Directory.EnumerateDirectories(dir); } catch { continue; }
-            foreach (var d in subs)
+            using var doc = JsonDocument.Parse(File.ReadAllText(assetsPath));
+            var r = doc.RootElement;
+            var packageFolders = new List<string>();
+            if (r.TryGetProperty("packageFolders", out var pf))
+                foreach (var p in pf.EnumerateObject())
+                    if (!packageFolders.Contains(p.Name)) packageFolders.Add(p.Name);
+            if (!r.TryGetProperty("targets", out var targets)) return refs;
+            foreach (var tfm in targets.EnumerateObject())
             {
-                var name = Path.GetFileName(d);
-                if (name is not (".git" or ".worktrees" or "node_modules" or ".vs" or "bin")) stack.Push(d);
-            }
-            IEnumerable<string> assets;
-            try { assets = Directory.EnumerateFiles(dir, "project.assets.json"); } catch { continue; }
-            foreach (var assetsPath in assets)
-            {
-                try
+                foreach (var lib in tfm.Value.EnumerateObject())
                 {
-                    using var doc = JsonDocument.Parse(File.ReadAllText(assetsPath));
-                    var r = doc.RootElement;
-                    if (r.TryGetProperty("packageFolders", out var pf))
-                        foreach (var p in pf.EnumerateObject())
-                            if (!packageFolders.Contains(p.Name)) packageFolders.Add(p.Name);
-                    if (!r.TryGetProperty("targets", out var targets)) continue;
-                    foreach (var tfm in targets.EnumerateObject())
+                    var val = lib.Value;
+                    if (!val.TryGetProperty("compile", out var comp)) continue;
+                    var libRel = lib.Name;
+                    if (r.TryGetProperty("libraries", out var libMeta) &&
+                        libMeta.TryGetProperty(lib.Name, out var meta) &&
+                        meta.TryGetProperty("path", out var pp))
+                        libRel = pp.GetString() ?? lib.Name;
+                    foreach (var entry in comp.EnumerateObject())
                     {
-                        foreach (var lib in tfm.Value.EnumerateObject())
+                        var rel = entry.Name;
+                        if (string.IsNullOrEmpty(rel) || rel == "_._") continue;
+                        foreach (var folder in packageFolders)
                         {
-                            var val = lib.Value;
-                            if (!val.TryGetProperty("compile", out var comp)) continue;
-                            var libRel = lib.Name;
-                            if (r.TryGetProperty("libraries", out var libMeta) &&
-                                libMeta.TryGetProperty(lib.Name, out var meta) &&
-                                meta.TryGetProperty("path", out var pp))
-                                libRel = pp.GetString() ?? lib.Name;
-                            foreach (var entry in comp.EnumerateObject())
-                            {
-                                var rel = entry.Name;
-                                if (string.IsNullOrEmpty(rel) || rel == "_._") continue;
-                                foreach (var folder in packageFolders)
-                                {
-                                    var full = Path.GetFullPath(Path.Combine(folder, libRel, rel));
-                                    if (!File.Exists(full)) continue;
-                                    if (!seen.Add(full)) break;
-                                    try { refs.Add(MetadataReference.CreateFromFile(full)); } catch { }
-                                    break;
-                                }
-                            }
+                            var full = Path.GetFullPath(Path.Combine(folder, libRel, rel));
+                            if (!File.Exists(full)) continue;
+                            if (!_seenRefs.Add(full)) break;
+                            try { refs.Add(MetadataReference.CreateFromFile(full)); } catch { }
+                            break;
                         }
                     }
                 }
-                catch { /* skip malformed assets */ }
             }
         }
-        return refs;
-    }
-
-    private static List<MetadataReference> BuildReferences(string root)
-    {
-        var refs = new List<MetadataReference>(SdkReferences());
-        var nuget = NuGetReferences(root);
-        _refsComplete = nuget.Count > 0;
-        refs.AddRange(nuget);
+        catch { /* skip malformed assets */ }
         return refs;
     }
 
@@ -443,30 +580,136 @@ internal static class BridgeHandler
         if (symbol == null) return res;
         res.Symbol = symbol.Name;
 
-        IEnumerable<Location>? locations = req.Cmd switch
+        var targets = req.Cmd switch
         {
-            "definition" => symbol.Locations.Where(l => l.IsInSource),
-            "implementation" => (await SymbolFinder.FindImplementationsAsync(symbol, _solution))
-                .SelectMany(i => i.Locations).Where(l => l.IsInSource),
-            _ => (await SymbolFinder.FindReferencesAsync(symbol, _solution))
-                .SelectMany(r => r.Locations.Select(l => l.Location)).Where(l => l.IsInSource)
+            "definition" => symbol.Locations
+                .Where(l => l.IsInSource)
+                .Select(ToTarget)
+                .ToList(),
+            "implementation" => await FindImplementationsFastAsync(symbol),
+            _ => await FindReferencesFastAsync(symbol)
         };
 
-        foreach (var loc in locations)
-        {
-            if (loc.SourceTree == null) continue;
-            var span = loc.GetLineSpan();
-            res.Targets.Add(new BridgeTarget
-            {
-                File = NormalizePath(loc.SourceTree.FilePath),
-                Line = span.StartLinePosition.Line + 1,
-                Column = span.StartLinePosition.Character + 1
-            });
-        }
-        res.Targets = res.Targets
+        res.Targets = targets
             .GroupBy(t => $"{t.File}|{t.Line}|{t.Column}")
             .Select(g => g.First())
             .ToList();
+        return res;
+    }
+
+    private static BridgeTarget ToTarget(Location loc)
+    {
+        if (loc.SourceTree == null) return new BridgeTarget();
+        var span = loc.GetLineSpan();
+        return new BridgeTarget
+        {
+            File = NormalizePath(loc.SourceTree.FilePath),
+            Line = span.StartLinePosition.Line + 1,
+            Column = span.StartLinePosition.Character + 1
+        };
+    }
+
+    // Binds an identifier token at (file, offset) to its symbol.
+    private static ISymbol? BindAt(string file, int offset)
+    {
+        if (!_documents.TryGetValue(NormalizePath(file), out var doc)) return null;
+        var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
+        var sm = doc.GetSemanticModelAsync().GetAwaiter().GetResult();
+        if (root == null || sm == null) return null;
+        var token = root.FindToken(offset);
+        if (token.IsKind(SyntaxKind.None) || token.Parent == null) return null;
+        for (var n = token.Parent; n != null; n = n.Parent)
+        {
+            try
+            {
+                var s = sm.GetSymbolInfo(n).Symbol;
+                if (s != null) return s;
+                var d = sm.GetDeclaredSymbol(n);
+                if (d != null) return d;
+            }
+            catch { /* not queryable */ }
+        }
+        return null;
+    }
+
+    // Fast references: name-index candidates + parallel semantic binding, with a
+    // SymbolFinder fallback when the index yields nothing. Symbols are compared by
+    // their fully-qualified display string because candidates may live in different
+    // project compilations (SymbolEqualityComparer is compilation-local).
+    private static async Task<List<BridgeTarget>> FindReferencesFastAsync(ISymbol symbol)
+    {
+        var res = new List<BridgeTarget>();
+        var candidates = _nameIndex.TryGetValue(symbol.Name, out var list) ? list : [];
+        var bag = new System.Collections.Concurrent.ConcurrentBag<BridgeTarget>();
+        var targetDisplay = symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+        Parallel.ForEach(candidates, c =>
+        {
+            var s = BindAt(c.File, c.Offset);
+            if (s != null &&
+                string.Equals(s.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), targetDisplay, StringComparison.Ordinal) &&
+                _documents.TryGetValue(NormalizePath(c.File), out var doc))
+            {
+                var tree = doc.GetSyntaxTreeAsync().GetAwaiter().GetResult();
+                var ls = tree?.GetLineSpan(new Microsoft.CodeAnalysis.Text.TextSpan(c.Offset, Math.Min(symbol.Name.Length, 40)));
+                if (ls.HasValue)
+                    bag.Add(new BridgeTarget { File = NormalizePath(c.File), Line = ls.Value.StartLinePosition.Line + 1, Column = ls.Value.StartLinePosition.Character + 1 });
+            }
+        });
+        res.AddRange(bag);
+        if (res.Count == 0)
+        {
+            var refs = await SymbolFinder.FindReferencesAsync(symbol, _solution);
+            res.AddRange(refs.SelectMany(r => r.Locations.Select(l => l.Location)).Where(l => l.IsInSource).Select(ToTarget));
+        }
+        return res;
+    }
+
+    // Fast implementations: candidates with the same name whose containing type
+    // implements the interface member (or overrides the virtual/abstract member).
+    private static async Task<List<BridgeTarget>> FindImplementationsFastAsync(ISymbol symbol)
+    {
+        var res = new List<BridgeTarget>();
+        var ifaceMember = symbol as IMethodSymbol;
+        var iface = symbol.ContainingType is { TypeKind: TypeKind.Interface } ? symbol.ContainingType : null;
+        var candidates = _nameIndex.TryGetValue(symbol.Name, out var list) ? list : [];
+        var bag = new System.Collections.Concurrent.ConcurrentBag<BridgeTarget>();
+        var memberSig = ifaceMember?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+        var symbolSig = symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+        Parallel.ForEach(candidates, c =>
+        {
+            if (BindAt(c.File, c.Offset) is not IMethodSymbol m) return;
+            if (!string.Equals(m.Name, symbol.Name, StringComparison.Ordinal)) return;
+            var isImpl = false;
+            if (iface != null && ifaceMember != null)
+            {
+                var t = m.ContainingType;
+                isImpl = t.TypeKind == TypeKind.Class &&
+                         t.AllInterfaces.Any(i => string.Equals(i.ToDisplayString(), iface.ToDisplayString(), StringComparison.Ordinal)) &&
+                         string.Equals(m.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), memberSig, StringComparison.Ordinal);
+            }
+            else if (m.IsOverride && m.OverriddenMethod != null)
+            {
+                var cur = m.OverriddenMethod;
+                while (cur != null)
+                {
+                    if (string.Equals(cur.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), symbolSig, StringComparison.Ordinal)) { isImpl = true; break; }
+                    cur = cur.OverriddenMethod;
+                }
+            }
+            else if (string.Equals(m.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), symbolSig, StringComparison.Ordinal))
+            {
+                isImpl = true; // the declaration itself
+            }
+            if (!isImpl) return;
+            var loc = m.Locations.FirstOrDefault(l => l.IsInSource);
+            if (loc != null) bag.Add(ToTarget(loc));
+        });
+        res.AddRange(bag);
+        if (res.Count == 0)
+        {
+            var impls = await SymbolFinder.FindImplementationsAsync(symbol, _solution);
+            res.AddRange(impls.SelectMany(i => i.Locations).Where(l => l.IsInSource).Select(ToTarget));
+        }
         return res;
     }
 }

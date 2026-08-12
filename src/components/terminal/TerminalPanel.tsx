@@ -3,6 +3,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { PanelContainer } from '../layout/PanelContainer'
+import { useUIStore, useSettingsStore } from '../../store'
+import { hexToRgba } from '../../utils/color'
 import { Monitor, ExternalLink, Plus, X, ChevronDown } from 'lucide-react'
 
 type ShellType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
@@ -11,6 +13,36 @@ interface Tab {
   id: string
   type: ShellType
   title: string
+}
+
+// xterm theme derived from the IDE theme + primary color (accent)
+function buildTermTheme(accent: string, dark: boolean) {
+  const fg = dark ? '#f0f0f0' : '#111122'
+  const bg = dark ? '#0a0a0a' : '#ffffff'
+  return {
+    background: bg,
+    foreground: fg,
+    cursor: accent,
+    cursorAccent: bg,
+    selectionBackground: hexToRgba(accent, 0.3),
+    selectionForeground: fg,
+    black: dark ? '#1a1a1a' : '#333344',
+    red: dark ? '#ff5566' : '#cc2244',
+    green: dark ? '#00ff77' : '#008855',
+    yellow: dark ? '#ffbb00' : '#bb7700',
+    blue: dark ? '#44bbff' : '#0055dd',
+    magenta: dark ? '#aa55ff' : '#7722ee',
+    cyan: accent,
+    white: fg,
+    brightBlack: dark ? '#666677' : '#8899aa',
+    brightRed: dark ? '#ff7788' : '#dd4455',
+    brightGreen: dark ? '#33ff99' : '#22aa66',
+    brightYellow: dark ? '#ffcc33' : '#cc9922',
+    brightBlue: dark ? '#66ccff' : '#2266dd',
+    brightMagenta: dark ? '#cc77ff' : '#9944ee',
+    brightCyan: accent,
+    brightWhite: dark ? '#ffffff' : '#000000'
+  }
 }
 
 interface TerminalPanelProps {
@@ -28,6 +60,14 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
   const unsubRef = useRef<(() => void) | null>(null)
   const disposedRef = useRef(false)
   let pendingBuffer = ''
+  const accentColor = useSettingsStore(s => s.settings.accentColor)
+  const uiTheme = useUIStore(s => s.theme)
+
+  // keep the terminal theme in sync with the IDE primary color / theme
+  useEffect(() => {
+    const t = xtermRef.current
+    if (t) t.options.theme = buildTermTheme(accentColor, uiTheme === 'dark')
+  }, [accentColor, uiTheme])
 
   const disposeTerm = () => {
     unsubRef.current?.()
@@ -51,27 +91,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     const term = new Terminal({
       fontSize: 12,
       fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
-      theme: {
-        background: '#0a0a0a',
-        foreground: '#f0f0f0',
-        cursor: '#00ffff',
-        black: '#1a1a1a',
-        red: '#ff5566',
-        green: '#00ff77',
-        yellow: '#ffbb00',
-        blue: '#44bbff',
-        magenta: '#aa55ff',
-        cyan: '#00ffff',
-        white: '#f0f0f0',
-        brightBlack: '#666677',
-        brightRed: '#ff7788',
-        brightGreen: '#33ff99',
-        brightYellow: '#ffcc33',
-        brightBlue: '#66ccff',
-        brightMagenta: '#cc77ff',
-        brightCyan: '#33ffff',
-        brightWhite: '#ffffff'
-      },
+      theme: buildTermTheme(accentColor, uiTheme === 'dark'),
       allowProposedApi: true
     })
 
@@ -80,6 +100,41 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
 
     term.open(termRef.current)
     fit.fit()
+
+    // Forward keyboard input directly to the shell as raw bytes. xterm's own
+    // keypress/input chain is unreliable in Electron, so we bypass it: preventDefault
+    // on keydown stops xterm/IME handling and we write the mapped bytes ourselves.
+    const write = (s: string, d: string) => window.electronAPI.terminal.write(s, d)
+    const ta = term.textarea as HTMLTextAreaElement | undefined
+    if (ta) {
+      ta.addEventListener('keydown', (e: KeyboardEvent) => {
+        const sess = sessionRef.current
+        if (!sess) return
+        const key = e.key
+        if ((e.ctrlKey || e.metaKey) && key.length === 1 && /[a-z]/i.test(key) && key.toLowerCase() !== 'v') {
+          // Ctrl+letter → control byte (Ctrl+C = interrupt, etc.); Ctrl+V stays paste
+          e.preventDefault()
+          write(sess, String.fromCharCode(key.toLowerCase().charCodeAt(0) - 96))
+          return
+        }
+        switch (key) {
+          case 'Enter': e.preventDefault(); write(sess, '\r'); return
+          case 'Backspace': e.preventDefault(); write(sess, '\x08'); return
+          case 'Tab': e.preventDefault(); write(sess, '\t'); return
+          case 'ArrowUp': e.preventDefault(); write(sess, '\x1b[A'); return
+          case 'ArrowDown': e.preventDefault(); write(sess, '\x1b[B'); return
+          case 'ArrowRight': e.preventDefault(); write(sess, '\x1b[C'); return
+          case 'ArrowLeft': e.preventDefault(); write(sess, '\x1b[D'); return
+          case 'Delete': e.preventDefault(); write(sess, '\x1b[3~'); return
+          case 'Home': e.preventDefault(); write(sess, '\x1b[H'); return
+          case 'End': e.preventDefault(); write(sess, '\x1b[F'); return
+        }
+        if (key.length === 1 && !e.altKey && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault()
+          write(sess, key)
+        }
+      })
+    }
 
     xtermRef.current = term
     fitRef.current = fit

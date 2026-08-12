@@ -59,18 +59,18 @@ export function SqlWorkspaceDrawer({
   }, [search, workspace.favorites])
 
   return (
-    <aside role="complementary" aria-label="SQL workspace" style={{
+    <aside className="sql-workspace-drawer" role="complementary" aria-label="SQL workspace" style={{
       position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(390px, 42vw)', zIndex: 40,
       display: 'flex', flexDirection: 'column', background: 'var(--bg-card)',
       borderLeft: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)'
     }}>
-      <header style={{ height: 42, display: 'flex', alignItems: 'center', padding: '0 10px', borderBottom: '1px solid var(--border-subtle)', gap: 7 }}>
+      <header className="sql-workspace-drawer__header" style={{ height: 42, display: 'flex', alignItems: 'center', padding: '0 10px', borderBottom: '1px solid var(--border-subtle)', gap: 7 }}>
         <Clock3 size={13} color="var(--accent-color)" />
         <strong style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>SQL workspace</strong>
         <button aria-label="close SQL workspace" onClick={onClose} style={tinyButton()}><X size={11} /></button>
       </header>
 
-      <nav aria-label="SQL workspace sections" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', padding: '7px 8px 0', gap: 4 }}>
+      <nav className="sql-workspace-drawer__tabs" aria-label="SQL workspace sections" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', padding: '7px 8px 0', gap: 4 }}>
         {(['workspace', 'history', 'favorites'] as Section[]).map(value => (
           <button key={value} aria-label={value} onClick={() => setSection(value)} style={tinyButton(section === value)}>{value}</button>
         ))}

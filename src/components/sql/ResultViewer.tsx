@@ -653,7 +653,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
 
   if (!execution || !result) {
     return (
-      <div style={{
+      <div className="sql-results-empty" style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
         color: 'var(--text-muted)', background: 'var(--bg-card)',
@@ -756,12 +756,12 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   }
 
   return (
-    <div style={{
+    <section className="sql-results sql-surface" style={{
       flex: 1, background: 'var(--bg-card)',
       border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
       overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0
     }}>
-      <div style={{
+      <header className="sql-results__toolbar" style={{
         padding: '5px 10px', borderBottom: '1px solid var(--border-subtle)',
         fontSize: '10px', fontFamily: 'var(--font-mono)',
         color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between',
@@ -858,7 +858,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             </button>
           )}
         </div>
-      </div>
+      </header>
 
       {(filters.length > 0 || sorts.length > 0 || gridQuerySupported?.supported === false) && (
         <div style={{ minHeight: 27, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', fontFamily: 'var(--font-mono)', fontSize: 8.5 }}>
@@ -1081,6 +1081,6 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         />
       )}
       {renderRowMenu()}
-    </div>
+    </section>
   )
 }

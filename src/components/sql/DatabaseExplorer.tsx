@@ -503,12 +503,12 @@ export function DatabaseExplorer({
   )
 
   return (
-    <div style={{
+    <aside className="sql-object-explorer sql-surface" aria-label="Object explorer" style={{
       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', overflow: 'hidden', height: '100%',
       display: 'flex', flexDirection: 'column'
     }}>
-      <div style={{
+      <header className="sql-object-explorer__header" style={{
         padding: '7px 12px', fontSize: '10px', fontWeight: 700,
         color: 'var(--text-secondary)', textTransform: 'uppercase',
         letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
@@ -516,7 +516,7 @@ export function DatabaseExplorer({
         display: 'flex', alignItems: 'center', justifyContent: 'space-between'
       }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Database size={11} /> object explorer
+          <Database size={13} /> Object explorer
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
@@ -525,6 +525,7 @@ export function DatabaseExplorer({
             aria-label="toggle essentials mode"
             data-testid="sql-essentials-toggle"
             aria-pressed={compact}
+            className="sql-object-explorer__mode"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: compact ? 'var(--accent-bg)' : 'transparent',
@@ -535,14 +536,9 @@ export function DatabaseExplorer({
             onMouseLeave={(e) => { if (!compact) e.currentTarget.style.color = 'var(--text-secondary)' }}
           >
             <ListFilter size={11} />
+            <span>{compact ? 'essentials' : 'all'}</span>
           </button>
-          <span style={{
-            fontSize: '8px', fontWeight: 600, letterSpacing: 0, textTransform: 'none',
-            color: compact ? 'var(--accent-color)' : 'var(--text-muted)', marginRight: '2px'
-          }}>
-            {compact ? 'essentials' : 'all'}
-          </span>
-          <button onClick={refreshAll} title="refresh all connected databases"
+          <button className="sql-icon-button sql-icon-button--small" onClick={refreshAll} title="refresh all connected databases"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'transparent', border: 'none',
@@ -553,8 +549,8 @@ export function DatabaseExplorer({
             <RefreshCw size={11} />
           </button>
         </div>
-      </div>
-      <label style={{
+      </header>
+      <label className="sql-object-explorer__search" style={{
         position: 'relative', display: 'flex', alignItems: 'center', padding: '7px 8px',
         borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', flexShrink: 0
       }}>
@@ -630,7 +626,7 @@ export function DatabaseExplorer({
         </div>
       )}
 
-      <div style={{ flex: 1, overflow: 'auto', display: search.trim() ? 'none' : 'block' }} onClick={() => setMenu(null)}>
+      <div className="sql-object-explorer__tree" style={{ flex: 1, overflow: 'auto', display: search.trim() ? 'none' : 'block' }} onClick={() => setMenu(null)}>
         {connections.length === 0 && (
           <div style={{
             padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px',
@@ -678,9 +674,12 @@ export function DatabaseExplorer({
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {conn.label}
                 </span>
-                <span style={{ fontSize: '9px', color: conn.isConnected ? 'var(--success-color)' : 'var(--text-muted)' }}>
-                  {conn.isConnected ? 'on' : 'off'}
-                </span>
+                <span
+                  className={`sql-status-light sql-status-light--explorer ${conn.isConnected ? 'is-online' : 'is-offline'}`}
+                  role="status"
+                  aria-label={`${conn.label} ${conn.isConnected ? 'online' : 'offline'}`}
+                  title={conn.isConnected ? 'Connected' : 'Disconnected'}
+                />
               </div>
 
               {open && conn.isConnected && (
@@ -706,6 +705,7 @@ export function DatabaseExplorer({
                     return (
                       <div key={db}>
                         <div
+                          className={`sql-database-row ${isActiveDb ? 'is-active' : ''}`}
                           role="button"
                           aria-label={`database ${db}`}
                           onClick={() => {
@@ -725,6 +725,7 @@ export function DatabaseExplorer({
                           {chevron(dbOpen)}
                           {icon(<Database size={11} />, isActiveDb ? 'var(--accent-color)' : 'var(--text-secondary)')}
                           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{db}</span>
+                          {isActiveDb && <span className="sql-active-db-label">active</span>}
                         </div>
 
                         {dbOpen && (
@@ -882,6 +883,6 @@ export function DatabaseExplorer({
         })}
       </div>
       {renderMenu()}
-    </div>
+    </aside>
   )
 }

@@ -8,7 +8,7 @@ import { ConnectionDialog } from './ConnectionDialog'
 import { RecentConnectionsMenu } from './RecentConnectionsMenu'
 import { DiagramView } from './DiagramView'
 import { useSqlStore, useSqlRecentStore, useToastStore } from '../../store'
-import { Plus, PanelLeftClose, PanelLeftOpen, Loader2, Check, XCircle } from 'lucide-react'
+import { Plus, PanelLeftClose, PanelLeftOpen, Loader2, Check, XCircle, Database } from 'lucide-react'
 import { SqlConnection, SqlConnectionConfig, SqlExecutionResult, SqlForeignKeyInfo, SqlGridQueryState, SqlHistoryEntry, SqlQuerySource, SqlTestResult, SqlWorkspaceState } from '../../types/sql'
 import { connectionLabel } from './sqlForm'
 import { Modal } from '../layout/Modal'
@@ -18,6 +18,7 @@ import { addHistoryEntry, EMPTY_SQL_WORKSPACE, favoriteHistoryEntry, updateWorks
 import { buildGridQuery, canRewriteGridQuery } from './sqlGridQuery'
 import { SqlQueryMessage, SqlQueryOutput, SqlRunningQuery } from './SqlQueryOutput'
 import { normalizeSqlConnectionConfig } from '../../shared/sqlConnection'
+import '../../styles/sql-workbench.css'
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -532,13 +533,38 @@ export function SqlPanel() {
     pending.resolve(ok)
   }
 
+  const activeConnectionInfo = connections.find(connection => connection.id === activeConnection)
   return (
     <PanelContainer
-      title="SQL Server"
+      className="sql-workbench"
+      headerClassName="sql-workbench__header"
+      contentClassName="sql-workbench__content"
+      title={
+        <div className="sql-page-title">
+          <span className="sql-page-title__icon"><Database size={16} /></span>
+          <span className="sql-page-title__copy">
+            <strong>SQL Server</strong>
+            <small>Query workspace</small>
+          </span>
+          <span className={`sql-active-context ${activeConnectionInfo?.isConnected ? 'is-online' : 'is-offline'}`}>
+            <span className="sql-status-light" role="status" aria-label={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} title={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} />
+            <span className="sql-active-context__item">
+              <small>Active connection</small>
+              <strong>{activeConnectionInfo?.server || 'No connection'}</strong>
+            </span>
+            <span className="sql-active-context__divider" aria-hidden="true" />
+            <span className="sql-active-context__item">
+              <small>Database</small>
+              <strong>{activeDb || 'Not selected'}</strong>
+            </span>
+          </span>
+        </div>
+      }
       actions={
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div className="sql-page-actions">
           <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             title={sidebarCollapsed ? 'show connections' : 'collapse connections'}
+            className="sql-icon-button"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '30px', height: '30px', background: 'var(--bg-card)',
@@ -552,6 +578,8 @@ export function SqlPanel() {
           <button
             onClick={(e) => setPlusMenu({ x: e.currentTarget.getBoundingClientRect().right + 4, y: e.currentTarget.getBoundingClientRect().bottom + 4 })}
             title="connection: new or recent"
+            aria-label="Connection"
+            className="sql-primary-button"
             style={{
               display: 'flex', alignItems: 'center', gap: '5px',
               padding: '5px 14px', height: '30px',
@@ -563,13 +591,13 @@ export function SqlPanel() {
             onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)' }}
             onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
           >
-            <Plus size={13} /> Connection
+            <Plus size={13} /> New connection
           </button>
         </div>
       }
     >
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
-        <div style={{ flex: 1, minHeight: 0 }}>
+      <div className="sql-workbench__shell" style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
+        <div className="sql-workbench__main" style={{ flex: 1, minHeight: 0 }}>
           <ResizableSplitter direction="horizontal" defaultSize={250} minSize={190} maxSize={390} collapsed={sidebarCollapsed}>
             <DatabaseExplorer
               connections={connections}
@@ -589,13 +617,14 @@ export function SqlPanel() {
               onServerInfo={handleServerInfo}
               trackOperation={trackOperation}
             />
-          <div style={{
+          <main className="sql-workbench__stage" style={{
             display: 'flex', flex: 1, width: '100%', height: '100%', minHeight: 0,
             flexDirection: 'column', gap: '0px', overflow: 'hidden', padding: '0 0 0 4px'
           }}>
             <ResizableSplitter direction="vertical" defaultSize={diagram ? 170 : 240} minSize={140} maxSize={650}>
               <QueryEditor
                 connectionId={activeConnection}
+                connectionLabel={activeConnectionInfo?.server}
                 activeDatabase={activeDb}
                 handleRef={queryEditorRef}
                 onExecute={(query, context, tabId) => executeSql(query, context, false, tabId)}
@@ -665,7 +694,7 @@ export function SqlPanel() {
                 </SqlQueryOutput>
               )}
             </ResizableSplitter>
-          </div>
+          </main>
           </ResizableSplitter>
         </div>
         <SqlActivityStrip activities={activities} />

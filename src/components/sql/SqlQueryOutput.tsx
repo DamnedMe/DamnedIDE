@@ -55,8 +55,8 @@ export function SqlQueryOutput({ execution, messages, running, selected, onSelec
         : 'Ready'
 
   return (
-    <section aria-label="SQL query output" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <div role="tablist" aria-label="query output" style={{
+    <section className="sql-query-output" aria-label="SQL query output" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div className="sql-query-output__tabs" role="tablist" aria-label="query output" style={{
         height: 29, display: 'flex', alignItems: 'stretch', flexShrink: 0,
         background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderBottom: 0,
         borderRadius: 'var(--radius-md) var(--radius-md) 0 0'
@@ -67,7 +67,7 @@ export function SqlQueryOutput({ execution, messages, running, selected, onSelec
         <button role="tab" aria-selected={selected === 'messages'} onClick={() => onSelected('messages')} style={tabStyle(selected === 'messages')}>
           <MessageSquareText size={10} /> Messages{messages.length > 0 ? ` · ${messages.length}` : ''}
         </button>
-        <div data-testid="sql-query-progress" aria-live="polite" style={{
+        <div className={`sql-query-output__status ${running ? 'is-running' : ''}`} data-testid="sql-query-progress" aria-live="polite" style={{
           marginLeft: 'auto', minWidth: 0, padding: '0 9px', display: 'flex', alignItems: 'center', gap: 6,
           color: running ? 'var(--accent-color)' : latest?.tone === 'error' ? 'var(--error-color)' : 'var(--text-muted)',
           fontFamily: 'var(--font-mono)', fontSize: 9, fontVariantNumeric: 'tabular-nums'

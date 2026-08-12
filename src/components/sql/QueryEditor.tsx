@@ -3,7 +3,7 @@ import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from '../editor/monaco-theme'
 import { useSettingsStore, useSqlStore, useToastStore } from '../../store'
-import { Play, Square, Loader2, Database, Plus, X, History, Pencil, Save, Trash2 } from 'lucide-react'
+import { Play, Square, Loader2, Database, Plus, X, History, Pencil, Save, Trash2, Server, ChevronRight } from 'lucide-react'
 import { registerSqlAssistant } from './sqlAssistant'
 import { SqlQuerySource, SqlWorkspaceTab } from '../../types/sql'
 
@@ -15,6 +15,7 @@ export interface QueryExecutionContext {
 
 interface QueryEditorProps {
   connectionId: string | null
+  connectionLabel?: string
   activeDatabase?: string
   handleRef?: React.MutableRefObject<QueryEditorHandle | null>
   onExecute: (query: string, context?: QueryExecutionContext, tabId?: string) => Promise<boolean>
@@ -45,7 +46,7 @@ const newTab = (index: number, query = '', context?: QueryExecutionContext): Que
   dirty: query.trim().length > 0
 })
 
-export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute, onActiveTabChange, onTabClosed, restoredWorkspace, onWorkspaceChange, onOpenWorkspace, onQueryChanged }: QueryEditorProps) {
+export function QueryEditor({ connectionId, connectionLabel, activeDatabase, handleRef, onExecute, onActiveTabChange, onTabClosed, restoredWorkspace, onWorkspaceChange, onOpenWorkspace, onQueryChanged }: QueryEditorProps) {
   const firstTab = useRef(newTab(1))
   const [tabs, setTabs] = useState<QueryTab[]>([firstTab.current])
   const [activeTabId, setActiveTabId] = useState(firstTab.current.id)
@@ -273,19 +274,21 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
   }
 
   return (
-    <div style={{
+    <section className="sql-query-editor sql-surface" aria-label="Query editor" style={{
       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', overflow: 'hidden',
       display: 'flex', flex: 1, flexDirection: 'column',
       width: '100%', height: '100%', minWidth: 0, minHeight: 0
     }}>
-      <div style={{
+      <header className="sql-query-editor__chrome" style={{
         display: 'flex', alignItems: 'stretch', minHeight: '30px',
         borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)'
       }}>
-        <div style={{ display: 'flex', flex: 1, overflowX: 'auto', minWidth: 0 }}>
+        <nav className="sql-query-tabs" aria-label="Query tabs" style={{ display: 'flex', flex: 1, overflowX: 'auto', minWidth: 0 }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => activateTab(tab.id)} title={tab.title}
+              className="sql-query-tab"
+              data-active={tab.id === activeTabId}
               onContextMenu={(event) => {
                 event.preventDefault()
                 activateTab(tab.id)
@@ -313,21 +316,27 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
               </span>
             </button>
           ))}
-        </div>
+        </nav>
         <button onClick={() => addTab()} title="new query tab" aria-label="new query tab"
+          className="sql-query-action"
           style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
           <Plus size={11} />
         </button>
         {onOpenWorkspace && (
           <button onClick={onOpenWorkspace} title="workspace, history and favorites" aria-label="open SQL workspace"
+            className="sql-query-action"
             style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
             <History size={11} />
           </button>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px' }}>
+        <div className="sql-query-editor__actions" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px' }}>
           {shownDatabase && connectionId && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: '9px', fontFamily: 'var(--font-mono)' }}>
-              <Database size={9} /> {shownDatabase}
+            <span className="sql-context-chip" title={`${connectionLabel || connectionId} / ${shownDatabase}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: '9px', fontFamily: 'var(--font-mono)' }}>
+              <Server size={10} />
+              <span className="sql-context-chip__server">{connectionLabel || connectionId}</span>
+              <ChevronRight size={9} aria-hidden="true" />
+              <Database size={10} />
+              <strong>{shownDatabase}</strong>
             </span>
           )}
           {isRunning && (
@@ -335,14 +344,14 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
               <Square size={9} /> cancel
             </button>
           )}
-          <button onClick={run} disabled={!connectionId || isRunning}
+          <button className="sql-run-button" onClick={run} disabled={!connectionId || isRunning}
             style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', fontSize: '10px', fontFamily: 'var(--font-mono)', background: connectionId && !isRunning ? 'var(--accent-color)' : 'var(--bg-disabled)', color: connectionId && !isRunning ? 'var(--text-inverse)' : 'var(--text-muted)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: connectionId && !isRunning ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
             {isRunning ? <Loader2 size={10} style={{ animation: 'spin 0.9s linear infinite' }} /> : <Play size={10} />}
-            {isRunning ? 'running…' : 'run'}
+            {isRunning ? 'Running…' : 'Run'}
           </button>
         </div>
-      </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
+      </header>
+      <div className="sql-query-editor__canvas" style={{ flex: 1, minHeight: 0 }}>
         <Editor
           language="sql"
           theme={settings.theme === 'dark' ? THEME_DARK : THEME_LIGHT}
@@ -407,7 +416,7 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
           </form>
         </>
       )}
-    </div>
+    </section>
   )
 }
 

@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SqlExecutionResult, SqlForeignKeyInfo, SqlQueryResult } from '../../types/sql'
-import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil } from 'lucide-react'
+import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown } from 'lucide-react'
 import { buildDeleteStatement, buildUpdateStatement, parseEditedValue } from './sqlForm'
 import { calculateColumnMetrics, calculateVisibleRange } from './sqlGridUtils'
+import { SqlGridFilter, SqlGridFilterOperator, SqlGridQueryState } from '../../types/sql'
 
 interface ResultViewerProps {
   execution: SqlExecutionResult | null
@@ -14,6 +15,9 @@ interface ResultViewerProps {
   onExecuteSql?: (query: string) => Promise<boolean>
   /** asks the panel to confirm and run a DELETE statement */
   onDeleteRequest?: (query: string) => void
+  gridQueryState?: SqlGridQueryState | null
+  gridQuerySupported?: { supported: boolean; reason?: string }
+  onGridQueryStateChange?: (state: SqlGridQueryState) => void
 }
 
 const PK_COLOR = '#e3b341'
@@ -23,7 +27,7 @@ const FK_BG = 'rgba(198, 120, 221, 0.10)'
 const JOIN_DIVIDER = '2px solid #e5a33e'
 const DEFAULT_COL_W = 160
 const ROW_H = 26
-const ROW_WINDOW_BUFFER = 10
+const ROW_WINDOW_BUFFER = 8
 const ROW_WINDOW_GUARD = 2
 const DEFAULT_FONT_SIZE = 11
 const MIN_FONT_SIZE = 8
@@ -210,7 +214,66 @@ const ResultGridRow = memo(function ResultGridRow({
   )
 })
 
-export function ResultViewer({ execution, getResultTableName, onJoinRequest, onFilterRequest, onClear, onExecuteSql, onDeleteRequest }: ResultViewerProps) {
+function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }: {
+  column: string
+  dataType: string
+  x: number
+  y: number
+  initial?: SqlGridFilter
+  onApply: (filter: SqlGridFilter | null) => void
+  onClose: () => void
+}) {
+  const numeric = /^(?:number|bigint|int|decimal|numeric|float|real|money|smallmoney|tinyint|smallint)$/i.test(dataType)
+  const boolean = /^(?:boolean|bit)$/i.test(dataType)
+  const date = /date|time/i.test(dataType)
+  const defaultOperator: SqlGridFilterOperator = numeric || date ? 'eq' : 'contains'
+  const [operator, setOperator] = useState<SqlGridFilterOperator>(initial?.operator || defaultOperator)
+  const [value, setValue] = useState(initial?.value || (boolean ? '1' : ''))
+  const [secondValue, setSecondValue] = useState(initial?.secondValue || '')
+  const noValue = operator === 'isNull' || operator === 'isNotNull'
+  const options: Array<[SqlGridFilterOperator, string]> = boolean
+    ? [['eq', 'is'], ['neq', 'is not'], ['isNull', 'is NULL'], ['isNotNull', 'is not NULL']]
+    : numeric || date
+      ? [['eq', 'equals'], ['neq', 'not equal'], ['gt', 'greater than'], ['gte', 'greater or equal'], ['lt', 'less than'], ['lte', 'less or equal'], ['between', 'between'], ['isNull', 'is NULL'], ['isNotNull', 'is not NULL']]
+      : [['eq', 'equals'], ['neq', 'not equal'], ['contains', 'contains'], ['startsWith', 'starts with'], ['isNull', 'is NULL'], ['isNotNull', 'is not NULL']]
+  return (
+    <div role="dialog" aria-label={`filter ${column}`} style={{
+      position: 'fixed', left: Math.min(x, window.innerWidth - 270), top: Math.min(y, window.innerHeight - 215), zIndex: 180,
+      width: 255, padding: 10, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+      borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)'
+    }} onKeyDown={event => { if (event.key === 'Escape') onClose() }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 9 }}>
+        <Filter size={10} color="var(--accent-color)" /><strong style={{ marginLeft: 6, fontSize: 10, flex: 1 }}>{column}</strong>
+        <span style={{ fontSize: 8, color: 'var(--text-muted)' }}>{dataType}</span>
+      </div>
+      <select autoFocus aria-label="filter operator" value={operator} onChange={event => setOperator(event.target.value as SqlGridFilterOperator)} style={{ width: '100%', height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 9 }}>
+        {options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+      {!noValue && (
+        <div style={{ display: 'flex', gap: 5, marginTop: 7 }}>
+          {boolean ? (
+            <select aria-label="filter value" value={value} onChange={event => setValue(event.target.value)} style={{ width: '100%', height: 27, background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}><option value="1">true</option><option value="0">false</option></select>
+          ) : (
+            <input aria-label="filter value" type={date ? 'datetime-local' : numeric ? 'number' : 'text'} value={value} onChange={event => setValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 9 }} />
+          )}
+          {operator === 'between' && <input aria-label="second filter value" type={date ? 'datetime-local' : 'number'} value={secondValue} onChange={event => setSecondValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 9 }} />}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end', marginTop: 10 }}>
+        {initial && <button onClick={() => onApply(null)} style={{ ...tinyGridButton, marginRight: 'auto', color: 'var(--error-color)' }}>remove filter</button>}
+        <button onClick={onClose} style={tinyGridButton}>cancel</button>
+        <button aria-label="apply filter" disabled={!noValue && (value === '' || (operator === 'between' && secondValue === ''))} onClick={() => onApply({ column, dataType, operator, value, secondValue })} style={{ ...tinyGridButton, borderColor: 'var(--accent-color)', color: 'var(--accent-color)' }}>apply</button>
+      </div>
+    </div>
+  )
+}
+
+const tinyGridButton: React.CSSProperties = {
+  height: 25, padding: '0 8px', background: 'transparent', border: '1px solid var(--border-color)',
+  color: 'var(--text-secondary)', borderRadius: 3, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9
+}
+
+export function ResultViewer({ execution, getResultTableName, onJoinRequest, onFilterRequest, onClear, onExecuteSql, onDeleteRequest, gridQueryState, gridQuerySupported, onGridQueryStateChange }: ResultViewerProps) {
   const [activeSet, setActiveSet] = useState(0)
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE)
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
@@ -223,6 +286,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const [editing, setEditing] = useState<{ row: number; col: string; value: string } | null>(null)
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; row: number } | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+  const [filterEditor, setFilterEditor] = useState<{ column: string; x: number; y: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
   const rafRef = useRef<number | null>(null)
@@ -230,6 +294,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const pendingScrollTopRef = useRef(0)
   const pendingScrollLeftRef = useRef(0)
   const rowWindowRef = useRef({ start: 0, end: 0 })
+  const filterReturnFocusRef = useRef<HTMLButtonElement | null>(null)
   // double-click guard: the PK/FK single-click action must not fire when the
   // user double-clicks a cell to edit it
   const lastCellClickRef = useRef<{ time: number; row: number; col: string } | null>(null)
@@ -345,6 +410,38 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   }, [baseColumnCount, baseTableLabel, columnMetrics, columns, defaultColumnWidth])
   const visibleColumnGroups = columnGroups.filter(group =>
     group.left + group.width >= scrollLeft && group.left <= scrollLeft + viewportW)
+
+  const filters = gridQueryState?.filters || []
+  const sorts = gridQueryState?.sorts || []
+  const currentFilter = filterEditor ? filters.find(filter => filter.column === filterEditor.column) : undefined
+
+  const changeSort = (column: string, additive: boolean) => {
+    if (!gridQueryState || !onGridQueryStateChange || !gridQuerySupported?.supported) return
+    const current = sorts.find(sort => sort.column === column)
+    let next = additive ? sorts.filter(sort => sort.column !== column) : []
+    if (!current) next = [...next, { column, direction: 'asc' }]
+    else if (current.direction === 'asc') next = [...next, { column, direction: 'desc' }]
+    onGridQueryStateChange({ ...gridQueryState, sorts: next })
+  }
+
+  const applyFilter = (filter: SqlGridFilter | null) => {
+    if (!gridQueryState || !onGridQueryStateChange) return
+    const next = filters.filter(item => item.column !== filterEditor?.column)
+    if (filter) next.push(filter)
+    onGridQueryStateChange({ ...gridQueryState, filters: next })
+    setFilterEditor(null)
+    window.setTimeout(() => filterReturnFocusRef.current?.focus(), 0)
+  }
+
+  const closeFilterEditor = () => {
+    setFilterEditor(null)
+    window.setTimeout(() => filterReturnFocusRef.current?.focus(), 0)
+  }
+
+  const clearGridQuery = () => {
+    if (!gridQueryState || !onGridQueryStateChange) return
+    onGridQueryStateChange({ ...gridQueryState, filters: [], sorts: [] })
+  }
 
   const togglePin = (col: string) => {
     setPinned(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col])
@@ -724,6 +821,15 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         </div>
       </div>
 
+      {(filters.length > 0 || sorts.length > 0 || gridQuerySupported?.supported === false) && (
+        <div style={{ minHeight: 27, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', fontFamily: 'var(--font-mono)', fontSize: 8.5 }}>
+          {gridQuerySupported?.supported === false && <span role="status" style={{ color: 'var(--warning-color)' }}>{gridQuerySupported.reason}</span>}
+          {filters.map(filter => <button key={filter.column} aria-label={`active filter ${filter.column}`} title="remove filter" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, filters: filters.filter(item => item.column !== filter.column) })} style={{ ...tinyGridButton, height: 19, color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}><Filter size={8} /> {filter.column} · {filter.operator} {filter.value} ×</button>)}
+          {sorts.map((sort, index) => <button key={sort.column} aria-label={`active sort ${sort.column}`} title="remove sorting" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, sorts: sorts.filter(item => item.column !== sort.column) })} style={{ ...tinyGridButton, height: 19, display: 'inline-flex', alignItems: 'center' }}>{sort.direction === 'asc' ? '↑' : '↓'} {index + 1} · {sort.column} ×</button>)}
+          {(filters.length > 0 || sorts.length > 0) && <button aria-label="clear all grid filters and sorting" onClick={clearGridQuery} style={{ ...tinyGridButton, height: 19, marginLeft: 'auto' }}>clear all</button>}
+        </div>
+      )}
+
       {columns.length === 0 ? (
         <div style={{
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -796,6 +902,10 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                 const acc = colAccent(col)
                 const isPinned = pinned.includes(col)
                 const isJoinStart = ci === joinStartIndex
+                const sortIndex = sorts.findIndex(sort => sort.column === col)
+                const sort = sortIndex >= 0 ? sorts[sortIndex] : undefined
+                const filtered = filters.some(filter => filter.column === col)
+                const columnQuerySupported = ci < baseColumnCount
                 return (
                   <div key={col}
                     role="columnheader"
@@ -817,12 +927,43 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                       boxShadow: isPinned ? '2px 0 0 0 var(--border-color)' : undefined,
                       display: 'flex', alignItems: 'center'
                     }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: '100%', overflow: 'hidden' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
                       {acc && (acc.tag === 'PK'
                         ? <KeyRound size={9} style={{ flexShrink: 0, color: PK_COLOR }} />
                         : <Link2 size={9} style={{ flexShrink: 0, color: FK_COLOR }} />)}
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{col}</span>
+                      <button
+                        aria-label={`sort ${col}`}
+                        disabled={!gridQuerySupported?.supported || !columnQuerySupported}
+                        onClick={event => { event.stopPropagation(); changeSort(col, event.shiftKey) }}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') { event.preventDefault(); changeSort(col, event.shiftKey) }
+                          if (event.altKey && event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            filterReturnFocusRef.current = event.currentTarget
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            setFilterEditor({ column: col, x: rect.left, y: rect.bottom + 4 })
+                          }
+                        }}
+                        title={!columnQuerySupported ? 'Joined output aliases cannot be rewritten safely.' : gridQuerySupported?.supported ? 'sort · Shift-click for multi-sort' : gridQuerySupported?.reason}
+                        style={{ border: 0, padding: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: 'transparent', color: 'inherit', font: 'inherit', cursor: gridQuerySupported?.supported ? 'pointer' : 'not-allowed', textAlign: 'left' }}
+                      >{col}</button>
+                      {sort && <span aria-label={`sort priority ${col} ${sortIndex + 1} ${sort.direction === 'asc' ? 'ascending' : 'descending'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'var(--accent-color)', flexShrink: 0 }}>{sort.direction === 'asc' ? <ArrowUp size={8} /> : <ArrowDown size={8} />}{sortIndex + 1}</span>}
                     </span>
+                    {onGridQueryStateChange && (
+                      <button
+                        aria-label={`filter ${col}`}
+                        disabled={!gridQuerySupported?.supported || !columnQuerySupported}
+                        onClick={event => {
+                          event.stopPropagation()
+                          filterReturnFocusRef.current = event.currentTarget
+                          const rect = event.currentTarget.getBoundingClientRect()
+                          setFilterEditor({ column: col, x: rect.left, y: rect.bottom + 4 })
+                        }}
+                        title={!columnQuerySupported ? 'Joined output aliases cannot be rewritten safely.' : gridQuerySupported?.supported ? `filter ${col}` : gridQuerySupported?.reason}
+                        style={{ display: 'flex', flexShrink: 0, padding: 2, border: 0, background: filtered ? 'var(--accent-bg)' : 'transparent', color: filtered ? 'var(--accent-color)' : 'var(--text-muted)', cursor: gridQuerySupported?.supported ? 'pointer' : 'not-allowed' }}>
+                        <Filter size={9} fill={filtered ? 'currentColor' : 'none'} />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); togglePin(col) }}
                       title={isPinned ? 'unpin column' : 'pin column'}
@@ -888,6 +1029,17 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             ))}
           </div>
         </div>
+      )}
+      {filterEditor && (
+        <GridFilterDialog
+          column={filterEditor.column}
+          dataType={colTypes[filterEditor.column] || 'string'}
+          x={filterEditor.x}
+          y={filterEditor.y}
+          initial={currentFilter}
+          onApply={applyFilter}
+          onClose={closeFilterEditor}
+        />
       )}
       {renderRowMenu()}
     </div>

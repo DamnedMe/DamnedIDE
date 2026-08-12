@@ -3,11 +3,14 @@ import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from '../editor/monaco-theme'
 import { useSettingsStore, useSqlStore } from '../../store'
-import { Play, Square, Loader2, Database, Plus, X } from 'lucide-react'
+import { Play, Square, Loader2, Database, Plus, X, History } from 'lucide-react'
+import { registerSqlAssistant } from './sqlAssistant'
+import { SqlQuerySource, SqlWorkspaceTab } from '../../types/sql'
 
 export interface QueryExecutionContext {
   connectionId?: string
   database?: string
+  source?: SqlQuerySource
 }
 
 interface QueryEditorProps {
@@ -17,21 +20,21 @@ interface QueryEditorProps {
   onExecute: (query: string, context?: QueryExecutionContext, tabId?: string) => Promise<boolean>
   onActiveTabChange?: (tabId: string, context?: QueryExecutionContext) => void
   onTabClosed?: (tabId: string) => void
+  restoredWorkspace?: { tabs: SqlWorkspaceTab[]; activeTabId: string | null } | null
+  onWorkspaceChange?: (tabs: SqlWorkspaceTab[], activeTabId: string) => void
+  onOpenWorkspace?: () => void
+  onQueryChanged?: (tabId: string, query: string) => void
 }
 
-interface QueryTab {
-  id: string
-  title: string
-  query: string
-  context?: QueryExecutionContext
-  dirty: boolean
-}
+type QueryTab = SqlWorkspaceTab
 
 export interface QueryEditorHandle {
   getQuery: () => string
   setQuery: (text: string, execute?: boolean, context?: QueryExecutionContext) => void
   newQuery: (text?: string, execute?: boolean, context?: QueryExecutionContext) => void
   focus: () => void
+  renameTab: (id: string, title: string) => void
+  activateTab: (id: string) => void
 }
 
 const newTab = (index: number, query = '', context?: QueryExecutionContext): QueryTab => ({
@@ -42,7 +45,7 @@ const newTab = (index: number, query = '', context?: QueryExecutionContext): Que
   dirty: query.trim().length > 0
 })
 
-export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute, onActiveTabChange, onTabClosed }: QueryEditorProps) {
+export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute, onActiveTabChange, onTabClosed, restoredWorkspace, onWorkspaceChange, onOpenWorkspace, onQueryChanged }: QueryEditorProps) {
   const firstTab = useRef(newTab(1))
   const [tabs, setTabs] = useState<QueryTab[]>([firstTab.current])
   const [activeTabId, setActiveTabId] = useState(firstTab.current.id)
@@ -54,6 +57,10 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
   const pendingEditorValueRef = useRef<string | null>(null)
   const tabsRef = useRef(tabs)
   const activeTabIdRef = useRef(activeTabId)
+  const connectionIdRef = useRef(connectionId)
+  const activeDatabaseRef = useRef(activeDatabase)
+  const assistantDisposableRef = useRef<{ dispose(): void } | null>(null)
+  const restoredRef = useRef(false)
   const { isRunning } = useSqlStore()
   const settings = useSettingsStore(s => s.settings)
 
@@ -61,6 +68,10 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
   useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
   useEffect(() => { onExecuteRef.current = onExecute }, [onExecute])
   useEffect(() => { onActiveTabChange?.(firstTab.current.id) }, [])
+  useEffect(() => { connectionIdRef.current = connectionId }, [connectionId])
+  useEffect(() => { activeDatabaseRef.current = activeDatabase }, [activeDatabase])
+  useEffect(() => () => assistantDisposableRef.current?.dispose(), [])
+  useEffect(() => { onWorkspaceChange?.(tabs, activeTabId) }, [activeTabId, onWorkspaceChange, tabs])
 
   const applyTheme = (monaco: typeof import('monaco-editor')) => {
     defineThemes(monaco, settings.themeColors)
@@ -79,6 +90,23 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
     pendingEditorValueRef.current = null
     editor.focus()
   }, [])
+
+  useEffect(() => {
+    if (restoredRef.current || !restoredWorkspace) return
+    restoredRef.current = true
+    if (restoredWorkspace.tabs.length === 0) return
+    const restoredTabs = restoredWorkspace.tabs.map(tab => ({ ...tab, dirty: tab.query.trim().length > 0 }))
+    const restoredActive = restoredTabs.some(tab => tab.id === restoredWorkspace.activeTabId)
+      ? restoredWorkspace.activeTabId!
+      : restoredTabs[0].id
+    tabsRef.current = restoredTabs
+    activeTabIdRef.current = restoredActive
+    setTabs(restoredTabs)
+    setActiveTabId(restoredActive)
+    const active = restoredTabs.find(tab => tab.id === restoredActive)!
+    replaceEditorValue(active.query)
+    onActiveTabChange?.(active.id, active.context)
+  }, [onActiveTabChange, replaceEditorValue, restoredWorkspace])
 
   const executeText = useCallback(async (text: string, context?: QueryExecutionContext, tabId = activeTabIdRef.current) => {
     const query = text.trim()
@@ -111,6 +139,14 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
     editorRef.current = editor
     monacoRef.current = monaco
     applyTheme(monaco)
+    assistantDisposableRef.current?.dispose()
+    assistantDisposableRef.current = registerSqlAssistant(monaco, () => {
+      const tab = tabsRef.current.find(item => item.id === activeTabIdRef.current)
+      return {
+        connectionId: tab?.context?.connectionId ?? connectionIdRef.current,
+        database: tab?.context?.database ?? activeDatabaseRef.current
+      }
+    })
     const activeTab = tabsRef.current.find(tab => tab.id === activeTabIdRef.current)
     replaceEditorValue(pendingEditorValueRef.current ?? activeTab?.query ?? '')
     editor.onDidChangeModelContent(() => {
@@ -118,6 +154,7 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
       const value = editor.getValue()
       const id = activeTabIdRef.current
       setTabs(current => current.map(tab => tab.id === id ? { ...tab, query: value, dirty: value.trim().length > 0 } : tab))
+      onQueryChanged?.(id, value)
     })
     editor.addCommand(monaco.KeyCode.F5, () => runRef.current())
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runRef.current())
@@ -191,13 +228,19 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
     setQuery: (text, execute, context) => {
       const id = activeTabIdRef.current
       const activeContext = tabsRef.current.find(tab => tab.id === id)?.context
-      const executionContext = context ?? activeContext
+      const executionContext = context ? { ...activeContext, ...context } : activeContext
       setTabs(current => current.map(tab => tab.id === id ? { ...tab, query: text, context: executionContext, dirty: text.trim().length > 0 } : tab))
       replaceEditorValue(text)
       if (execute) void executeText(text, executionContext, id)
     },
     newQuery: addTab,
-    focus: () => editorRef.current?.focus()
+    focus: () => editorRef.current?.focus(),
+    renameTab: (id, title) => {
+      const normalized = title.trim().slice(0, 120)
+      if (!normalized) return
+      setTabs(current => current.map(tab => tab.id === id ? { ...tab, title: normalized } : tab))
+    },
+    activateTab
   }
 
   const activeTab = tabs.find(tab => tab.id === activeTabId)
@@ -243,6 +286,12 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
           style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
           <Plus size={11} />
         </button>
+        {onOpenWorkspace && (
+          <button onClick={onOpenWorkspace} title="workspace, history and favorites" aria-label="open SQL workspace"
+            style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <History size={11} />
+          </button>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px' }}>
           {shownDatabase && connectionId && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: '9px', fontFamily: 'var(--font-mono)' }}>
@@ -277,6 +326,7 @@ export function QueryEditor({ connectionId, activeDatabase, handleRef, onExecute
             tabSize: settings.tabSize,
             fontLigatures: settings.fontLigatures,
             renderLineHighlight: 'line',
+            fixedOverflowWidgets: true,
             padding: { top: 6, bottom: 6 },
             scrollbar: { verticalScrollbarSize: 5, horizontalScrollbarSize: 5 }
           }}

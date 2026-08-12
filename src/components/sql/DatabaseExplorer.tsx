@@ -32,6 +32,7 @@ import {
 import { AUTH_TYPES, connectionLabel } from './sqlForm'
 import type { QueryExecutionContext } from './QueryEditor'
 import { buildExplicitSelect } from './sqlQueryUtils'
+import { localSqlAssistant } from './sqlAssistant'
 
 interface DatabaseExplorerProps {
   connections: SqlConnection[]
@@ -242,6 +243,7 @@ export function DatabaseExplorer({
 
   // ─── Refresh ─────────────────────────────────────────────────────────────
   const refreshDatabases = async (conn: SqlConnection) => {
+    localSqlAssistant.invalidate(conn.id)
     invalidateConnection(conn.id)
     setExpanded(prev => {
       const next = new Set<string>()
@@ -251,6 +253,7 @@ export function DatabaseExplorer({
   }
 
   const refreshDatabase = (conn: SqlConnection, db: string) => {
+    localSqlAssistant.invalidate(conn.id, db)
     for (const k of Object.keys(cache)) {
       if (k.startsWith(`${conn.id}:`) && (k.includes(`:${db}:`))) invalidate(k)
     }
@@ -266,6 +269,7 @@ export function DatabaseExplorer({
   const refreshAll = () => {
     for (const conn of connections) {
       if (conn.isConnected) {
+        localSqlAssistant.invalidate(conn.id)
         invalidateConnection(conn.id)
         const keys = [...expanded].filter(k => k.startsWith(`${conn.id}:`))
         setExpanded(prev => {
@@ -291,7 +295,7 @@ export function DatabaseExplorer({
     switch (mode) {
       case 'select': return buildExplicitSelect(table, cols, 1000)
       case 'create': {
-        if (cols.length === 0) return `-- load columns first (expand the table)\nSELECT TOP 1000 * FROM ${quote(table)}`
+        if (cols.length === 0) return '-- column metadata unavailable: expand the table and retry'
         const pk = cols.filter(c => c.isPrimaryKey).map(c => `[${c.name}]`)
         const defs = cols.map(c => {
           let s = `  [${c.name}] ${c.type} ${c.nullable ? 'NULL' : 'NOT NULL'}`

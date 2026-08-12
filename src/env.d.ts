@@ -65,6 +65,9 @@ interface Window {
       columns: (connectionId: string, database: string, table: string) => Promise<import('./types/sql').SqlColumnInfo[]>
       objectDefinition: (connectionId: string, database: string, objectName: string) => Promise<string>
       diagram: (connectionId: string, database: string, tables?: string[]) => Promise<import('./types/sql').SqlDiagramData>
+      schemaSnapshot: (connectionId: string, database: string) => Promise<import('./types/sql').SqlSchemaSnapshot>
+      workspaceLoad: () => Promise<import('./types/sql').SqlWorkspaceState>
+      workspaceSave: (workspace: import('./types/sql').SqlWorkspaceState) => Promise<void>
       buildConnectionString: (config: import('./types/sql').SqlConnectionConfig) => Promise<string>
       parseConnectionString: (cs: string) => Promise<import('./types/sql').SqlConnectionConfig>
     }

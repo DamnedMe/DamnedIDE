@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SqlDiagramData } from '../../types/sql'
+import { buildExplicitSelect } from './sqlQueryUtils'
 import {
   Workflow, ZoomIn, ZoomOut, Maximize2, RefreshCw, Download, X,
   Loader2, Image, Search, Play, PanelRightClose
@@ -43,10 +44,6 @@ function savePositions(connId: string, database: string, tables: string[] | unde
   try {
     localStorage.setItem(positionKey(connId, database, tables), JSON.stringify(positions))
   } catch { /* local storage is an optional convenience */ }
-}
-
-function quoteTable(name: string) {
-  return name.split('.').map(part => `[${part.replace(/]/g, ']]')}]`).join('.')
 }
 
 function shortName(name: string, max = 31) {
@@ -502,7 +499,11 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                       onPointerDown={event => { event.stopPropagation(); startTableDrag(event, table) }}
                       onPointerMove={event => { event.stopPropagation(); moveTable(event) }}
                       onPointerUp={endTableDrag}
-                      onDoubleClick={event => { event.stopPropagation(); onRunQuery(`SELECT TOP 1000 * FROM ${quoteTable(table.name)}`) }}
+                      onDoubleClick={event => {
+                        event.stopPropagation()
+                        const source = data?.tables.find(item => item.name === table.name)
+                        onRunQuery(buildExplicitSelect(table.name, source?.columns.map(column => column.name) || [], 1000))
+                      }}
                       style={{ cursor: dragRef.current?.table === table.name ? 'grabbing' : 'pointer' }}
                     >
                       <title>{table.name} — {table.columns.length} columns</title>
@@ -592,7 +593,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
               ))}
             </div>
             <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border-subtle)' }}>
-              <button onClick={() => onRunQuery(`SELECT TOP 1000 * FROM ${quoteTable(selected.name)}`)} style={{
+              <button onClick={() => onRunQuery(buildExplicitSelect(selected.name, selected.columns.map(column => column.name), 1000))} style={{
                 width: '100%', height: '30px', border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-sm)',
                 background: 'var(--accent-bg)', color: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 gap: '7px', cursor: 'pointer', fontSize: '10px', fontWeight: 600

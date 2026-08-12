@@ -94,7 +94,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
             spellCheck={false}
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
-              color: 'var(--text-primary)', fontSize: '11px',
+              color: 'var(--text-primary)', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
               fontFamily: 'var(--font-mono)'
             }}
           />
@@ -111,7 +111,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
           )}
         </div>
         <div style={{
-          marginTop: '5px', fontSize: '9px', color: 'var(--text-muted)',
+          marginTop: '5px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)',
           display: 'flex', justifyContent: 'space-between'
         }}>
           <span>{isSearching ? 'searching...' : hasSearched ? `${results.length} results in ${grouped.size} files` : 'min 2 chars'}</span>
@@ -123,7 +123,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
         {!isSearching && hasSearched && results.length === 0 && (
           <div style={{
             padding: '24px 12px', textAlign: 'center',
-            color: 'var(--text-muted)', fontSize: '10px'
+            color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))'
           }}>
             no results found
           </div>
@@ -131,7 +131,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
         {Array.from(grouped.entries()).map(([file, matches]) => (
           <div key={file} style={{ marginBottom: '2px' }}>
             <div style={{
-              padding: '5px 10px', fontSize: '10px', fontWeight: 600,
+              padding: '5px 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600,
               color: 'var(--text-primary)', background: 'var(--bg-subtle)',
               display: 'flex', alignItems: 'center', gap: '5px',
               position: 'sticky', top: 0, borderBottom: '1px solid var(--border-subtle)'
@@ -152,7 +152,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
                 key={`${m.file}:${m.line}:${i}`}
                 onClick={() => onOpenResult(m.file, m.line)}
                 style={{
-                  padding: '3px 10px 3px 24px', fontSize: '10px',
+                  padding: '3px 10px 3px 24px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
                   fontFamily: 'var(--font-mono)', cursor: 'pointer',
                   display: 'flex', gap: '8px', alignItems: 'baseline',
                   transition: 'background 0.1s ease'
@@ -162,7 +162,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
               >
                 <span style={{
                   color: 'var(--accent-secondary)', flexShrink: 0,
-                  minWidth: '28px', textAlign: 'right', fontSize: '9px'
+                  minWidth: '28px', textAlign: 'right', fontSize: 'calc(9px * var(--ui-text-scale, 1))'
                 }}>
                   {m.line}
                 </span>

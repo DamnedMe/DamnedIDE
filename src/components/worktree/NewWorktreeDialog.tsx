@@ -33,7 +33,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
   }
 
   const infoRow = (icon: React.ReactNode, label: string, value: string) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
       {icon}
       <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{t(label)}:</span>
       <span style={{ color: 'var(--accent-color)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value || '—'}</span>
@@ -48,7 +48,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
         padding: '7px 10px', background: active ? 'var(--accent-bg)' : 'var(--bg-card)',
         border: active ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
         borderRadius: 'var(--radius-sm)', color: active ? 'var(--accent-color)' : 'var(--text-muted)',
-        cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: active ? 600 : 500,
+        cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: active ? 600 : 500,
         transition: 'all 0.15s ease'
       }}
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.borderColor = 'var(--text-muted)' }}
@@ -71,7 +71,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
         fontFamily: 'var(--font-mono)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <FolderGit2 size={15} style={{ color: 'var(--accent-color)' }} />
             {t('new worktree')}
           </h3>
@@ -93,7 +93,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
             {typeBtn('bugfix', wtType === 'bugfix')}
           </div>
 
-          <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+          <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             {t('PBI id')}
             <input value={id} onChange={(e) => setId(e.target.value.replace(/\D/g, ''))}
               placeholder="es. 3404"
@@ -102,7 +102,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
                 display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
                 background: 'var(--bg-input)', border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-                fontSize: '12px', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
+                fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
               }}
             />
           </label>
@@ -111,7 +111,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
           {infoRow(<FolderGit2 size={12} />, 'path', worktreePath)}
 
           {error && (
-            <div style={{ padding: '8px 10px', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: 'var(--radius-sm)', fontSize: '10px' }}>
+            <div style={{ padding: '8px 10px', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
               {error}
             </div>
           )}
@@ -120,7 +120,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
             <button onClick={onClose} style={{
               padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
-              fontSize: '12px', fontFamily: 'var(--font-mono)'
+              fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
             }}>{t('cancel')}</button>
             <button onClick={handleCreate} disabled={!id.trim() || isCreating}
               style={{
@@ -129,7 +129,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
                 border: 'none', borderRadius: 'var(--radius-md)',
                 color: id.trim() && !isCreating ? 'var(--text-inverse)' : 'var(--text-muted)',
                 cursor: id.trim() && !isCreating ? 'pointer' : 'not-allowed',
-                fontSize: '12px', fontFamily: 'var(--font-mono)', fontWeight: 600
+                fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
               }}>
               {isCreating ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : t('create')}
             </button>

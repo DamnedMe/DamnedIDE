@@ -658,7 +658,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         alignItems: 'center', justifyContent: 'center',
         color: 'var(--text-muted)', background: 'var(--bg-card)',
         border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-        gap: '8px', fontSize: '11px', fontFamily: 'var(--font-mono)'
+        gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
       }}>
         <Table2 size={24} strokeWidth={1} />
         run a query to see results
@@ -734,7 +734,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
           boxShadow: 'var(--shadow-lg)', animation: 'menuIn 140ms ease', fontFamily: 'var(--font-mono)'
         }}>
           <div style={{
-            padding: '5px 12px', fontSize: '9.5px', color: 'var(--text-muted)',
+            padding: '5px 12px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)',
             borderBottom: '1px solid var(--border-subtle)', marginBottom: '4px'
           }}>
             row {rowMenu.row + 1}
@@ -742,7 +742,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
           <div onClick={() => requestDelete(rowMenu.row)}
             style={{
               display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px',
-              fontSize: '11px', fontFamily: 'var(--font-mono)', cursor: 'pointer',
+              fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: 'pointer',
               color: 'var(--error-color)'
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--error-bg)' }}
@@ -763,7 +763,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     }}>
       <header className="sql-results__toolbar" style={{
         padding: '5px 10px', borderBottom: '1px solid var(--border-subtle)',
-        fontSize: '10px', fontFamily: 'var(--font-mono)',
+        fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
         color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', flexShrink: 0, gap: '8px'
       }}>
@@ -772,7 +772,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             {result.rowCount} rows{selectedRows.size > 0 ? ` · ${selectedRows.size} selected` : ''}
           </span>
           {editable && (
-            <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
               <Pencil size={8} /> double-click to edit · right-click row to delete
             </span>
           )}
@@ -781,7 +781,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               {results.map((r, i) => (
                 <button key={i} onClick={() => { setActiveSet(i); setSelectedRows(new Set()) }}
                   style={{
-                    padding: '1px 8px', fontSize: '9px', fontFamily: 'var(--font-mono)',
+                    padding: '1px 8px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                     background: i === activeSet ? 'var(--accent-bg)' : 'transparent',
                     color: i === activeSet ? 'var(--accent-color)' : 'var(--text-muted)',
                     border: '1px solid ' + (i === activeSet ? 'var(--accent-color)' : 'var(--border-color)'),
@@ -792,17 +792,17 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               ))}
             </span>
           )}
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', color: 'var(--text-muted)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
             <Timer size={9} /> {execution.elapsedMs} ms
           </span>
           {(primaryKeys.size > 0 || foreignKeys.size > 0) && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><KeyRound size={9} style={{ color: PK_COLOR }} /> PK</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Link2 size={9} style={{ color: FK_COLOR }} /> FK</span>
             </span>
           )}
           {isTruncated && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--warning-color)', fontSize: '9px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--warning-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
               <AlertTriangle size={9} /> truncated at {totalShown}
             </span>
           )}
@@ -814,7 +814,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             <ZoomOut size={10} />
           </button>
           <span data-testid="result-grid-zoom-level" aria-label={`result grid zoom ${Math.round(zoomScale * 100)} percent`}
-            style={{ minWidth: '32px', textAlign: 'center', fontSize: '9px', color: 'var(--text-muted)' }}>{Math.round(zoomScale * 100)}%</span>
+            style={{ minWidth: '32px', textAlign: 'center', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{Math.round(zoomScale * 100)}%</span>
           <button style={btnStyle} title="zoom in (Ctrl++)" onClick={() => changeZoom(1)}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -828,7 +828,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               padding: '2px 8px', marginLeft: '6px', height: '18px',
               background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
               borderRadius: 'var(--radius-sm)', color: 'var(--accent-color)',
-              cursor: 'pointer', fontSize: '9px', fontFamily: 'var(--font-mono)',
+              cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
               fontWeight: 600
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--text-inverse)' }}
@@ -843,7 +843,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               padding: '2px 8px', marginLeft: '4px', height: '18px',
               background: 'transparent', border: '1px solid var(--accent-secondary)',
               borderRadius: 'var(--radius-sm)', color: 'var(--accent-secondary)',
-              cursor: 'pointer', fontSize: '9px', fontFamily: 'var(--font-mono)',
+              cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
               fontWeight: 600, transition: 'background 140ms ease, color 140ms ease'
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-secondary)'; e.currentTarget.style.color = 'var(--text-inverse)' }}
@@ -873,7 +873,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         <div style={{
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: execution.canceled ? 'var(--warning-color)' : 'var(--text-muted)',
-          fontSize: '11px', fontFamily: 'var(--font-mono)'
+          fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
         }}>
           {execution.canceled
             ? 'query canceled'
@@ -929,7 +929,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                     }}>
                     <span style={{
                       position: 'absolute', left: labelOffset, top: '3px', whiteSpace: 'nowrap',
-                      color: group.joined ? FK_COLOR : 'var(--accent-color)', fontSize: '8px', fontWeight: 700,
+                      color: group.joined ? FK_COLOR : 'var(--accent-color)', fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontWeight: 700,
                       letterSpacing: '0.35px', textTransform: 'uppercase'
                     }}>
                       {group.joined ? 'joined' : 'base'} · {group.label}

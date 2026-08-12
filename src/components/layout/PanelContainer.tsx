@@ -17,7 +17,7 @@ export function PanelContainer({ title, actions, children, className, headerClas
         padding: '0 0 12px 0', flexShrink: 0
       }}>
         <h2 style={{
-          margin: 0, fontSize: '13px', fontWeight: 600,
+          margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600,
           fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)',
           letterSpacing: '0.3px'
         }}>

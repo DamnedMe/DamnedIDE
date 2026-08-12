@@ -90,7 +90,7 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
   }
 
   if (error) {
-    return <div style={{ padding: '12px', color: 'var(--error-color)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{error}</div>
+    return <div style={{ padding: '12px', color: 'var(--error-color)', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>{error}</div>
   }
 
   const renderZone = (label: string, list: GitFileStatus[], accent: string) => {
@@ -98,7 +98,7 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
     return (
       <div>
         <div style={{
-          padding: '3px 8px', fontSize: '9px', fontWeight: 700, color: accent,
+          padding: '3px 8px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, color: accent,
           textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
           borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-subtle)', flexShrink: 0
         }}>
@@ -125,7 +125,7 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
         padding: '4px 8px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
       }}>
         <GitCompare size={11} style={{ color: 'var(--accent-color)' }} />
-        <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+        <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>
           changes ({staged.length + unstaged.length})
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
@@ -147,7 +147,7 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
         {renderZone('staged changes', staged, 'var(--success-color)')}
         {renderZone('changes', unstaged, 'var(--warning-color)')}
         {staged.length === 0 && unstaged.length === 0 && (
-          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             no changes
           </div>
         )}

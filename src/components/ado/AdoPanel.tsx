@@ -90,22 +90,22 @@ export function AdoPanel() {
         }}>
           <div style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-secondary)' }}>
             <Network size={32} strokeWidth={1} style={{ marginBottom: '12px' }} />
-            <p style={{ margin: 0, fontSize: '13px' }}>Connettiti ad Azure DevOps</p>
+            <p style={{ margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>Connettiti ad Azure DevOps</p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
               Organization
               <input value={org} onChange={e => setOrg(e.target.value)} placeholder="es. revoltech" style={inputStyle} />
             </label>
-            <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
               Project
               <input value={project} onChange={e => setProject(e.target.value)} placeholder="es. Themis_Platform" style={inputStyle} />
             </label>
-            <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
               Repository
               <input value={repo} onChange={e => setRepo(e.target.value)} placeholder="es. Themis-API" style={inputStyle} />
             </label>
-            <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
               Personal Access Token
               <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="PAT..." style={inputStyle} />
             </label>
@@ -114,7 +114,7 @@ export function AdoPanel() {
               background: isLoading ? 'var(--bg-disabled)' : 'var(--accent-color)',
               color: '#fff', border: 'none', borderRadius: '4px',
               cursor: isLoading ? 'not-allowed' : 'pointer',
-              fontSize: '13px', fontWeight: 500, marginTop: '8px'
+              fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 500, marginTop: '8px'
             }}>
               {isLoading ? 'Connessione...' : 'Connetti'}
             </button>
@@ -200,7 +200,7 @@ export function AdoPanel() {
                 color: 'var(--text-muted)', gap: '8px', fontFamily: 'var(--font-mono)'
               }}>
                 <Network size={28} strokeWidth={1} />
-                <span style={{ fontSize: '10px' }}>select an item to inspect it</span>
+                <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>select an item to inspect it</span>
               </div>
             )}
           </div>
@@ -219,5 +219,5 @@ const inputStyle: React.CSSProperties = {
   display: 'block', width: '100%', marginTop: '4px',
   padding: '7px 10px', background: 'var(--bg-input)',
   border: '1px solid var(--border-color)', borderRadius: '4px',
-  color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box'
+  color: 'var(--text-primary)', fontSize: 'calc(13px * var(--ui-text-scale, 1))', boxSizing: 'border-box'
 }

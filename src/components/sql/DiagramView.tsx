@@ -370,8 +370,8 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
         <div style={{ minWidth: '180px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ display: 'inline-flex', color: 'var(--accent-color)' }}><Workflow size={15} /></span>
           <span style={{ minWidth: 0 }}>
-            <strong style={{ display: 'block', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>{database}</strong>
-            <span style={{ display: 'block', fontSize: '9px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+            <strong style={{ display: 'block', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', fontWeight: 600 }}>{database}</strong>
+            <span style={{ display: 'block', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
               {data ? `${data.tables.length} tables · ${data.edges.length} relations` : 'database diagram'}
             </span>
           </span>
@@ -392,11 +392,11 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
               width: '100%', height: '28px', padding: '0 58px 0 28px', boxSizing: 'border-box',
               border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)',
               background: 'var(--bg-card)', color: 'var(--text-primary)', outline: 'none',
-              fontSize: '10px', fontFamily: 'var(--font-mono)'
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
             }}
           />
           {search && (
-            <span style={{ position: 'absolute', right: '8px', fontSize: '9px', color: 'var(--text-muted)' }}>
+            <span style={{ position: 'absolute', right: '8px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
               {searchMatches.length} found
             </span>
           )}
@@ -405,7 +405,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', alignItems: 'center' }}>
           <button style={toolbarButton} title="zoom out" onClick={() => zoomAt(zoom / 1.2)}><ZoomOut size={12} /></button>
           <span data-testid="diagram-zoom-level" aria-label={`diagram zoom ${Math.round(zoom * 100)} percent`}
-            style={{ minWidth: '38px', textAlign: 'center', fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+            style={{ minWidth: '38px', textAlign: 'center', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
             {Math.round(zoom * 100)}%
           </span>
           <button style={toolbarButton} title="zoom in" onClick={() => zoomAt(zoom * 1.2)}><ZoomIn size={12} /></button>
@@ -431,21 +431,21 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                   ))}
                 </div>
                 <Loader2 size={15} style={{ animation: 'spin 0.9s linear infinite', marginBottom: '8px' }} />
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Building the relationship map</div>
-                <div style={{ fontSize: '9px', marginTop: '4px' }}>Loading tables, keys and foreign-key connections…</div>
+                <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>Building the relationship map</div>
+                <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', marginTop: '4px' }}>Loading tables, keys and foreign-key connections…</div>
               </div>
             </div>
           )}
           {error && (
             <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: '24px', zIndex: 2 }}>
               <div style={{ maxWidth: '460px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
-                <div style={{ color: 'var(--error-color)', fontSize: '11px', marginBottom: '10px' }}>{error}</div>
+                <div style={{ color: 'var(--error-color)', fontSize: 'calc(11px * var(--ui-text-scale, 1))', marginBottom: '10px' }}>{error}</div>
                 <button style={{ ...toolbarButton, width: 'auto', padding: '0 12px' }} onClick={() => void load(true)}>try again</button>
               </div>
             </div>
           )}
           {!loading && !error && data && layout.length === 0 && (
-            <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
               no tables in this database
             </div>
           )}
@@ -555,7 +555,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
               position: 'absolute', left: '10px', bottom: '10px', padding: '5px 8px',
               border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)',
               background: 'color-mix(in srgb, var(--bg-card) 90%, transparent)', color: 'var(--text-muted)',
-              fontSize: '9px', fontFamily: 'var(--font-mono)', pointerEvents: 'none'
+              fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', pointerEvents: 'none'
             }}>
               {overview ? 'overview · zoom in for columns' : `${visibleTables.length} visible · drag canvas · double-click table to query`}
             </div>
@@ -569,9 +569,9 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
           }}>
             <div style={{ padding: '12px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>selected table</div>
-                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-primary)', overflowWrap: 'anywhere' }}>{selected.name}</strong>
-                <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selected.columns.length} columns</span>
+                <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>selected table</div>
+                <strong style={{ display: 'block', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', overflowWrap: 'anywhere' }}>{selected.name}</strong>
+                <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selected.columns.length} columns</span>
               </div>
               <button style={toolbarButton} title="close table details" onClick={() => setSelectedTable(null)}><PanelRightClose size={12} /></button>
             </div>
@@ -581,14 +581,14 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                   minHeight: '34px', padding: '5px 12px', display: 'grid', gridTemplateColumns: '16px minmax(0, 1fr) auto',
                   gap: '6px', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', fontFamily: 'var(--font-mono)'
                 }}>
-                  <span style={{ color: column.isPrimaryKey ? PK_COLOR : column.isForeignKey ? FK_COLOR : 'var(--text-muted)', fontSize: '9px' }}>
+                  <span style={{ color: column.isPrimaryKey ? PK_COLOR : column.isForeignKey ? FK_COLOR : 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
                     {column.isPrimaryKey ? 'PK' : column.isForeignKey ? 'FK' : '·'}
                   </span>
                   <span style={{ minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{column.name}</span>
-                    {column.nullable && <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>nullable</span>}
+                    <span style={{ display: 'block', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{column.name}</span>
+                    {column.nullable && <span style={{ fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>nullable</span>}
                   </span>
-                  <span style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>{column.type}</span>
+                  <span style={{ fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{column.type}</span>
                 </div>
               ))}
             </div>
@@ -596,7 +596,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
               <button onClick={() => onRunQuery(buildExplicitSelect(selected.name, selected.columns.map(column => column.name), 1000))} style={{
                 width: '100%', height: '30px', border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-sm)',
                 background: 'var(--accent-bg)', color: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: '7px', cursor: 'pointer', fontSize: '10px', fontWeight: 600
+                gap: '7px', cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600
               }}><Play size={11} /> SELECT TOP 1000</button>
             </div>
           </aside>

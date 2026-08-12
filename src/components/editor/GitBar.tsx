@@ -107,7 +107,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
     <div style={{
       display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
       padding: '3px 8px', borderBottom: '1px solid var(--border-subtle)',
-      background: 'var(--bg-primary)', fontSize: '10px', fontFamily: 'var(--font-mono)'
+      background: 'var(--bg-primary)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
     }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', flexShrink: 0 }}>
         <GitBranch size={11} />
@@ -135,7 +135,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
         placeholder="commit message"
         spellCheck={false}
         style={{
-          flex: 1, minWidth: '100px', padding: '2px 6px', fontSize: '10px',
+          flex: 1, minWidth: '100px', padding: '2px 6px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
           fontFamily: 'var(--font-mono)', background: 'var(--bg-input)',
           border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
           color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box'
@@ -148,7 +148,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
           border: 'none', borderRadius: 'var(--radius-sm)',
           color: commitMsg.trim() && busy !== 'commit' ? 'var(--text-inverse)' : 'var(--text-muted)',
           cursor: commitMsg.trim() && busy !== 'commit' ? 'pointer' : 'not-allowed',
-          fontSize: '9px', fontFamily: 'var(--font-mono)', fontWeight: 600
+          fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
         }}>
         {busy === 'commit' ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={10} />}
         commit
@@ -157,7 +157,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
       <input value={branchB} onChange={(e) => setBranchB(e.target.value)} title="target branch for merge diff"
         spellCheck={false}
         style={{
-          width: '80px', padding: '2px 6px', fontSize: '10px', fontFamily: 'var(--font-mono)',
+          width: '80px', padding: '2px 6px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
           background: 'var(--bg-input)', border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box'
         }}

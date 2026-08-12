@@ -23,7 +23,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
         fontFamily: 'var(--font-mono)', animation: 'menuIn 140ms ease'
       }}>
         <div style={{
-          padding: '7px 12px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase',
+          padding: '7px 12px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontWeight: 700, textTransform: 'uppercase',
           letterSpacing: '0.5px', color: 'var(--text-muted)',
           borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '6px'
         }}>
@@ -31,7 +31,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
         </div>
         <div style={{ maxHeight: '200px', overflow: 'auto' }}>
           {recent.length === 0 && (
-            <div style={{ padding: '10px 12px', fontSize: '10px', color: 'var(--text-muted)' }}>
+            <div style={{ padding: '10px 12px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
               no recent connections yet
             </div>
           )}
@@ -39,7 +39,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
             <div key={i} onClick={() => onOpenRecent(r)}
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px',
-                fontSize: '11px', cursor: 'pointer', color: 'var(--text-primary)'
+                fontSize: 'calc(11px * var(--ui-text-scale, 1))', cursor: 'pointer', color: 'var(--text-primary)'
               }}
               onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
@@ -47,7 +47,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {r.server}{r.database ? ` / ${r.database}` : ''}
               </span>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{authShortLabel(r.authType)}</span>
+              <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{authShortLabel(r.authType)}</span>
             </div>
           ))}
         </div>
@@ -55,7 +55,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
         {connections.length > 0 && (
           <>
             <div style={{
-              padding: '7px 12px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase',
+              padding: '7px 12px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontWeight: 700, textTransform: 'uppercase',
               letterSpacing: '0.5px', color: 'var(--text-muted)',
               borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)',
               display: 'flex', alignItems: 'center', gap: '6px'
@@ -67,7 +67,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
                 <div key={c.id} onClick={() => onSelectSaved(c.id)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px',
-                    fontSize: '11px', cursor: 'pointer', color: 'var(--text-primary)'
+                    fontSize: 'calc(11px * var(--ui-text-scale, 1))', cursor: 'pointer', color: 'var(--text-primary)'
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
@@ -78,7 +78,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {c.label}
                   </span>
-                  <span style={{ fontSize: '9px', color: c.isConnected ? 'var(--success-color)' : 'var(--text-muted)' }}>
+                  <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: c.isConnected ? 'var(--success-color)' : 'var(--text-muted)' }}>
                     {c.isConnected ? 'connected' : 'disconnected'}
                   </span>
                 </div>
@@ -91,7 +91,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
           <div onClick={onNew}
             style={{
               display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px',
-              fontSize: '11px', fontFamily: 'var(--font-mono)', cursor: 'pointer',
+              fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: 'pointer',
               color: 'var(--text-primary)'
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}

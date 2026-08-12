@@ -21,7 +21,7 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
         fontFamily: 'var(--font-mono)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <History size={15} style={{ color: 'var(--accent-color)' }} />
             open repository
           </h3>
@@ -37,13 +37,13 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
           </button>
         </div>
 
-        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+        <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', marginBottom: '10px' }}>
           recent repositories
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflow: 'auto', marginBottom: '14px' }}>
           {repos.length === 0 && (
-            <div style={{ padding: '18px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px' }}>
+            <div style={{ padding: '18px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
               no recent repositories
             </div>
           )}
@@ -58,7 +58,7 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-color)' }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)' }}>
               <FolderOpen size={13} style={{ flexShrink: 0, color: 'var(--accent-color)' }} />
-              <span style={{ fontSize: '11px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r}</span>
+              <span style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r}</span>
             </div>
           ))}
         </div>
@@ -69,7 +69,7 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
               display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 12px',
               background: 'var(--bg-card)', border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md)', color: 'var(--text-muted)', cursor: 'pointer',
-              fontSize: '11px', fontFamily: 'var(--font-mono)'
+              fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
             }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)'; e.currentTarget.style.borderColor = 'var(--error-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}>
@@ -79,13 +79,13 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
             <button onClick={onSkip} style={{
               padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
-              fontSize: '12px', fontFamily: 'var(--font-mono)'
+              fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
             }}>skip</button>
             <button onClick={onOpenFolder} style={{
               display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px',
               background: 'var(--accent-color)', color: 'var(--text-inverse)',
               border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer',
-              fontSize: '12px', fontFamily: 'var(--font-mono)', fontWeight: 600
+              fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
             }}>
               <FolderOpen size={12} /> open folder
             </button>

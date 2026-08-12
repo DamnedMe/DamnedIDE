@@ -339,7 +339,7 @@ export function DatabaseExplorer({
     }}
       style={{
         display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px',
-        fontSize: '11px', fontFamily: 'var(--font-mono)', cursor: disabled ? 'not-allowed' : 'pointer',
+        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: disabled ? 'not-allowed' : 'pointer',
         color: danger ? 'var(--error-color)' : (disabled ? 'var(--text-muted)' : 'var(--text-primary)'),
         opacity: disabled ? 0.5 : 1
       }}
@@ -352,7 +352,7 @@ export function DatabaseExplorer({
 
   const menuSection = (label: string) => (
     <div style={{
-      padding: '5px 12px 3px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase',
+      padding: '5px 12px 3px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, textTransform: 'uppercase',
       letterSpacing: '0.5px', color: 'var(--text-muted)'
     }}>
       {label}
@@ -375,7 +375,7 @@ export function DatabaseExplorer({
           boxShadow: 'var(--shadow-lg)', animation: 'menuIn 140ms ease', maxHeight: '480px', overflow: 'auto'
         }}>
           <div style={{
-            padding: '6px 12px 4px', fontSize: '9.5px', color: 'var(--text-muted)',
+            padding: '6px 12px 4px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)',
             borderBottom: '1px solid var(--border-subtle)', marginBottom: '4px',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
           }}>
@@ -477,7 +477,7 @@ export function DatabaseExplorer({
   // ─── Row rendering ───────────────────────────────────────────────────────
   const rowStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', gap: '5px', width: '100%', padding: '4px 8px 4px 0',
-    cursor: 'pointer', fontSize: '11px', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
+    cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
     borderLeft: '2px solid transparent', background: 'transparent',
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
     // dense lists: skip offscreen rows' layout/paint work
@@ -509,7 +509,7 @@ export function DatabaseExplorer({
       display: 'flex', flexDirection: 'column'
     }}>
       <header className="sql-object-explorer__header" style={{
-        padding: '7px 12px', fontSize: '10px', fontWeight: 700,
+        padding: '7px 12px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700,
         color: 'var(--text-secondary)', textTransform: 'uppercase',
         letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
         borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
@@ -569,7 +569,7 @@ export function DatabaseExplorer({
             width: '100%', height: '28px', boxSizing: 'border-box', padding: '0 28px 0 27px',
             border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)',
             background: 'var(--bg-card)', color: 'var(--text-primary)', outline: 'none',
-            fontSize: '10px', fontFamily: 'var(--font-mono)'
+            fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
           }}
         />
         {search && (
@@ -604,8 +604,8 @@ export function DatabaseExplorer({
                 onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent' }}>
                 <span style={{ display: 'inline-flex', color: result.kind === 'table' ? 'var(--accent-color)' : 'var(--text-muted)' }}>{resultIcon}</span>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '10.5px', color: 'var(--text-primary)' }}>{result.name}</span>
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '8.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 'calc(10.5px * var(--ui-text-scale, 1))', color: 'var(--text-primary)' }}>{result.name}</span>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginTop: '2px' }}>
                     {result.kind} · {result.database || result.conn.label}
                   </span>
                 </span>
@@ -613,13 +613,13 @@ export function DatabaseExplorer({
             )
           })}
           {searchResults.length === 0 && searchIndexLoading && (
-            <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+            <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
               <Loader2 size={13} style={{ display: 'block', margin: '0 auto 7px', animation: 'spin 0.9s linear infinite' }} />
               indexing database objects…
             </div>
           )}
           {searchResults.length === 0 && !searchIndexLoading && (
-            <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+            <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
               no objects match “{search.trim()}”
             </div>
           )}
@@ -629,7 +629,7 @@ export function DatabaseExplorer({
       <div className="sql-object-explorer__tree" style={{ flex: 1, overflow: 'auto', display: search.trim() ? 'none' : 'block' }} onClick={() => setMenu(null)}>
         {connections.length === 0 && (
           <div style={{
-            padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px',
+            padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
             fontFamily: 'var(--font-mono)'
           }}>
             <Plug size={18} strokeWidth={1} style={{ display: 'block', margin: '0 auto 8px' }} />
@@ -685,12 +685,12 @@ export function DatabaseExplorer({
               {open && conn.isConnected && (
                 <>
                   {dbs.loading && (
-                    <div style={{ ...indent(1), padding: '4px 8px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                    <div style={{ ...indent(1), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
                       loading databases…
                     </div>
                   )}
                   {dbs.error && (
-                    <div style={{ ...indent(1), padding: '4px 8px', fontSize: '10px', color: 'var(--error-color)' }}>
+                    <div style={{ ...indent(1), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--error-color)' }}>
                       {dbs.error}
                     </div>
                   )}
@@ -787,15 +787,15 @@ export function DatabaseExplorer({
                                           ? <Link2 size={10} style={{ color: '#c678dd' }} />
                                           : <span style={{ width: '10px', display: 'inline-block' }} />)}
                                       <span style={{ color: 'var(--text-primary)' }}>{c.name}</span>
-                                      <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{c.type}</span>
-                                      {c.nullable && <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>null</span>}
+                                      <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{c.type}</span>
+                                      {c.nullable && <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>null</span>}
                                     </div>
                                   ))}
                                 </div>
                               )
                             })}
                             {isOpen(`${dbKey}:tables`) && tables.loading && (
-                              <div style={{ ...indent(3), padding: '4px 8px', fontSize: '10px', color: 'var(--text-muted)' }}>loading…</div>
+                              <div style={{ ...indent(3), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>loading…</div>
                             )}
 
                             {!compact && (
@@ -867,7 +867,7 @@ export function DatabaseExplorer({
                                   </div>
                                 ))}
                                 {procs.loading && (
-                                  <div style={{ ...indent(3), padding: '4px 8px', fontSize: '10px', color: 'var(--text-muted)' }}>loading…</div>
+                                  <div style={{ ...indent(3), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>loading…</div>
                                 )}
                               </>
                             )}

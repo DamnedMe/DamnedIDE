@@ -304,7 +304,7 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
 
   if (isLoading) {
     return (
-      <div style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '12px' }}>
+      <div style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: 'calc(12px * var(--ui-text-scale, 1))' }}>
         <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
         Loading...
       </div>
@@ -312,7 +312,7 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
   }
 
   if (error) {
-    return <div style={{ padding: '12px', color: 'var(--error-color)', fontSize: '11px' }}>{error}</div>
+    return <div style={{ padding: '12px', color: 'var(--error-color)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>{error}</div>
   }
 
   const displayTree = filteredTree || tree
@@ -332,13 +332,13 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
         </ToolbarBtn>
       </div>
       {isFiltering && (
-        <div style={{ padding: '8px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '11px' }}>
+        <div style={{ padding: '8px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
           <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
           indexing...
         </div>
       )}
       {!isFiltering && filteredTree && (
-        <div style={{ padding: '3px 8px', color: 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+        <div style={{ padding: '3px 8px', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
           {totalMatches === 0
             ? 'no files match'
             : totalMatches > MAX_DISPLAY
@@ -450,7 +450,7 @@ function FileContextMenu({ x, y, node, onClose, onDelete, onNewFile, onNewFolder
     <div onClick={() => { action(); onClose() }}
       style={{
         display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px',
-        fontSize: '11px', fontFamily: 'var(--font-mono)', cursor: 'pointer',
+        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: 'pointer',
         color: danger ? 'var(--error-color)' : 'var(--text-primary)',
         transition: 'background 0.1s ease'
       }}
@@ -518,7 +518,7 @@ function TreeNodeItem({
       <div onClick={handleClick} onContextMenu={handleContextMenu} data-file-path={node.path} ref={nodeRef} style={{
         display: 'flex', alignItems: 'center',
         padding: `3px 8px 3px ${8 + depth * 14}px`,
-        cursor: 'pointer', fontSize: '12px', gap: '4px',
+        cursor: 'pointer', fontSize: 'calc(12px * var(--ui-text-scale, 1))', gap: '4px',
         background: isSelected ? 'var(--accent-bg)' : 'transparent',
         borderLeft: isSelected ? '3px solid var(--accent-color)' : '3px solid transparent',
         userSelect: 'none', transition: 'background 0.1s ease',

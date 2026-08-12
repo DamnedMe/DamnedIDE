@@ -56,7 +56,7 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
   }
 
   const fieldLabel = (text: string) => (
-    <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{text}</label>
+    <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{text}</label>
   )
 
   return (
@@ -71,7 +71,7 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
         padding: '22px', fontFamily: 'var(--font-mono)', overflow: 'auto'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <GitPullRequest size={15} style={{ color: 'var(--success-color)' }} />
             new pull request
           </h3>
@@ -116,7 +116,7 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
                   display: 'flex', alignItems: 'center', gap: '4px', background: 'none',
                   border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
                   color: 'var(--text-muted)', cursor: source && target ? 'pointer' : 'not-allowed',
-                  fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '2px 6px',
+                  fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', padding: '2px 6px',
                   opacity: source && target ? 1 : 0.5
                 }}>
                 {isLoadingCommits ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <RotateCw size={9} />}
@@ -131,11 +131,11 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <input type="checkbox" checked={autoComplete} onChange={(e) => setAutoComplete(e.target.checked)}
               style={{ accentColor: 'var(--accent-color)' }} />
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>auto-complete when policies pass</span>
+            <span style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>auto-complete when policies pass</span>
           </div>
 
           {error && (
-            <div style={{ padding: '8px 10px', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: 'var(--radius-sm)', fontSize: '10px' }}>
+            <div style={{ padding: '8px 10px', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
               {error}
             </div>
           )}
@@ -162,17 +162,17 @@ const inputStyle: React.CSSProperties = {
   display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
   background: 'var(--bg-input)', border: '1px solid var(--border-color)',
   borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-  fontSize: '12px', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
+  fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
 }
 
 const secondaryBtnStyle: React.CSSProperties = {
   padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
   borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
-  fontSize: '12px', fontFamily: 'var(--font-mono)'
+  fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
 }
 
 const primaryBtnStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px',
-  border: 'none', borderRadius: 'var(--radius-md)', fontSize: '12px',
+  border: 'none', borderRadius: 'var(--radius-md)', fontSize: 'calc(12px * var(--ui-text-scale, 1))',
   fontFamily: 'var(--font-mono)', fontWeight: 600
 }

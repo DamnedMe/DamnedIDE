@@ -43,7 +43,7 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
           </button>
         )}
         <span style={{
-          fontSize: '10px', fontWeight: 600, fontFamily: 'var(--font-mono)',
+          fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)',
           color: 'var(--text-secondary)', letterSpacing: '0.5px'
         }}>
           {title}

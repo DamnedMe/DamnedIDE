@@ -11,7 +11,6 @@ import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../ed
 import { useUIStore, useSettingsStore } from '../../store'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
-import { attachWheelZoom } from '../../utils/editor-zoom'
 
 function applyEditorTheme(monaco: typeof import('monaco-editor')) {
   const theme = useUIStore.getState().theme
@@ -57,7 +56,6 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   const scrollLinesRef = useRef<Record<string, number>>({})
   const editEditorRef = useRef<any>(null)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
-  const editorFontSize = useSettingsStore(s => s.settings.fontSize)
 
   const updateEditorNav = (line: number | null) => {
     if (!diffFile || line == null) return
@@ -277,7 +275,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
         padding: '14px', color: 'var(--error-color)',
         background: 'var(--error-bg)', border: '1px solid var(--error-color)',
         borderRadius: 'var(--radius-md)', display: 'flex',
-        alignItems: 'flex-start', gap: '8px', fontSize: '11px',
+        alignItems: 'flex-start', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
         fontFamily: 'var(--font-mono)'
       }}>
         <AlertCircle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
@@ -291,7 +289,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
     return (
       <div style={{ flexShrink: 0 }}>
         <div style={{
-          padding: '4px 12px', fontSize: '9px', fontWeight: 700, color: accent,
+          padding: '4px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, color: accent,
           textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
           borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-subtle)'
         }}>
@@ -317,7 +315,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
     }}>
       <div style={{
         padding: '7px 12px', borderBottom: '1px solid var(--border-subtle)',
-        fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)',
+        fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-secondary)',
         display: 'flex', alignItems: 'center', gap: '6px',
         textTransform: 'uppercase', letterSpacing: '0.5px',
         fontFamily: 'var(--font-mono)', flexShrink: 0
@@ -376,7 +374,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
         {renderZone('staged changes', stagedFiles, 'var(--success-color)')}
         {renderZone('changes', unstagedFiles, 'var(--warning-color)')}
         {files.length === 0 && (
-          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             no changes
           </div>
         )}
@@ -405,13 +403,13 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
             }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '6px',
-                fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)',
+                fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)',
                 overflow: 'hidden', flex: 1
               }}>
                 <span style={{
                   padding: '1px 6px', borderRadius: 'var(--radius-sm)',
                   background: 'var(--warning-bg)', color: 'var(--warning-color)',
-                  fontWeight: 700, fontSize: '9px', flexShrink: 0
+                  fontWeight: 700, fontSize: 'calc(9px * var(--ui-text-scale, 1))', flexShrink: 0
                 }}>
                   editing
                 </span>
@@ -425,7 +423,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                   <X size={11} />
                 </button>
                 <button onClick={handleSave} disabled={isSaving} title="save"
-                  style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '20px', background: 'var(--accent-color)', border: 'none', borderRadius: 'var(--radius-sm)', color: 'var(--text-inverse)', cursor: isSaving ? 'not-allowed' : 'pointer', fontSize: '9px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '20px', background: 'var(--accent-color)', border: 'none', borderRadius: 'var(--radius-sm)', color: 'var(--text-inverse)', cursor: isSaving ? 'not-allowed' : 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600 }}
                   onMouseEnter={(e) => { if (!isSaving) e.currentTarget.style.opacity = '0.9' }}
                   onMouseLeave={(e) => { if (!isSaving) e.currentTarget.style.opacity = '1' }}>
                   {isSaving ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={10} />}
@@ -443,7 +441,6 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                 onMount={(editor, monaco) => {
                   applyEditorTheme(monaco)
                   editEditorRef.current = editor
-                  attachWheelZoom(editor.getDomNode())
                   const editPath = diffFile ? `${worktreePath}/${diffFile}` : null
                   registerCSharpHover(monaco)
                   trackHoverModel(editor.getModel(), editPath)
@@ -488,11 +485,11 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                   }
                 }}
                 options={{
-                  fontSize: editorFontSize,
+                  fontSize: 12.5,
                   fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
                   fontLigatures: false,
                   minimap: { enabled: true, maxColumn: 80, renderCharacters: false },
-                  mouseWheelZoom: false,
+                  mouseWheelZoom: true,
                   lineNumbers: 'on',
                   renderWhitespace: 'selection',
                   scrollBeyondLastLine: false,
@@ -529,10 +526,10 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
               background: 'var(--bg-primary)', flexShrink: 0, gap: '8px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                <span style={{ padding: '1px 5px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-tag)', color: 'var(--accent-color)', fontWeight: 700, fontSize: '9px', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                <span style={{ padding: '1px 5px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-tag)', color: 'var(--accent-color)', fontWeight: 700, fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
                   diff
                 </span>
-                <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diffFile}</span>
+                <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diffFile}</span>
               </div>
               <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
                 <button onClick={handleStartEdit} title="edit file"
@@ -567,9 +564,9 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
           color: 'var(--text-muted)', fontFamily: 'var(--font-mono)'
         }}>
           <GitCompare size={28} strokeWidth={1} />
-          <div style={{ fontSize: '10px', textAlign: 'center', lineHeight: 1.7 }}>
+          <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', textAlign: 'center', lineHeight: 1.7 }}>
             click a file to see its changes<br />
-            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
               green = added · red = removed · markers in the scroll zone
             </span>
           </div>

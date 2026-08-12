@@ -54,7 +54,7 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
           alignItems: 'center',
           marginBottom: '20px'
         }}>
-          <h3 style={{ margin: 0, fontSize: '15px' }}>Nuovo Worktree</h3>
+          <h3 style={{ margin: 0, fontSize: 'calc(15px * var(--ui-text-scale, 1))' }}>Nuovo Worktree</h3>
           <button onClick={onClose} style={{
             background: 'transparent',
             border: 'none',
@@ -66,7 +66,7 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+          <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             Branch
             <input
               type="text"
@@ -76,7 +76,7 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
               style={inputStyle}
             />
           </label>
-          <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+          <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             Percorso
             <input
               type="text"
@@ -93,7 +93,7 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
               background: 'var(--bg-error)',
               color: 'var(--error-color)',
               borderRadius: '4px',
-              fontSize: '12px'
+              fontSize: 'calc(12px * var(--ui-text-scale, 1))'
             }}>
               {error}
             </div>
@@ -110,7 +110,7 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
               border: 'none',
               borderRadius: '4px',
               cursor: isLoading ? 'not-allowed' : 'pointer',
-              fontSize: '13px',
+              fontSize: 'calc(13px * var(--ui-text-scale, 1))',
               fontWeight: 500
             }}
           >
@@ -131,6 +131,6 @@ const inputStyle: React.CSSProperties = {
   border: '1px solid var(--border-color)',
   borderRadius: '4px',
   color: 'var(--text-primary)',
-  fontSize: '13px',
+  fontSize: 'calc(13px * var(--ui-text-scale, 1))',
   boxSizing: 'border-box'
 }

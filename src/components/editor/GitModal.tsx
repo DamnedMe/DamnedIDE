@@ -24,7 +24,7 @@ export function GitModal({ title, text, blame, history, onClose }: GitModalProps
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '8px 14px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
         }}>
-          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
+          <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
           <button onClick={onClose} title="close"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '20px',
@@ -40,14 +40,14 @@ export function GitModal({ title, text, blame, history, onClose }: GitModalProps
         {text !== undefined && (
           <pre style={{
             flex: 1, overflow: 'auto', margin: 0, padding: '10px 14px',
-            fontSize: '10px', fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: "'JetBrains Mono', monospace",
             color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
             lineHeight: 1.5
           }}>{text}</pre>
         )}
 
         {blame && (
-          <div style={{ flex: 1, overflow: 'auto', fontSize: '10px' }}>
+          <div style={{ flex: 1, overflow: 'auto', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
             {blame.map((b, i) => (
               <div key={i} style={{
                 display: 'flex', gap: '8px', padding: '2px 14px',
@@ -63,7 +63,7 @@ export function GitModal({ title, text, blame, history, onClose }: GitModalProps
         )}
 
         {history && (
-          <div style={{ flex: 1, overflow: 'auto', fontSize: '10px' }}>
+          <div style={{ flex: 1, overflow: 'auto', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
             {history.map((c, i) => (
               <div key={i} style={{
                 display: 'flex', gap: '8px', padding: '6px 14px',

@@ -110,7 +110,7 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
       <div style={{
         display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px',
         borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
-        fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)',
+        fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-secondary)',
         fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.5px'
       }}>
         <GitCompare size={11} />
@@ -132,7 +132,7 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
             <div key={f.path} onClick={() => selectFile(f)}
               style={{
                 display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 10px',
-                cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)',
+                cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                 background: active ? 'var(--accent-bg)' : 'transparent',
                 borderLeft: active ? '3px solid var(--accent-color)' : '3px solid transparent',
                 color: active ? 'var(--accent-color)' : 'var(--text-primary)',
@@ -168,7 +168,7 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
           height: '100%', gap: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)'
         }}>
           <FileCode size={24} strokeWidth={1} />
-          <div style={{ fontSize: '10px', textAlign: 'center' }}>
+          <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', textAlign: 'center' }}>
             select a file to see its diff
           </div>
         </div>
@@ -188,12 +188,12 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
           <GitPullRequest size={14} style={{ color: 'var(--success-color)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
-              fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)',
+              fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
             }}>
               #{pr.id}: {pr.title}
             </div>
-            <div style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
               {pr.sourceBranch} → {pr.targetBranch}
             </div>
           </div>
@@ -219,7 +219,7 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
       {actionError && (
         <div style={{
           padding: '5px 10px', background: 'var(--error-bg)', color: 'var(--error-color)',
-          fontSize: '9px', fontFamily: 'var(--font-mono)', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
+          fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
         }}>
           {actionError}
         </div>
@@ -249,7 +249,7 @@ function ActionBtn({ label, color, icon, busy, onClick }: {
         background: 'transparent', border: `1px solid ${color}`,
         borderRadius: 'var(--radius-sm)', color,
         cursor: busy ? 'not-allowed' : 'pointer',
-        fontSize: '9px', fontFamily: 'var(--font-mono)', fontWeight: 600,
+        fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600,
         opacity: busy ? 0.5 : 1
       }}>
       {busy ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : icon}

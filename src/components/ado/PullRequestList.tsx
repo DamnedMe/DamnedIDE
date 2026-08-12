@@ -17,7 +17,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
         padding: '16px',
         textAlign: 'center',
         color: 'var(--text-secondary)',
-        fontSize: '12px'
+        fontSize: 'calc(12px * var(--ui-text-scale, 1))'
       }}>
         Nessuna pull request attiva
       </div>
@@ -51,7 +51,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: '6px',
-            fontSize: '12px', fontWeight: 500,
+            fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 500,
             color: 'var(--text-primary)'
           }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -62,7 +62,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
                 display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0,
                 padding: '1px 6px', borderRadius: 'var(--radius-sm)',
                 background: 'var(--warning-bg)', color: 'var(--warning-color)',
-                fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono)'
+                fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)'
               }}>
                 <CheckCheck size={9} /> approval
               </span>
@@ -72,7 +72,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
                 display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0,
                 padding: '1px 6px', borderRadius: 'var(--radius-sm)',
                 background: 'var(--success-bg)', color: 'var(--success-color)',
-                fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono)'
+                fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)'
               }}>
                 <CheckCheck size={9} /> approved
               </span>
@@ -82,7 +82,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
                 display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0,
                 padding: '1px 6px', borderRadius: 'var(--radius-sm)',
                 background: 'var(--error-bg)', color: 'var(--error-color)',
-                fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono)'
+                fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)'
               }}>
                 <ThumbsDown size={9} /> rejected
               </span>
@@ -91,7 +91,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
               <span style={{
                 padding: '1px 6px', borderRadius: 'var(--radius-sm)',
                 background: 'var(--bg-tag)', color: 'var(--accent-color)',
-                fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0
+                fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0
               }}>
                 completed
               </span>
@@ -100,14 +100,14 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
               <span style={{
                 padding: '1px 6px', borderRadius: 'var(--radius-sm)',
                 background: 'var(--bg-subtle)', color: 'var(--text-muted)',
-                fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0
+                fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0
               }}>
                 draft
               </span>
             )}
           </div>
           <div style={{
-            fontSize: '10px', color: 'var(--text-secondary)',
+            fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)',
             fontFamily: 'var(--font-mono)', marginTop: '2px'
           }}>
             {pr.sourceBranch} → {pr.targetBranch}
@@ -128,7 +128,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
       <div style={{
         padding: '8px 12px',
         borderBottom: '1px solid var(--border-color)',
-        fontSize: '11px', fontWeight: 600,
+        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600,
         color: 'var(--text-secondary)',
         textTransform: 'uppercase', letterSpacing: '0.5px',
         display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0
@@ -139,7 +139,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
             display: 'flex', alignItems: 'center', gap: '3px',
             padding: '1px 6px', borderRadius: 'var(--radius-sm)',
             background: 'var(--warning-bg)', color: 'var(--warning-color)',
-            fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono)'
+            fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)'
           }}>
             <CircleDot size={9} /> {needsApproval.length} da approvare
           </span>
@@ -149,7 +149,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
       {needsApproval.length > 0 && (
         <>
           <div style={{
-            padding: '4px 12px', fontSize: '9px', fontWeight: 700,
+            padding: '4px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700,
             color: 'var(--warning-color)', fontFamily: 'var(--font-mono)',
             textTransform: 'uppercase', letterSpacing: '0.5px',
             background: 'var(--warning-bg)'
@@ -162,7 +162,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
       {others.length > 0 && (
         <>
           <div style={{
-            padding: '4px 12px', fontSize: '9px', fontWeight: 700,
+            padding: '4px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700,
             color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
             textTransform: 'uppercase', letterSpacing: '0.5px'
           }}>

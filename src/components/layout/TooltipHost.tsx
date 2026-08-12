@@ -110,11 +110,11 @@ export function TooltipHost() {
       boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)',
       animation: 'menuIn 0.12s ease'
     }}>
-      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>
+      <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>
         {tip.text}
       </div>
       {tip.desc && (
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px', lineHeight: 1.45 }}>
+        <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginTop: '3px', lineHeight: 1.45 }}>
           {tip.desc}
         </div>
       )}

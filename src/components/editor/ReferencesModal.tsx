@@ -45,7 +45,7 @@ export function ReferencesModal({ symbol, hits, title = 'references', rootPath, 
           padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
         }}>
           <h3 style={{
-            margin: 0, fontSize: '13px', fontWeight: 600,
+            margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600,
             display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden'
           }}>
             <FileSearch size={14} style={{ flexShrink: 0, color: 'var(--accent-color)' }} />
@@ -67,7 +67,7 @@ export function ReferencesModal({ symbol, hits, title = 'references', rootPath, 
 
         <div style={{ flex: 1, overflow: 'auto', padding: '6px' }}>
           {hits.length === 0 && (
-            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px' }}>
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
               no references found for <span style={{ color: 'var(--accent-color)' }}>{symbol}</span>
             </div>
           )}
@@ -78,21 +78,21 @@ export function ReferencesModal({ symbol, hits, title = 'references', rootPath, 
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
                 padding: '6px 10px', borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer', color: base, fontSize: '11px',
+                cursor: 'pointer', color: base, fontSize: 'calc(11px * var(--ui-text-scale, 1))',
                 transition: 'background 0.1s ease'
               }}
               onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
               <FileCode size={12} style={{ flexShrink: 0, color: 'var(--accent-color)' }} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayPath(h.file, rootPath)}</span>
-              <span style={{ flexShrink: 0, color: 'var(--text-muted)', fontSize: '10px' }}>line {h.line}</span>
+              <span style={{ flexShrink: 0, color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>line {h.line}</span>
             </div>
           ))}
         </div>
 
         <div style={{
           padding: '8px 16px', borderTop: '1px solid var(--border-subtle)',
-          fontSize: '10px', color: 'var(--text-muted)', flexShrink: 0
+          fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', flexShrink: 0
         }}>
           {hits.length} {title}
         </div>

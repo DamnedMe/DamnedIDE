@@ -42,7 +42,7 @@ export function WorkItemDetail({ workItemId, project }: WorkItemDetailProps) {
       <div style={{
         padding: '24px', textAlign: 'center', color: 'var(--text-secondary)',
         background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-        borderRadius: '6px', fontSize: '12px'
+        borderRadius: '6px', fontSize: 'calc(12px * var(--ui-text-scale, 1))'
       }}>
         Seleziona un work item
       </div>
@@ -63,7 +63,7 @@ export function WorkItemDetail({ workItemId, project }: WorkItemDetailProps) {
           alignItems: 'flex-start', marginBottom: '8px'
         }}>
           <span style={{
-            fontSize: '11px', color: 'var(--text-secondary)',
+            fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)',
             fontWeight: 600, textTransform: 'uppercase'
           }}>
             #{workItem.id} · {workItem.type}
@@ -75,10 +75,10 @@ export function WorkItemDetail({ workItemId, project }: WorkItemDetailProps) {
             </a>
           )}
         </div>
-        <h3 style={{ margin: '0 0 8px', fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 'calc(15px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
           {workItem.title}
         </h3>
-        <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+        <div style={{ display: 'flex', gap: '16px', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
           <span>Stato: <strong>{workItem.state}</strong></span>
           <span>Assegnato: <strong>{workItem.assignedTo || '—'}</strong></span>
         </div>

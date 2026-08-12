@@ -243,7 +243,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px',
                     padding: '4px 10px', cursor: 'pointer',
-                    fontSize: '10px', fontFamily: 'var(--font-mono)',
+                    fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                     background: active ? '#0a0a0a' : 'transparent',
                     color: active ? 'var(--accent-color)' : 'var(--text-muted)',
                     borderRight: '1px solid var(--border-subtle)',
@@ -275,7 +275,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
                   padding: '3px 6px', background: 'var(--bg-card)',
                   border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
                   color: 'var(--accent-color)', cursor: 'pointer',
-                  fontSize: '10px', fontFamily: 'var(--font-mono)'
+                  fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
                 }}>
                 <Plus size={10} />
                 <ChevronDown size={8} />
@@ -291,7 +291,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
                   }}>
                     {(['cmd', 'powershell', 'pwsh', 'npm'] as ShellType[]).map(t => (
                       <div key={t} onClick={() => addTab(t)} style={{
-                        padding: '5px 14px', fontSize: '11px', fontFamily: 'var(--font-mono)',
+                        padding: '5px 14px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                         cursor: 'pointer', color: 'var(--text-primary)',
                         transition: 'background 0.1s ease'
                       }}

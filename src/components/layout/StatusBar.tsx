@@ -14,7 +14,7 @@ export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, o
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       height: '22px', padding: '0 10px', background: 'var(--bg-statusbar)',
-      borderTop: '1px solid var(--border-color)', fontSize: '10px',
+      borderTop: '1px solid var(--border-color)', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
       fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
       userSelect: 'none', flexShrink: 0, gap: '12px'
     }}>

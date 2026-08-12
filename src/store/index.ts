@@ -513,28 +513,34 @@ export const useRecentReposStore = create<RecentReposState>((set) => ({
 const DIFF_KEY = 'damnedide_diff'
 
 interface DiffState {
+  fontSize: number
   sideBySide: boolean
+  setFontSize: (n: number) => void
   setSideBySide: (b: boolean) => void
 }
 
-function loadDiffState(): { sideBySide: boolean } {
+function loadDiffState(): { fontSize: number; sideBySide: boolean } {
   try {
     const raw = localStorage.getItem(DIFF_KEY)
     if (raw) {
       const p = JSON.parse(raw)
-      return { sideBySide: typeof p.sideBySide === 'boolean' ? p.sideBySide : true }
+      return {
+        fontSize: typeof p.fontSize === 'number' ? p.fontSize : 12.5,
+        sideBySide: typeof p.sideBySide === 'boolean' ? p.sideBySide : true
+      }
     }
   } catch { /* ignore */ }
-  return { sideBySide: true }
+  return { fontSize: 12.5, sideBySide: true }
 }
 
-function saveDiffState(s: { sideBySide: boolean }) {
+function saveDiffState(s: { fontSize: number; sideBySide: boolean }) {
   try { localStorage.setItem(DIFF_KEY, JSON.stringify(s)) } catch { /* ignore */ }
 }
 
 export const useDiffStore = create<DiffState>((set) => ({
   ...loadDiffState(),
-  setSideBySide: (b) => set((s) => { saveDiffState({ sideBySide: b }); return { sideBySide: b } })
+  setFontSize: (n) => set((s) => { saveDiffState({ fontSize: n, sideBySide: s.sideBySide }); return { fontSize: n } }),
+  setSideBySide: (b) => set((s) => { saveDiffState({ fontSize: s.fontSize, sideBySide: b }); return { sideBySide: b } })
 }))
 
 export interface Toast {

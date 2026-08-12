@@ -24,7 +24,7 @@ export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
           display: 'flex', justifyContent: 'space-between',
           alignItems: 'center', marginBottom: '16px'
         }}>
-          <h3 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <h3 style={{ margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
             commit
           </h3>
           <button onClick={onClose} style={{
@@ -50,7 +50,7 @@ export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
             width: '100%', padding: '10px',
             background: 'var(--bg-input)', border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
-            fontSize: '12px', fontFamily: 'var(--font-mono)', lineHeight: 1.6,
+            fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', lineHeight: 1.6,
             resize: 'vertical', boxSizing: 'border-box', outline: 'none'
           }}
           onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent-color)' }}
@@ -64,7 +64,7 @@ export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
             padding: '7px 16px', background: 'var(--bg-card)',
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
             color: 'var(--text-secondary)', cursor: 'pointer',
-            fontSize: '11px', fontFamily: 'var(--font-mono)'
+            fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
           }}>
             cancel
           </button>
@@ -77,7 +77,7 @@ export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
               border: 'none', borderRadius: 'var(--radius-md)',
               color: message.trim() ? 'var(--text-inverse)' : 'var(--text-muted)',
               cursor: message.trim() ? 'pointer' : 'not-allowed',
-              fontSize: '11px', fontWeight: 600, fontFamily: 'var(--font-mono)'
+              fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)'
             }}
           >
             commit

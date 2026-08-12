@@ -11,7 +11,6 @@ import { findBestLine, searchWorkspaceFiles, findReferenceLines, searchWorkspace
 import { ReferencesModal } from './ReferencesModal'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics, type DiagnosticCounts } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
-import { adjustFontSize, attachWheelZoom, resetFontSize } from '../../utils/editor-zoom'
 import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
@@ -101,11 +100,6 @@ export function CodeEditor() {
   const roslynReadyPromiseRef = useRef<Promise<boolean> | null>(null)
   const [roslynStatus, setRoslynStatus] = useState<'off' | 'indexing' | 'ready'>('off')
   const [csErrorCount, setCsErrorCount] = useState<DiagnosticCounts>({ errors: 0, warnings: 0 })
-
-  useEffect(() => {
-    setFontSize(settings.fontSize)
-    fontSizeRef.current = settings.fontSize
-  }, [settings.fontSize])
 
   // Warm up the Roslyn bridge when a .cs file becomes active (loads the solution via
   // MSBuildWorkspace in the sidecar, so symbol navigation is semantic, not heuristic).
@@ -496,9 +490,9 @@ export function CodeEditor() {
     setReferencesModal({ symbol, hits: unique })
   }
 
-  const zoomIn = () => adjustFontSize(-1)
-  const zoomOut = () => adjustFontSize(1)
-  const zoomReset = () => resetFontSize()
+  const zoomIn = () => { const f = Math.min(fontSizeRef.current + 1, 28); fontSizeRef.current = f; setFontSize(f); editorRef.current?.updateOptions({ fontSize: f }) }
+  const zoomOut = () => { const f = Math.max(fontSizeRef.current - 1, 6); fontSizeRef.current = f; setFontSize(f); editorRef.current?.updateOptions({ fontSize: f }) }
+  const zoomReset = () => { fontSizeRef.current = 12.5; setFontSize(12.5); editorRef.current?.updateOptions({ fontSize: 12.5 }) }
 
   const goBack = () => {    const back = navBackRef.current
     if (back.length === 0) return
@@ -550,8 +544,6 @@ export function CodeEditor() {
     editorRef.current = editor
     monacoRef.current = monaco
     applyEditorTheme(monaco)
-    // Ctrl/Cmd+wheel scales the global font setting (keeps the settings slider in sync)
-    attachWheelZoom(editor.getDomNode())
     registerCSharpHover(monaco)
     trackHoverModel(editor.getModel(), activeFileRef.current)
     editor.onDidChangeModel(() => {
@@ -793,8 +785,8 @@ export function CodeEditor() {
             <FolderOpen size={28} strokeWidth={1} />
           </div>
           <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
-            <p style={{ margin: '0 0 4px', fontSize: '13px', color: 'var(--text-secondary)' }}>open a folder</p>
-            <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)' }}>to browse and edit files</p>
+            <p style={{ margin: '0 0 4px', fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>open a folder</p>
+            <p style={{ margin: 0, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>to browse and edit files</p>
           </div>
           <button
             onClick={async () => {
@@ -805,7 +797,7 @@ export function CodeEditor() {
               padding: '8px 20px', background: 'var(--accent-color)',
               color: 'var(--text-inverse)', border: 'none',
               borderRadius: 'var(--radius-md)', cursor: 'pointer',
-              fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)'
+              fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)'
             }}
           >
             open folder
@@ -913,7 +905,7 @@ export function CodeEditor() {
                   title={f.path}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '6px',
-                    padding: '5px 8px 5px 12px', fontSize: '10px',
+                    padding: '5px 8px 5px 12px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
                     fontFamily: 'var(--font-mono)', cursor: 'pointer',
                     background: isActive ? 'var(--bg-card)' : 'transparent',
                     color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
@@ -1007,7 +999,7 @@ export function CodeEditor() {
         {activeFile?.toLowerCase().endsWith('.cs') && roslynStatus !== 'off' && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: '4px', padding: '0 8px',
-            fontSize: '9px', fontFamily: 'var(--font-mono)', flexShrink: 0,
+            fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0,
             color: roslynStatus === 'ready' ? 'var(--success-color)' : 'var(--warning-color)',
             borderRight: '1px solid var(--border-subtle)'
           }} title={roslynStatus === 'ready' ? 'C# semantic navigation (Roslyn) attivo' : 'indicizzazione C# in corso…'}>
@@ -1018,7 +1010,7 @@ export function CodeEditor() {
         {activeFile?.toLowerCase().endsWith('.cs') && roslynStatus === 'ready' && (csErrorCount.errors > 0 || csErrorCount.warnings > 0) && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px',
-            fontSize: '9px', fontFamily: 'var(--font-mono)', flexShrink: 0, whiteSpace: 'nowrap',
+            fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0, whiteSpace: 'nowrap',
             borderRight: '1px solid var(--border-subtle)'
           }}>
             {csErrorCount.errors > 0 && (
@@ -1098,7 +1090,7 @@ export function CodeEditor() {
               fontSize,
               fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
               fontLigatures: settings.fontLigatures,
-              mouseWheelZoom: false,
+              mouseWheelZoom: true,
               minimap: { enabled: settings.minimap, maxColumn: 80, renderCharacters: false },
               lineNumbers: settings.lineNumbers,
               renderWhitespace: 'selection',
@@ -1135,9 +1127,9 @@ export function CodeEditor() {
             color: 'var(--text-muted)', fontFamily: 'var(--font-mono)'
           }}>
             <FileCode size={32} strokeWidth={1} />
-            <div style={{ fontSize: '11px', textAlign: 'center', lineHeight: 1.8 }}>
+            <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', textAlign: 'center', lineHeight: 1.8 }}>
               select a file from the explorer<br />
-              <span style={{ color: 'var(--text-muted)', fontSize: '9px' }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
                 ctrl+f find in file · ctrl+shift+f search all files · ctrl+s save
               </span>
             </div>
@@ -1155,7 +1147,7 @@ export function CodeEditor() {
             padding: '3px 8px', background: 'var(--bg-primary)',
             borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
           }}>
-            <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontWeight: 600 }}>
+            <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontWeight: 600 }}>
               {isRunning ? 'running...' : 'output'}
             </span>
             <button onClick={() => setQuickOutput(null)}
@@ -1167,7 +1159,7 @@ export function CodeEditor() {
           </div>
           <pre style={{
             flex: 1, overflow: 'auto', margin: 0, padding: '6px 10px',
-            fontSize: '10px', fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: "'JetBrains Mono', monospace",
             color: 'var(--text-primary)', background: 'var(--bg-card)',
             whiteSpace: 'pre-wrap', wordBreak: 'break-all'
           }}>{renderAnsi(quickOutput)}</pre>
@@ -1260,7 +1252,7 @@ function renderAnsi(text: string): React.ReactNode[] {
 function MenuItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {  return (
     <div
       style={{
-        padding: '5px 14px', fontSize: '11px', fontFamily: 'var(--font-mono)', cursor: 'pointer',
+        padding: '5px 14px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: 'pointer',
         color: danger ? 'var(--error-color)' : 'var(--text-primary)',
         whiteSpace: 'nowrap' as const, transition: 'background 0.1s ease'
       }}
@@ -1338,7 +1330,7 @@ function EditorContextMenu({ x, y, lineNumber, symbol, onGoDefinition, onGoImple
               background: i === page ? 'var(--accent-color)' : 'var(--text-muted)'
             }} />
           ))}
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+          <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginLeft: '4px' }}>
             {page + 1}/{count}
           </span>
         </div>
@@ -1390,7 +1382,7 @@ export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensiti
         placeholder="filter files..."
         spellCheck={false}
         style={{
-          width: '100%', padding: '3px 6px', fontSize: '10px',
+          width: '100%', padding: '3px 6px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
           fontFamily: 'var(--font-mono)', background: 'var(--bg-input)',
           border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
           color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box'
@@ -1438,7 +1430,7 @@ export function ZoomControls({ fontSize, onZoomIn, onZoomOut, onReset }: {
     width: '20px', height: '18px', padding: 0,
     background: 'transparent', border: '1px solid transparent',
     borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)',
-    cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '11px',
+    cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
     fontWeight: 600, transition: 'color 0.15s ease'
   }
   return (
@@ -1450,7 +1442,7 @@ export function ZoomControls({ fontSize, onZoomIn, onZoomOut, onReset }: {
         onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
         onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>−</button>
       <span onClick={onReset} title="reset zoom (ctrl+0)" style={{
-        fontSize: '9px', fontFamily: 'var(--font-mono)',
+        fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
         color: 'var(--text-muted)', cursor: 'pointer',
         minWidth: '28px', textAlign: 'center', userSelect: 'none'
       }}>{Math.round(fontSize)}px</span>

@@ -19,14 +19,14 @@ export function BranchList({ branches, currentBranch }: BranchListProps) {
       display: 'flex', flexDirection: 'column', height: '100%'
     }}>
       <div style={{
-        padding: '7px 12px', fontSize: '10px', fontWeight: 700,
+        padding: '7px 12px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700,
         color: 'var(--text-secondary)', textTransform: 'uppercase',
         letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
         borderBottom: '1px solid var(--border-subtle)'
       }}>
         branches ({localBranches.length})
       </div>
-      <div style={{ flex: 1, overflow: 'auto', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+      <div style={{ flex: 1, overflow: 'auto', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
         {localBranches.map((b) => (
           <div key={b.name} style={{
             display: 'flex', alignItems: 'center', padding: '5px 12px',
@@ -41,7 +41,7 @@ export function BranchList({ branches, currentBranch }: BranchListProps) {
               {b.name}
             </span>
             {b.current && (
-              <span style={{ fontSize: '7px', color: 'var(--accent-color)', lineHeight: 1 }}>●</span>
+              <span style={{ fontSize: 'calc(7px * var(--ui-text-scale, 1))', color: 'var(--accent-color)', lineHeight: 1 }}>●</span>
             )}
           </div>
         ))}
@@ -49,7 +49,7 @@ export function BranchList({ branches, currentBranch }: BranchListProps) {
         {remoteBranches.length > 0 && (
           <>
             <div style={{
-              padding: '8px 12px 4px', fontSize: '9px', fontWeight: 700,
+              padding: '8px 12px 4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700,
               color: 'var(--text-muted)', textTransform: 'uppercase',
               letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
               borderTop: '1px solid var(--border-subtle)'

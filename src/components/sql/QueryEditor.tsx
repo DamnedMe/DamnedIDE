@@ -305,7 +305,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
                 borderTop: tab.id === activeTabId ? '2px solid var(--accent-color)' : '2px solid transparent',
                 background: tab.id === activeTabId ? 'var(--bg-card)' : 'transparent',
                 color: tab.id === activeTabId ? 'var(--text-primary)' : 'var(--text-muted)',
-                fontFamily: 'var(--font-mono)', fontSize: '10px', cursor: 'pointer'
+                fontFamily: 'var(--font-mono)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', cursor: 'pointer'
               }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' }}>
                 {tab.title}{tab.dirty ? ' •' : ''}
@@ -331,7 +331,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
         )}
         <div className="sql-query-editor__actions" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px' }}>
           {shownDatabase && connectionId && (
-            <span className="sql-context-chip" title={`${connectionLabel || connectionId} / ${shownDatabase}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: '9px', fontFamily: 'var(--font-mono)' }}>
+            <span className="sql-context-chip" title={`${connectionLabel || connectionId} / ${shownDatabase}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
               <Server size={10} />
               <span className="sql-context-chip__server">{connectionLabel || connectionId}</span>
               <ChevronRight size={9} aria-hidden="true" />
@@ -340,12 +340,12 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
             </span>
           )}
           {isRunning && (
-            <button onClick={cancel} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', fontSize: '10px', fontFamily: 'var(--font-mono)', background: 'var(--error-bg)', color: 'var(--error-color)', border: '1px solid var(--error-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
+            <button onClick={cancel} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', background: 'var(--error-bg)', color: 'var(--error-color)', border: '1px solid var(--error-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
               <Square size={9} /> cancel
             </button>
           )}
           <button className="sql-run-button" onClick={run} disabled={!connectionId || isRunning}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', fontSize: '10px', fontFamily: 'var(--font-mono)', background: connectionId && !isRunning ? 'var(--accent-color)' : 'var(--bg-disabled)', color: connectionId && !isRunning ? 'var(--text-inverse)' : 'var(--text-muted)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: connectionId && !isRunning ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
+            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', background: connectionId && !isRunning ? 'var(--accent-color)' : 'var(--bg-disabled)', color: connectionId && !isRunning ? 'var(--text-inverse)' : 'var(--text-muted)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: connectionId && !isRunning ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
             {isRunning ? <Loader2 size={10} style={{ animation: 'spin 0.9s linear infinite' }} /> : <Play size={10} />}
             {isRunning ? 'Running…' : 'Run'}
           </button>

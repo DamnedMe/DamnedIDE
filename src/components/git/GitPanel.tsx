@@ -66,7 +66,7 @@ export function GitPanel({ repoPath }: GitPanelProps) {
           }}>
             <FolderOpen size={28} strokeWidth={1} />
           </div>
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }}>open a repo to view changes</p>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>open a repo to view changes</p>
         </div>
       </PanelContainer>
     )

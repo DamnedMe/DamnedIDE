@@ -17,7 +17,7 @@ function SettingRow({ icon, label, children }: {
       border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
       gap: '12px'
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
         {icon}
         {label}
       </div>
@@ -35,7 +35,7 @@ function Section({ title, icon, children }: {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 2px 0',
-        fontSize: '10px', fontWeight: 700, color: 'var(--accent-color)',
+        fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--accent-color)',
         textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'var(--font-mono)'
       }}>
         {icon}
@@ -62,7 +62,7 @@ function ThemeBtn({ icon, label, active, onClick }: {
       border: active ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
       borderRadius: 'var(--radius-sm)',
       color: active ? 'var(--accent-color)' : 'var(--text-muted)',
-      cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)',
+      cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
       fontWeight: active ? 600 : 500, transition: 'all 0.15s ease'
     }}
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.borderColor = 'var(--text-muted)' }}
@@ -100,7 +100,7 @@ function SelectInput({ value, options, onChange }: {
     <select value={value} onChange={(e) => onChange(e.target.value)} style={{
       background: 'var(--bg-input)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-      fontSize: '10px', fontFamily: 'var(--font-mono)', padding: '3px 8px',
+      fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', padding: '3px 8px',
       cursor: 'pointer', outline: 'none'
     }}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -175,14 +175,14 @@ export function SettingsPanel() {
                 <ChevronLeft size={13} />
               </button>
               <Palette size={14} style={{ color: 'var(--accent-color)' }} />
-              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
                 {t('editor colors')} — {s.theme}
               </span>
             </>
           ) : (
             <>
               <Settings size={14} style={{ color: 'var(--accent-color)' }} />
-              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
                 {t('settings')}
               </span>
             </>
@@ -198,7 +198,7 @@ export function SettingsPanel() {
                 border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
                 gap: '12px'
               }}>
-                <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                <span style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
                   {entry.label}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -206,7 +206,7 @@ export function SettingsPanel() {
                     onChange={(e) => setColor(entry.key, e.target.value)}
                     style={{ width: '28px', height: '22px', padding: 0, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer' }}
                   />
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', minWidth: '52px', textAlign: 'right' }}>
+                  <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', minWidth: '52px', textAlign: 'right' }}>
                     {colors[entry.key]}
                   </span>
                 </div>
@@ -218,7 +218,7 @@ export function SettingsPanel() {
                 padding: '5px 14px', height: '28px',
                 background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-                cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)'
+                cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
               }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--accent-color)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
@@ -243,7 +243,7 @@ export function SettingsPanel() {
                     title="primary color (indipendente dal tema)"
                     style={{ width: '28px', height: '22px', padding: 0, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer' }}
                   />
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', minWidth: '62px', textAlign: 'right' }}>
+                  <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', minWidth: '62px', textAlign: 'right' }}>
                     {s.accentColor}
                   </span>
                 </div>
@@ -256,7 +256,7 @@ export function SettingsPanel() {
                     display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
                     background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                     borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-                    cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)'
+                    cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--accent-color)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
@@ -268,7 +268,7 @@ export function SettingsPanel() {
                     display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
                     background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                     borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-                    cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)'
+                    cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--warning-color)'; e.currentTarget.style.color = 'var(--warning-color)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
@@ -282,7 +282,7 @@ export function SettingsPanel() {
                     onChange={(e) => updateSettings({ iconSize: parseInt(e.target.value) })}
                     style={{ width: '100px', accentColor: 'var(--accent-color)' }}
                   />
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--accent-color)', minWidth: '28px', textAlign: 'right' }}>
+                  <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--accent-color)', minWidth: '28px', textAlign: 'right' }}>
                     {s.iconSize}px
                   </span>
                 </div>
@@ -296,7 +296,7 @@ export function SettingsPanel() {
                     onChange={(e) => updateSettings({ fontSize: parseFloat(e.target.value) })}
                     style={{ width: '100px', accentColor: 'var(--accent-color)' }}
                   />
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--accent-color)', minWidth: '28px', textAlign: 'right' }}>
+                  <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--accent-color)', minWidth: '28px', textAlign: 'right' }}>
                     {s.fontSize}px
                   </span>
                 </div>
@@ -346,7 +346,7 @@ export function SettingsPanel() {
                 padding: '8px 14px', height: '32px',
                 background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
                 borderRadius: 'var(--radius-md)', color: 'var(--accent-color)',
-                cursor: 'pointer', fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 600
+                cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
               }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--text-inverse)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent-bg)'; e.currentTarget.style.color = 'var(--accent-color)' }}>
@@ -370,7 +370,7 @@ export function SettingsPanel() {
                 padding: '5px 14px', height: '28px',
                 background: 'var(--bg-card)', border: '1px solid var(--error-color)',
                 borderRadius: 'var(--radius-sm)', color: 'var(--error-color)',
-                cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)'
+                cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
               }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--error-bg)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-card)' }}>

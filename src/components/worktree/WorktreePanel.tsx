@@ -9,7 +9,7 @@ import { FileTree } from '../editor/FileTree'
 import { FileFilterBar } from '../editor/CodeEditor'
 import { useWorktreeStore } from '../../store'
 import { useI18n } from '../../i18n'
-import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2, Bug } from 'lucide-react'
+import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2 } from 'lucide-react'
 import { WorktreeEntry } from '../../types/worktree'
 
 type CheckState = 'ok' | 'ko'
@@ -155,19 +155,21 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               style={{
                 width: '30px', height: '22px', borderRadius: '4px', flexShrink: 0,
                 background: isSelected ? 'var(--bg-active)' : 'transparent',
-                border: isSelected ? `1.5px solid ${isBugfix ? 'var(--warning-color)' : 'var(--accent-color)'}` : '1.5px solid var(--border-color)',
+                border: `1.5px solid ${isSelected
+                  ? (isBugfix ? 'var(--warning-color)' : 'var(--accent-color)')
+                  : (isBugfix ? 'var(--warning-color)' : 'var(--border-color)')}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', fontSize: '8px', fontWeight: 700,
-                fontFamily: 'var(--font-mono)', color: isSelected ? (isBugfix ? 'var(--warning-color)' : 'var(--accent-color)') : 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)', color: isBugfix ? 'var(--warning-color)' : (isSelected ? 'var(--accent-color)' : 'var(--text-muted)'),
                 transition: 'all 0.15s ease'
               }}
               onMouseEnter={(e) => {
                 if (!isSelected) { e.currentTarget.style.borderColor = 'var(--text-secondary)'; e.currentTarget.style.color = 'var(--text-secondary)' }
               }}
               onMouseLeave={(e) => {
-                if (!isSelected) { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-muted)' }
+                if (!isSelected) { e.currentTarget.style.borderColor = isBugfix ? 'var(--warning-color)' : 'var(--border-color)'; e.currentTarget.style.color = isBugfix ? 'var(--warning-color)' : 'var(--text-muted)' }
               }}>
-              {isMain ? 'main' : isBugfix ? <Bug size={10} style={{ color: 'var(--warning-color)' }} /> : label.substring(0, 4)}
+              {isMain ? 'main' : label.substring(0, 4)}
             </div>
           )
         })}

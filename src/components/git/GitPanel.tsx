@@ -5,6 +5,7 @@ import { StagingArea } from './StagingArea'
 import { CommitDialog } from './CommitDialog'
 import { BranchList } from './BranchList'
 import { useGitStore } from '../../store'
+import { useI18n } from '../../i18n'
 import { FolderOpen, RefreshCw } from 'lucide-react'
 import { GitFileStatus } from '../../types/git'
 
@@ -15,6 +16,7 @@ interface GitPanelProps {
 export function GitPanel({ repoPath }: GitPanelProps) {
   const { status, setStatus, files, setFiles, branches, setBranches, isLoading, setLoading } = useGitStore()
   const [showCommit, setShowCommit] = useState(false)
+  const t = useI18n()
 
   const loadStatus = async () => {
     if (!repoPath) return
@@ -42,7 +44,7 @@ export function GitPanel({ repoPath }: GitPanelProps) {
 
   if (!repoPath) {
     return (
-      <PanelContainer title="Git">
+      <PanelContainer title={t('git')}>
         <div style={{
           display: 'flex',
           flexDirection: 'column',

@@ -11,6 +11,7 @@ import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../ed
 import { useUIStore, useSettingsStore } from '../../store'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
+import { attachWheelZoom } from '../../utils/editor-zoom'
 
 function applyEditorTheme(monaco: typeof import('monaco-editor')) {
   const theme = useUIStore.getState().theme
@@ -56,6 +57,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   const scrollLinesRef = useRef<Record<string, number>>({})
   const editEditorRef = useRef<any>(null)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
+  const editorFontSize = useSettingsStore(s => s.settings.fontSize)
 
   const updateEditorNav = (line: number | null) => {
     if (!diffFile || line == null) return
@@ -227,6 +229,23 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
       setIsSaving(false)
     }
   }
+
+  // Ctrl+S (or Cmd+S) in the edit editor does exactly what the save button does
+  const saveRef = useRef(handleSave)
+  saveRef.current = handleSave
+
+  useEffect(() => {
+    if (!isEditing) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        e.stopPropagation()
+        saveRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [isEditing])
 
   const detectLang = (path?: string | null): string => {
     if (!path) return 'plaintext'
@@ -424,6 +443,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                 onMount={(editor, monaco) => {
                   applyEditorTheme(monaco)
                   editEditorRef.current = editor
+                  attachWheelZoom(editor.getDomNode())
                   const editPath = diffFile ? `${worktreePath}/${diffFile}` : null
                   registerCSharpHover(monaco)
                   trackHoverModel(editor.getModel(), editPath)
@@ -468,11 +488,11 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                   }
                 }}
                 options={{
-                  fontSize: 12.5,
+                  fontSize: editorFontSize,
                   fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
                   fontLigatures: false,
                   minimap: { enabled: true, maxColumn: 80, renderCharacters: false },
-                  mouseWheelZoom: true,
+                  mouseWheelZoom: false,
                   lineNumbers: 'on',
                   renderWhitespace: 'selection',
                   scrollBeyondLastLine: false,

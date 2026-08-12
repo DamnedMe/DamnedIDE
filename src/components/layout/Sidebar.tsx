@@ -18,6 +18,16 @@ interface SidebarProps {
 export function Sidebar({ tabs, activeTab, onTabChange, onOpenFolder }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
 
+  const tabTip: Record<string, string> = {
+    worktree: 'manage git worktrees (feature/bugfix)',
+    git: 'stage, commit and inspect the repository',
+    ado: 'work items and pull requests from Azure DevOps',
+    sql: 'SQL Server connections, queries and schema',
+    editor: 'code editor with C# navigation and references',
+    terminal: 'integrated terminal (cmd, powershell, npm)',
+    settings: 'theme, font, icons, language and editor settings'
+  }
+
   if (collapsed) {
     return (
       <nav style={{
@@ -79,6 +89,7 @@ export function Sidebar({ tabs, activeTab, onTabChange, onOpenFolder }: SidebarP
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
             title={tab.label}
+            data-tip-desc={tabTip[tab.id]}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '36px', height: '36px', border: 'none',

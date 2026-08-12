@@ -102,6 +102,12 @@ a:hover { text-decoration: underline; }
   background: var(--bg-hover) !important;
 }
 
+/* Global icon scale (settings → icon size): every lucide icon keeps its relative
+   size but scales uniformly through the --icon-zoom variable. */
+.lucide {
+  zoom: var(--icon-zoom, 1);
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

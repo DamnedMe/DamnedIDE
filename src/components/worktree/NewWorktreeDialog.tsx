@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Loader2, X, GitBranch, FolderGit2 } from 'lucide-react'
+import { Loader2, X, GitBranch, FolderGit2, Bug, Sparkles } from 'lucide-react'
+import { useI18n } from '../../i18n'
 
 interface NewWorktreeDialogProps {
   repoPath: string
@@ -9,11 +10,13 @@ interface NewWorktreeDialogProps {
 
 export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeDialogProps) {
   const [id, setId] = useState('')
+  const [wtType, setWtType] = useState<'feature' | 'bugfix'>('feature')
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const t = useI18n()
 
-  const branch = id.trim() ? `feature/${id.trim()}` : ''
-  const worktreePath = id.trim() ? `${repoPath}\\.worktrees\\feature\\${id.trim()}` : ''
+  const branch = id.trim() ? `${wtType}/${id.trim()}` : ''
+  const worktreePath = id.trim() ? `${repoPath}\\.worktrees\\${wtType}\\${id.trim()}` : ''
 
   const handleCreate = async () => {
     if (!branch || !worktreePath || isCreating) return
@@ -32,9 +35,28 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
   const infoRow = (icon: React.ReactNode, label: string, value: string) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
       {icon}
-      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{label}:</span>
+      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{t(label)}:</span>
       <span style={{ color: 'var(--accent-color)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value || '—'}</span>
     </div>
+  )
+
+  const typeBtn = (type: 'feature' | 'bugfix', active: boolean) => (
+    <button
+      onClick={() => setWtType(type)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '5px', flex: 1,
+        padding: '7px 10px', background: active ? 'var(--accent-bg)' : 'var(--bg-card)',
+        border: active ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
+        borderRadius: 'var(--radius-sm)', color: active ? 'var(--accent-color)' : 'var(--text-muted)',
+        cursor: 'pointer', fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: active ? 600 : 500,
+        transition: 'all 0.15s ease'
+      }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.borderColor = 'var(--text-muted)' }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.borderColor = 'var(--border-color)' }}
+    >
+      {type === 'feature' ? <Sparkles size={11} /> : <Bug size={11} />}
+      {t(type)}/{'{id}'}
+    </button>
   )
 
   return (
@@ -51,9 +73,9 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <FolderGit2 size={15} style={{ color: 'var(--accent-color)' }} />
-            new worktree
+            {t('new worktree')}
           </h3>
-          <button onClick={onClose} title="close"
+          <button onClick={onClose} title={t('cancel')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -66,8 +88,13 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {typeBtn('feature', wtType === 'feature')}
+            {typeBtn('bugfix', wtType === 'bugfix')}
+          </div>
+
           <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-            PBI id
+            {t('PBI id')}
             <input value={id} onChange={(e) => setId(e.target.value.replace(/\D/g, ''))}
               placeholder="es. 3404"
               inputMode="numeric"
@@ -94,7 +121,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
               padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
               fontSize: '12px', fontFamily: 'var(--font-mono)'
-            }}>cancel</button>
+            }}>{t('cancel')}</button>
             <button onClick={handleCreate} disabled={!id.trim() || isCreating}
               style={{
                 display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px',
@@ -104,7 +131,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
                 cursor: id.trim() && !isCreating ? 'pointer' : 'not-allowed',
                 fontSize: '12px', fontFamily: 'var(--font-mono)', fontWeight: 600
               }}>
-              {isCreating ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : 'create'}
+              {isCreating ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : t('create')}
             </button>
           </div>
         </div>

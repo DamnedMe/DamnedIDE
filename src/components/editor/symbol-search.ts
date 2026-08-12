@@ -179,9 +179,10 @@ export async function searchImplementations(rootPath: string, symbol: string): P
 }
 
 /**
- * Searches workspace files (bounded) for every occurrence of `symbol`.
+ * Searches workspace files (bounded) for occurrences of `symbol`. Capped and stops
+ * early so common symbols do not produce huge/hanging result lists.
  */
-export async function searchWorkspaceReferences(rootPath: string, symbol: string): Promise<WorkspaceHit[]> {
+export async function searchWorkspaceReferences(rootPath: string, symbol: string, maxHits = 500): Promise<WorkspaceHit[]> {
   if (!rootPath) return []
   let files: string[]
   try {
@@ -201,6 +202,7 @@ export async function searchWorkspaceReferences(rootPath: string, symbol: string
       const lines = content.split('\n').slice(0, 1500)
       for (const line of findReferenceLines(lines, symbol, 0)) {
         hits.push({ file, line })
+        if (hits.length >= maxHits) return hits
       }
     } catch { /* unreadable */ }
   }

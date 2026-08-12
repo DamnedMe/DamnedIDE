@@ -373,6 +373,48 @@ export class AdoService {
     return false
   }
 
+  // Arms auto-complete on a PR and VERIFIES it actually took (ADO can silently ignore
+  // the PATCH when there are no required reviewers/policies, or fail transiently).
+  private async armAutoComplete(project: string, repo: string, prId: number, opts: { title: string; deleteSourceBranch?: boolean }): Promise<boolean> {
+    const patchUrl = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}?api-version=7.0`
+    const res = await fetch(patchUrl, {
+      method: 'PATCH',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        completionOptions: {
+          autoComplete: true,
+          deleteSourceBranch: opts.deleteSourceBranch ?? true,
+          mergeStrategy: 'noFastForward',
+          mergeCommitMessage: opts.title
+        }
+      })
+    })
+    if (!res.ok) {
+      console.error('[ado] armAutoComplete: PATCH fallita', res.status, await res.text().catch(() => ''))
+      return false
+    }
+    // verify the arm actually took
+    try {
+      const check = await fetch(patchUrl, { headers: this.authHeaders() })
+      if (check.ok) {
+        const pr = await check.json()
+        return pr.completionOptions?.autoComplete === true || !!pr.autoCompleteSetBy
+      }
+    } catch { /* verification failed */ }
+    return false
+  }
+
+  private async addRequiredReviewer(project: string, repo: string, prId: number, reviewerId: string): Promise<boolean> {
+    const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}/reviewers/${reviewerId}?api-version=7.0`
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ isRequired: true })
+    })
+    if (!res.ok) console.error('[ado] addRequiredReviewer: PUT fallita', res.status, await res.text().catch(() => ''))
+    return res.ok
+  }
+
   private async getPrSourceCommit(project: string, repo: string, prId: number): Promise<string> {
     try {
       const res = await fetch(`${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}?api-version=7.0`, {
@@ -422,29 +464,25 @@ export class AdoService {
     const sourceCommitId = (data.lastMergeSourceCommit?.commitId as string) || ''
 
     if (opts.autoComplete && prId) {
-      // 1) try to arm auto-complete with a dedicated PATCH (creation-time options can be dropped)
-      const patchUrl = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}?api-version=7.0`
-      const patchRes = await fetch(patchUrl, {
-        method: 'PATCH',
-        headers: this.authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          completionOptions: {
-            autoComplete: true,
-            deleteSourceBranch: opts.deleteSourceBranch ?? true,
-            mergeStrategy: 'noFastForward',
-            mergeCommitMessage: opts.title
-          }
-        })
-      })
-      if (patchRes.ok) {
+      // 1) arm auto-complete with a dedicated PATCH and verify it actually took
+      let armed = await this.armAutoComplete(project, repo, prId, opts)
+      if (!armed) {
+        // ADO refuses auto-complete when the PR has no required reviewers/policies:
+        // add the current user as a REQUIRED reviewer on this PR, then retry arming.
+        const me = await this.getCurrentUser()
+        if (me) {
+          const added = await this.addRequiredReviewer(project, repo, prId, me.id)
+          console.error(`[ado] createPr: reviewer richiesto aggiunto=${added} per armare l'auto-complete`)
+          if (added) armed = await this.armAutoComplete(project, repo, prId, opts)
+        }
+      }
+      if (armed) {
         return { id: prId, title: data.title as string || '', mode: 'autocomplete' }
       }
-      console.error('[ado] createPr: PATCH autoComplete fallita', patchRes.status, await patchRes.text().catch(() => ''))
-      // 2) auto-complete not armable (no required policies/reviewers): complete directly,
-      //    exactly like completing the PR by hand so develop gets the merge.
+      console.error('[ado] createPr: auto-complete non armabile, completo direttamente')
+      // 2) last resort: complete directly so develop gets the merge
       const completed = await this.completePrDirect(project, repo, prId, sourceCommitId, opts.deleteSourceBranch ?? true)
       if (completed) {
-        console.error('[ado] createPr: autoComplete non armabile, PR completata direttamente')
         return { id: prId, title: data.title as string || '', mode: 'completed' }
       }
       console.error('[ado] createPr: complete diretta fallita')

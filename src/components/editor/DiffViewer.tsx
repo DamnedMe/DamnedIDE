@@ -17,9 +17,11 @@ interface DiffViewerProps {
   filePath?: string
   onClose?: () => void
   onPopOut?: () => void
+  onVisibleLineChange?: (line: number) => void
+  initialLine?: number
 }
 
-export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function DiffViewer({ original, modified, language, filePath, onClose, onPopOut }, ref) {
+export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function DiffViewer({ original, modified, language, filePath, onClose, onPopOut, onVisibleLineChange, initialLine }, ref) {
   // zoom and view type are persisted so they survive file switches (diff remounts)
   const sideBySide = useDiffStore(s => s.sideBySide)
   const setSideBySide = useDiffStore(s => s.setSideBySide)
@@ -76,11 +78,43 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
       origEd.addCommand(mod.KeyMod.CtrlCmd | mod.KeyCode.Digit0, zoomReset)
     }
     addCmd(monaco)
+    if (onVisibleLineChange) {
+      const modEd = editor.getModifiedEditor()
+      modEd?.onDidScrollChange(() => {
+        const line = modEd.getVisibleRanges()?.[0]?.startLineNumber ?? null
+        if (line != null) onVisibleLineChange(line)
+      })
+    }
+    if (initialLine) {
+      // reveal only when the viewport is real and the model has enough lines
+      // (at mount the container can be collapsed, making the reveal a no-op)
+      const modEd = editor.getModifiedEditor()
+      let tries = 0
+      const attempt = () => {
+        if (!modEd) return
+        try {
+          const vr = modEd.getVisibleRanges()?.[0]
+          const viewReady = !!vr && (vr.endLineNumber - vr.startLineNumber) >= 4
+          const modelReady = (modEd.getModel()?.getLineCount() ?? 0) >= initialLine
+          if ((viewReady && modelReady) || tries > 30) {
+            modEd.revealLineInCenter(initialLine)
+            modEd.setPosition({ lineNumber: initialLine, column: 1 })
+          } else {
+            tries++
+            setTimeout(attempt, 60)
+          }
+        } catch { /* ignore */ }
+      }
+      attempt()
+    }
   }
 
   useImperativeHandle(ref, () => ({
     getVisibleLine: () => {
       const modEd = diffEditorRef.current?.getModifiedEditor()
+      // prefer the cursor line (where the user is actually working)
+      const pos = modEd?.getPosition()
+      if (pos?.lineNumber) return pos.lineNumber
       return modEd?.getVisibleRanges()?.[0]?.startLineNumber ?? null
     }
   }))

@@ -45,6 +45,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   const [isLoadingDiff, setIsLoadingDiff] = useState(false)
   const [isDiffFullscreen, setIsDiffFullscreen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [diffInitialLine, setDiffInitialLine] = useState<number | undefined>(undefined)
   const [editedContent, setEditedContent] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -123,6 +124,14 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
     setIsLoadingDiff(true)
     setDiffOriginal('')
     setDiffModified('')
+    // open the diff at the line the main editor is on (same file), if any
+    const nav = useEditorStore.getState().editorNav
+    const full = `${worktreePath}/${filePath}`
+    setDiffInitialLine(
+      nav && nav.filePath.replace(/\\/g, '/').toLowerCase() === full.replace(/\\/g, '/').toLowerCase()
+        ? nav.line
+        : undefined
+    )
     try {
       const file = files.find(f => f.path === filePath)
       const fsPath = `${worktreePath}/${filePath}`
@@ -174,11 +183,20 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   if (handleRef) handleRef.current = { openFile }
 
   const handleStartEdit = () => {
+    // continue exactly where the diff is showing (the user's current line)
     pendingScrollLineRef.current = diffViewerRef.current?.getVisibleLine() ?? null
     setEditedContent(diffModified)
     setIsEditing(true)
   }
+
+  // keep the diff position when coming back from edit (no stale initialLine jump)
+  const syncDiffLineFromEdit = () => {
+    const line = editEditorRef.current?.getPosition()?.lineNumber
+    setDiffInitialLine(line ?? useEditorStore.getState().editorNav?.line ?? undefined)
+  }
+
   const handleCancelEdit = () => {
+    syncDiffLineFromEdit()
     setIsEditing(false)
     setEditorNav(null)
   }
@@ -188,6 +206,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
     setIsSaving(true)
     try {
       await window.electronAPI.fs.writeFile(`${worktreePath}/${diffFile}`, editedContent)
+      syncDiffLineFromEdit()
       setIsEditing(false)
       setDiffModified(editedContent)
     } finally {
@@ -405,14 +424,33 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                     const line = editor.getVisibleRanges()?.[0]?.startLineNumber ?? null
                     updateEditorNav(line)
                   })
+                  editor.onDidChangeCursorPosition(() => {
+                    const line = editor.getPosition()?.lineNumber
+                    if (line) updateEditorNav(line)
+                  })
                   if (pendingScrollLineRef.current) {
                     const line = pendingScrollLineRef.current
                     pendingScrollLineRef.current = null
-                    setTimeout(() => {
-                      editor.revealLineInCenter(line)
-                      editor.setPosition({ lineNumber: line, column: 1 })
-                      updateEditorNav(line)
-                    }, 50)
+                    // wait until the viewport is real (≥4 visible lines) AND the model
+                    // has enough lines: at mount the container can be collapsed to ~1
+                    // line, so revealLineInCenter would not scroll at all
+                    let tries = 0
+                    const attempt = () => {
+                      try {
+                        const vr = editor.getVisibleRanges()?.[0]
+                        const viewReady = !!vr && (vr.endLineNumber - vr.startLineNumber) >= 4
+                        const modelReady = (editor.getModel()?.getLineCount() ?? 0) >= line
+                        if ((viewReady && modelReady) || tries > 30) {
+                          editor.revealLineInCenter(line)
+                          editor.setPosition({ lineNumber: line, column: 1 })
+                          updateEditorNav(line)
+                        } else {
+                          tries++
+                          setTimeout(attempt, 60)
+                        }
+                      } catch { /* ignore */ }
+                    }
+                    attempt()
                   }
                 }}
                 options={{
@@ -479,6 +517,8 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                 filePath={diffFile}
                 onClose={() => setDiffFile(null)}
                 onPopOut={() => setIsDiffFullscreen(true)}
+                onVisibleLineChange={(line) => updateEditorNav(line)}
+                initialLine={diffInitialLine}
               />
             </div>
           </>

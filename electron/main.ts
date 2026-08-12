@@ -224,48 +224,68 @@ function registerIpcHandlers(
 
   ipcMain.handle('fs:searchFiles', async (_e, rootPath: string, query: string, maxResults = 300) => {
     if (!query || query.length < 2) return []
-    const results: { file: string; line: number; column: number; preview: string }[] = []
     const lowerQuery = query.toLowerCase()
     const skipDirs = new Set(['node_modules', '.git', 'bin', 'obj', 'dist', 'out', '.vs', 'packages', '.worktrees'])
+    const results: { file: string; line: number; column: number; preview: string }[] = []
+    const files: string[] = []
 
-    async function walk(dir: string): Promise<void> {
-      if (results.length >= maxResults) return
-      let entries
+    // parallel directory walk (collects file paths first)
+    const WALK_CONCURRENCY = 32
+    let walkRunning = 0
+    const walkQueue: string[] = [rootPath]
+    const walkWaiters: Array<() => void> = []
+    const walkAcquire = async () => {
+      if (walkRunning >= WALK_CONCURRENCY) await new Promise<void>(r => walkWaiters.push(r))
+      walkRunning++
+    }
+    const walkRelease = () => { walkRunning--; walkWaiters.shift()?.() }
+
+    async function walk() {
+      const dir = walkQueue.shift()
+      if (!dir) return
+      await walkAcquire()
       try {
-        entries = await readdir(dir, { withFileTypes: true })
-      } catch {
-        return
-      }
-      for (const e of entries) {
-        if (results.length >= maxResults) return
-        if (e.name.startsWith('.') || skipDirs.has(e.name)) continue
-        const full = join(dir, e.name)
-        if (e.isDirectory()) {
-          await walk(full)
-        } else if (e.isFile()) {
-          try {
-            const s = await stat(full)
-            if (s.size > 1024 * 1024) continue
-            const content = await readFile(full, 'utf-8')
-            if (content.includes('\0')) continue
-            const lines = content.split('\n')
-            for (let i = 0; i < lines.length && results.length < maxResults; i++) {
-              const idx = lines[i].toLowerCase().indexOf(lowerQuery)
-              if (idx >= 0) {
-                results.push({
-                  file: full,
-                  line: i + 1,
-                  column: idx + 1,
-                  preview: lines[i].trim().substring(0, 200)
-                })
-              }
-            }
-          } catch { /* binary or unreadable */ }
+        const entries = await readdir(dir, { withFileTypes: true })
+        for (const e of entries) {
+          if (e.name.startsWith('.') || skipDirs.has(e.name)) continue
+          const full = join(dir, e.name)
+          if (e.isDirectory()) walkQueue.push(full)
+          else if (e.isFile()) files.push(full)
         }
+      } catch { /* unreadable */ } finally {
+        walkRelease()
+        if (walkQueue.length > 0) await walk()
       }
     }
+    await Promise.all(Array.from({ length: Math.min(WALK_CONCURRENCY, 8) }, () => walk()))
 
-    await walk(rootPath)
+    // parallel file scan (limited concurrency), stops early at maxResults
+    let nextFile = 0
+    async function worker(): Promise<void> {
+      while (results.length < maxResults) {
+        const i = nextFile++
+        if (i >= files.length) break
+        try {
+          const s = await stat(files[i])
+          if (s.size > 1024 * 1024) continue
+          const content = await readFile(files[i], 'utf-8')
+          if (content.includes('\0')) continue
+          const lines = content.split('\n')
+          for (let ln = 0; ln < lines.length && results.length < maxResults; ln++) {
+            const idx = lines[ln].toLowerCase().indexOf(lowerQuery)
+            if (idx >= 0) {
+              results.push({
+                file: files[i],
+                line: ln + 1,
+                column: idx + 1,
+                preview: lines[ln].slice(0, 200).trim()
+              })
+            }
+          }
+        } catch { /* binary or unreadable */ }
+      }
+    }
+    await Promise.all(Array.from({ length: 16 }, () => worker()))
     return results
   })
 

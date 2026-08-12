@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks'
 import { appendJoinedSelectColumns, appendRelatedJoin, buildExplicitSelect, extractSqlBaseTable } from '../src/components/sql/sqlQueryUtils.ts'
 import { calculateColumnMetrics, calculateVisibleRange } from '../src/components/sql/sqlGridUtils.ts'
 import { layoutSqlDiagram } from '../src/components/sql/sqlDiagramLayout.ts'
+import { analyzeSqlCompletionContext, extractSqlAliases, stripSqlCommentsAndStrings } from '../src/components/sql/sqlAssistant.ts'
 
 const fk = {
   table: 'dbo.Child',
@@ -11,9 +12,17 @@ const fk = {
   referencedColumn: 'Id'
 }
 
+const assistantSql = ['SELECT ', 'FROM dbo.MassiveRows AS m', 'JOIN dbo.Parent AS p ON p.Id = m.ParentId'].join('\n')
+const assistantContext = analyzeSqlCompletionContext(assistantSql, 'SELECT '.length)
+assert.equal(assistantContext.clause, 'select')
+assert.deepEqual([...assistantContext.aliases], [['m', 'dbo.MassiveRows'], ['p', 'dbo.Parent']])
+assert.deepEqual([...extractSqlAliases("SELECT fake.value FROM dbo.Real AS r -- JOIN dbo.Hidden AS h\nWHERE r.Name = 'FROM dbo.StringTable s'")], [['r', 'dbo.Real']])
+assert.equal(stripSqlCommentsAndStrings("SELECT 'JOIN dbo.Nope n' -- FROM x\nFROM dbo.Real r").includes('dbo.Nope'), false)
+
 const explicitSelect = buildExplicitSelect('dbo.Child', ['Id', 'ParentId'], 1000)
 assert.match(explicitSelect, /SELECT TOP \(1000\)[\s\S]*\[Child\]\.\[Id\][\s\S]*\[Child\]\.\[ParentId\]/)
 assert.doesNotMatch(explicitSelect, /\*/)
+
 
 const outbound = appendRelatedJoin('SELECT * FROM dbo.Child WHERE IsActive = 1', fk)
 assert.equal(outbound.status, 'added')

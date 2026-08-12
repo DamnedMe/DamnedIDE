@@ -5,7 +5,9 @@ export const MOCK_DATABASE = 'massive_mock_db'
 
 async function installElectronMock(page: Page) {
   await page.addInitScript(({ connectionId, database }) => {
+    const persistedWorkspace = localStorage.getItem('sql-e2e-workspace')
     localStorage.clear()
+    if (persistedWorkspace) localStorage.setItem('sql-e2e-workspace', persistedWorkspace)
     localStorage.setItem('damnedide_sql_connections', JSON.stringify([{
       id: connectionId,
       server: 'mock-sql-server',
@@ -150,6 +152,32 @@ async function installElectronMock(page: Page) {
         }))
       },
       objectDefinition: async () => 'CREATE VIEW [dbo].[ActiveRows] AS SELECT 1 AS Id',
+      schemaSnapshot: async () => {
+        const makeColumns = (names: string[]) => names.map((name, index) => ({
+          name, type: index < 2 ? 'int' : 'nvarchar(200)', maxLength: index < 2 ? null : 200,
+          nullable: index > 1, isPrimaryKey: name === 'Id', isForeignKey: name.endsWith('Id') && name !== 'Id', defaultValue: null
+        }))
+        return {
+          database,
+          loadedAt: Date.now(),
+          objects: [
+            { name: 'dbo.MassiveRows', schema: 'dbo', kind: 'table', columns: makeColumns(['Id', 'ParentId', 'Code', 'Region', 'City', 'Street', 'PostalCode', 'Amount', 'IsActive', 'CreatedAt', 'UpdatedAt', 'Notes']) },
+            { name: 'dbo.Parent', schema: 'dbo', kind: 'table', columns: makeColumns(['Id', 'Name']) },
+            { name: 'dbo.AuditLog', schema: 'dbo', kind: 'table', columns: makeColumns(['Id', 'CreatedById', 'UpdatedById', 'Message']) },
+            { name: 'dbo.Users', schema: 'dbo', kind: 'table', columns: makeColumns(['Id', 'DisplayName']) },
+            { name: 'dbo.ActiveRows', schema: 'dbo', kind: 'view', columns: makeColumns(['Id']) }
+          ],
+          foreignKeys: [{ constraintName: 'FK_MassiveRows_Parent', table: 'dbo.MassiveRows', column: 'ParentId', referencedTable: 'dbo.Parent', referencedColumn: 'Id' }],
+          routines: [{ name: 'dbo.RebuildIndex', schema: 'dbo', kind: 'procedure', parameters: [{ name: '@TableName', type: 'nvarchar(128)', output: false }] }]
+        }
+      },
+      workspaceLoad: async () => {
+        const raw = localStorage.getItem('sql-e2e-workspace')
+        return raw ? JSON.parse(raw) : { version: 1, tabs: [], activeTabId: null, history: [], favorites: [] }
+      },
+      workspaceSave: async (workspace: unknown) => {
+        localStorage.setItem('sql-e2e-workspace', JSON.stringify(workspace))
+      },
       diagram: async () => {
         ;(window as unknown as { __sqlMock: { queries: string[]; completedQueries: string[]; diagramCalls: number } }).__sqlMock.diagramCalls++
         await new Promise(resolve => setTimeout(resolve, 120))

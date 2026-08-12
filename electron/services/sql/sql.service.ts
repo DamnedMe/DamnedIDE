@@ -89,6 +89,19 @@ export interface SqlDiagramData {
   edges: SqlForeignKeyEdge[]
 }
 
+export interface SqlSchemaSnapshot {
+  database: string
+  loadedAt: number
+  objects: Array<{ name: string; schema: string; kind: 'table' | 'view'; columns: SqlColumnInfo[] }>
+  foreignKeys: SqlForeignKeyEdge[]
+  routines: Array<{
+    name: string
+    schema: string
+    kind: 'procedure' | 'function'
+    parameters: Array<{ name: string; type: string; output: boolean }>
+  }>
+}
+
 export const AUTH_TYPE_LABELS: Record<SqlAuthType, string> = {
   'windows': 'Windows Authentication',
   'sql': 'SQL Server Authentication',
@@ -895,5 +908,122 @@ export class SqlService {
     }
 
     return { tables, edges }
+  }
+
+  async getSchemaSnapshot(connectionId: string, database: string): Promise<SqlSchemaSnapshot> {
+    const pool = this.getPool(connectionId)
+    const db = dbRef(database)
+    const [objectRows, foreignKeyRows, routineRows] = await Promise.all([
+      pool.request().query(
+        `SELECT s.name AS OBJECT_SCHEMA, o.name AS OBJECT_NAME,
+                CASE WHEN o.type = 'U' THEN 'table' ELSE 'view' END AS OBJECT_KIND,
+                c.column_id, c.name AS COLUMN_NAME, ty.name AS DATA_TYPE,
+                CASE WHEN ty.name IN ('nvarchar', 'nchar') AND c.max_length > 0 THEN c.max_length / 2 ELSE c.max_length END AS MAX_LENGTH,
+                c.is_nullable AS IS_NULLABLE, dc.definition AS COLUMN_DEFAULT,
+                CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS IS_PK,
+                CASE WHEN fkc.parent_column_id IS NOT NULL THEN 1 ELSE 0 END AS IS_FK
+         FROM ${db}.sys.objects o
+         JOIN ${db}.sys.schemas s ON s.schema_id = o.schema_id
+         JOIN ${db}.sys.columns c ON c.object_id = o.object_id
+         JOIN ${db}.sys.types ty ON ty.user_type_id = c.user_type_id
+         LEFT JOIN (
+           SELECT ic.object_id, ic.column_id
+           FROM ${db}.sys.indexes i
+           JOIN ${db}.sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+           WHERE i.is_primary_key = 1
+         ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
+         LEFT JOIN ${db}.sys.foreign_key_columns fkc ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+         LEFT JOIN ${db}.sys.default_constraints dc ON dc.object_id = c.default_object_id
+         WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0
+         ORDER BY s.name, o.name, c.column_id`
+      ),
+      pool.request().query(
+        `SELECT fk.name AS CONSTRAINT_NAME,
+                ps.name AS TABLE_SCHEMA, pt.name AS TABLE_NAME, pc.name AS COLUMN_NAME,
+                rs.name AS REF_TABLE_SCHEMA, rt.name AS REF_TABLE_NAME, rc.name AS REF_COLUMN_NAME
+         FROM ${db}.sys.foreign_keys fk
+         JOIN ${db}.sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+         JOIN ${db}.sys.tables pt ON pt.object_id = fkc.parent_object_id
+         JOIN ${db}.sys.schemas ps ON ps.schema_id = pt.schema_id
+         JOIN ${db}.sys.columns pc ON pc.object_id = pt.object_id AND pc.column_id = fkc.parent_column_id
+         JOIN ${db}.sys.tables rt ON rt.object_id = fkc.referenced_object_id
+         JOIN ${db}.sys.schemas rs ON rs.schema_id = rt.schema_id
+         JOIN ${db}.sys.columns rc ON rc.object_id = rt.object_id AND rc.column_id = fkc.referenced_column_id
+         ORDER BY fk.name, fkc.constraint_column_id`
+      ),
+      pool.request().query(
+        `SELECT s.name AS ROUTINE_SCHEMA, o.name AS ROUTINE_NAME,
+                CASE WHEN o.type IN ('P', 'PC') THEN 'procedure' ELSE 'function' END AS ROUTINE_KIND,
+                p.parameter_id, p.name AS PARAMETER_NAME, ty.name AS DATA_TYPE,
+                p.max_length AS MAX_LENGTH, p.is_output AS IS_OUTPUT
+         FROM ${db}.sys.objects o
+         JOIN ${db}.sys.schemas s ON s.schema_id = o.schema_id
+         LEFT JOIN ${db}.sys.parameters p ON p.object_id = o.object_id AND p.parameter_id > 0
+         LEFT JOIN ${db}.sys.types ty ON ty.user_type_id = p.user_type_id
+         WHERE o.type IN ('P', 'PC', 'FN', 'IF', 'TF', 'FS', 'FT') AND o.is_ms_shipped = 0
+         ORDER BY s.name, o.name, p.parameter_id`
+      )
+    ])
+
+    const objectMap = new Map<string, SqlSchemaSnapshot['objects'][number]>()
+    for (const row of objectRows.recordset) {
+      const schema = String(row.OBJECT_SCHEMA)
+      const objectName = String(row.OBJECT_NAME)
+      const name = `${schema}.${objectName}`
+      let object = objectMap.get(name)
+      if (!object) {
+        object = { name, schema, kind: String(row.OBJECT_KIND) === 'view' ? 'view' : 'table', columns: [] }
+        objectMap.set(name, object)
+      }
+      const maxLength = row.MAX_LENGTH == null || Number(row.MAX_LENGTH) < 0 ? null : Number(row.MAX_LENGTH)
+      const dataType = String(row.DATA_TYPE)
+      object.columns.push({
+        name: String(row.COLUMN_NAME),
+        type: maxLength && ['varchar', 'nvarchar', 'char', 'nchar', 'binary', 'varbinary'].includes(dataType.toLowerCase())
+          ? `${dataType}(${maxLength})`
+          : dataType,
+        maxLength,
+        nullable: Boolean(row.IS_NULLABLE),
+        isPrimaryKey: Number(row.IS_PK) === 1,
+        isForeignKey: Number(row.IS_FK) === 1,
+        defaultValue: row.COLUMN_DEFAULT == null ? null : String(row.COLUMN_DEFAULT)
+      })
+    }
+
+    const foreignKeys: SqlForeignKeyEdge[] = foreignKeyRows.recordset.map(row => ({
+      constraintName: String(row.CONSTRAINT_NAME),
+      table: `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`,
+      column: String(row.COLUMN_NAME),
+      referencedTable: `${row.REF_TABLE_SCHEMA}.${row.REF_TABLE_NAME}`,
+      referencedColumn: String(row.REF_COLUMN_NAME)
+    }))
+
+    const routineMap = new Map<string, SqlSchemaSnapshot['routines'][number]>()
+    for (const row of routineRows.recordset) {
+      const schema = String(row.ROUTINE_SCHEMA)
+      const name = `${schema}.${row.ROUTINE_NAME}`
+      let routine = routineMap.get(name)
+      if (!routine) {
+        routine = { name, schema, kind: String(row.ROUTINE_KIND) === 'procedure' ? 'procedure' : 'function', parameters: [] }
+        routineMap.set(name, routine)
+      }
+      if (row.PARAMETER_NAME) {
+        const maxLength = row.MAX_LENGTH == null || Number(row.MAX_LENGTH) <= 0 ? null : Number(row.MAX_LENGTH)
+        const baseType = String(row.DATA_TYPE || 'sql_variant')
+        routine.parameters.push({
+          name: String(row.PARAMETER_NAME),
+          type: maxLength && /^(?:n?varchar|n?char|varbinary|binary)$/i.test(baseType) ? `${baseType}(${maxLength})` : baseType,
+          output: Boolean(row.IS_OUTPUT)
+        })
+      }
+    }
+
+    return {
+      database,
+      loadedAt: Date.now(),
+      objects: [...objectMap.values()],
+      foreignKeys,
+      routines: [...routineMap.values()]
+    }
   }
 }

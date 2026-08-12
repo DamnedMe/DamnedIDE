@@ -107,6 +107,36 @@ export interface SqlDiagramData {
   edges: SqlForeignKeyEdge[]
 }
 
+export type SqlSchemaObjectKind = 'table' | 'view'
+
+export interface SqlSchemaObject {
+  name: string
+  schema: string
+  kind: SqlSchemaObjectKind
+  columns: SqlColumnInfo[]
+}
+
+export interface SqlRoutineParameter {
+  name: string
+  type: string
+  output: boolean
+}
+
+export interface SqlRoutineInfo {
+  name: string
+  schema: string
+  kind: 'procedure' | 'function'
+  parameters: SqlRoutineParameter[]
+}
+
+export interface SqlSchemaSnapshot {
+  database: string
+  loadedAt: number
+  objects: SqlSchemaObject[]
+  foreignKeys: SqlForeignKeyEdge[]
+  routines: SqlRoutineInfo[]
+}
+
 export interface SqlTestResult {
   ok: boolean
   error?: string
@@ -125,4 +155,68 @@ export interface SqlRecentConnection {
   user?: string
   authType?: SqlAuthType
   lastConnected: number
+}
+
+export type SqlQuerySource = 'editor' | 'context-menu' | 'diagram' | 'grid' | 'foreign-key' | 'mutation' | 'history' | 'favorite'
+
+export interface SqlWorkspaceTab {
+  id: string
+  title: string
+  query: string
+  context?: { connectionId?: string; database?: string }
+  dirty: boolean
+  gridQueryState?: SqlGridQueryState
+}
+
+export interface SqlHistoryEntry {
+  id: string
+  query: string
+  connectionId: string
+  database?: string
+  status: 'success' | 'error' | 'canceled'
+  executedAt: number
+  durationMs: number
+  rowCount: number
+  source: SqlQuerySource
+  error?: string
+  runCount: number
+}
+
+export interface SqlFavoriteQuery {
+  id: string
+  title: string
+  query: string
+  connectionId?: string
+  database?: string
+  createdAt: number
+}
+
+export interface SqlWorkspaceState {
+  version: 1
+  tabs: SqlWorkspaceTab[]
+  activeTabId: string | null
+  history: SqlHistoryEntry[]
+  favorites: SqlFavoriteQuery[]
+}
+
+export type SqlGridFilterOperator = 'eq' | 'neq' | 'contains' | 'startsWith' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'isNull' | 'isNotNull'
+
+export interface SqlGridFilter {
+  column: string
+  dataType: string
+  operator: SqlGridFilterOperator
+  value?: string
+  secondValue?: string
+}
+
+export interface SqlGridSort {
+  column: string
+  direction: 'asc' | 'desc'
+}
+
+export interface SqlGridQueryState {
+  baseQuery: string
+  filters: SqlGridFilter[]
+  sorts: SqlGridSort[]
+  lastGeneratedQuery: string
 }

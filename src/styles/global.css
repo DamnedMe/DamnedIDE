@@ -15,6 +15,10 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+:root {
+  --z-editor-assistant: 260;
+}
+
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
@@ -79,6 +83,18 @@ a:hover { text-decoration: underline; }
 
 .monaco-editor .sticky-line {
   color: var(--text-secondary);
+}
+
+/* Monaco suggestions and signature help must cross the query/results splitter. */
+.monaco-editor .overflowingContentWidgets,
+.monaco-editor .suggest-widget,
+.monaco-editor .parameter-hints-widget {
+  z-index: var(--z-editor-assistant) !important;
+}
+
+.monaco-editor .suggest-widget {
+  border: 1px solid var(--border-color) !important;
+  box-shadow: var(--shadow-lg) !important;
 }
 
 @keyframes spin {

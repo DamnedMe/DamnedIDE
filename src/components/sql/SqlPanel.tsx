@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { PanelContainer } from '../layout/PanelContainer'
 import { ResizableSplitter } from '../layout/ResizableSplitter'
 import { QueryEditor, QueryEditorHandle, QueryExecutionContext } from './QueryEditor'
@@ -9,10 +9,14 @@ import { RecentConnectionsMenu } from './RecentConnectionsMenu'
 import { DiagramView } from './DiagramView'
 import { useSqlStore, useSqlRecentStore, useToastStore } from '../../store'
 import { Plus, PanelLeftClose, PanelLeftOpen, Loader2, Check, XCircle } from 'lucide-react'
-import { SqlConnection, SqlConnectionConfig, SqlExecutionResult, SqlForeignKeyInfo, SqlTestResult } from '../../types/sql'
+import { SqlConnection, SqlConnectionConfig, SqlExecutionResult, SqlForeignKeyInfo, SqlGridQueryState, SqlHistoryEntry, SqlQuerySource, SqlTestResult, SqlWorkspaceState } from '../../types/sql'
 import { connectionLabel } from './sqlForm'
 import { Modal } from '../layout/Modal'
 import { appendJoinedSelectColumns, appendRelatedJoin, buildExplicitSelect, extractSqlBaseTable, getSqlResultTableName } from './sqlQueryUtils'
+import { SqlWorkspaceDrawer } from './SqlWorkspaceDrawer'
+import { addHistoryEntry, EMPTY_SQL_WORKSPACE, favoriteHistoryEntry, updateWorkspaceTabs } from './sqlWorkspace'
+import { buildGridQuery, canRewriteGridQuery } from './sqlGridQuery'
+import { SqlQueryMessage, SqlQueryOutput, SqlRunningQuery } from './SqlQueryOutput'
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -78,24 +82,91 @@ export function SqlPanel() {
   const [activities, setActivities] = useState<SqlActivity[]>([])
   const [activeQueryTabId, setActiveQueryTabId] = useState<string | null>(null)
   const [tabExecutions, setTabExecutions] = useState<Record<string, SqlExecutionResult>>({})
+  const [workspace, setWorkspace] = useState<SqlWorkspaceState | null>(null)
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
+  const [pendingHistoryClear, setPendingHistoryClear] = useState(false)
+  const [tabGridStates, setTabGridStates] = useState<Record<string, SqlGridQueryState>>({})
+  const [tabQueryMessages, setTabQueryMessages] = useState<Record<string, SqlQueryMessage[]>>({})
+  const [tabRunningQueries, setTabRunningQueries] = useState<Record<string, SqlRunningQuery>>({})
+  const [tabOutputViews, setTabOutputViews] = useState<Record<string, 'results' | 'messages'>>({})
+  const workspaceSaveTimer = useRef<number | null>(null)
   const execution = activeQueryTabId ? tabExecutions[activeQueryTabId] || null : null
+  const currentEditorQuery = queryEditorRef.current?.getQuery() || ''
+  const activeGridState = activeQueryTabId
+    ? tabGridStates[activeQueryTabId] || { baseQuery: currentEditorQuery, filters: [], sorts: [], lastGeneratedQuery: '' }
+    : null
+  const gridCapability = canRewriteGridQuery(activeGridState?.baseQuery || currentEditorQuery)
+
+  useEffect(() => {
+    let canceled = false
+    window.electronAPI.sql.workspaceLoad().then(value => {
+      if (canceled) return
+      const loaded = value || EMPTY_SQL_WORKSPACE
+      setWorkspace(loaded)
+      setTabGridStates(Object.fromEntries(loaded.tabs.flatMap(tab => tab.gridQueryState ? [[tab.id, tab.gridQueryState]] : [])))
+    }).catch(() => {
+      if (!canceled) setWorkspace(EMPTY_SQL_WORKSPACE)
+    })
+    return () => { canceled = true }
+  }, [])
+
+  const queueWorkspaceSave = useCallback((next: SqlWorkspaceState, immediate = false) => {
+    if (workspaceSaveTimer.current !== null) window.clearTimeout(workspaceSaveTimer.current)
+    const save = () => { workspaceSaveTimer.current = null; void window.electronAPI.sql.workspaceSave(next).catch(() => {}) }
+    if (immediate) save()
+    else workspaceSaveTimer.current = window.setTimeout(save, 350)
+  }, [])
+
+  const persistWorkspace = useCallback((next: SqlWorkspaceState, immediate = false) => {
+    setWorkspace(next)
+    queueWorkspaceSave(next, immediate)
+  }, [queueWorkspaceSave])
+
+  const handleWorkspaceChange = useCallback((tabs: import('../../types/sql').SqlWorkspaceTab[], activeTabId: string) => {
+    setWorkspace(current => {
+      if (!current) return current
+      const next = updateWorkspaceTabs(current, tabs.map(tab => ({ ...tab, gridQueryState: tabGridStates[tab.id] })), activeTabId)
+      queueWorkspaceSave(next)
+      return next
+    })
+  }, [queueWorkspaceSave, tabGridStates])
+
+  const applyGridQueryState = useCallback((state: SqlGridQueryState) => {
+    if (!activeQueryTabId) return
+    try {
+      const query = state.filters.length === 0 && state.sorts.length === 0 ? state.baseQuery : buildGridQuery(state)
+      const next = { ...state, lastGeneratedQuery: query }
+      setTabGridStates(current => ({ ...current, [activeQueryTabId]: next }))
+      setWorkspace(current => {
+        if (!current) return current
+        const updated = { ...current, tabs: current.tabs.map(tab => tab.id === activeQueryTabId ? { ...tab, query, gridQueryState: next } : tab) }
+        queueWorkspaceSave(updated)
+        return updated
+      })
+      queryEditorRef.current?.setQuery(query, true, { source: 'grid' })
+    } catch (error) {
+      showToast((error as Error).message, 'info')
+    }
+  }, [activeQueryTabId, queueWorkspaceSave, showToast])
+
+  useEffect(() => () => {
+    if (workspaceSaveTimer.current !== null) window.clearTimeout(workspaceSaveTimer.current)
+  }, [])
 
   const trackOperation = useCallback(async <T,>(label: string, operation: () => Promise<T>): Promise<T> => {
     const id = crypto.randomUUID()
     const startedAt = Date.now()
-    setActivities(current => [...current, { id, label, status: 'running', startedAt }])
+    setActivities(current => [...current.slice(-29), { id, label, status: 'running', startedAt }])
     try {
       const result = await operation()
       setActivities(current => current.map(item => item.id === id
         ? { ...item, status: 'success', detail: `completed in ${Date.now() - startedAt} ms` }
         : item))
-      window.setTimeout(() => setActivities(current => current.filter(item => item.id !== id)), 1800)
       return result
     } catch (error) {
       setActivities(current => current.map(item => item.id === id
         ? { ...item, status: 'error', detail: cleanError(error) }
         : item))
-      window.setTimeout(() => setActivities(current => current.filter(item => item.id !== id)), 5000)
       throw error
     }
   }, [])
@@ -172,7 +243,7 @@ export function SqlPanel() {
         showToast(`join aggiunta, ma non è stato possibile caricare le colonne di ${result.targetTable}`, 'info')
       }
     }
-    queryEditorRef.current?.setQuery(nextQuery, true)
+    queryEditorRef.current?.setQuery(nextQuery, true, { source: 'foreign-key' })
   }
 
   const handleFilterRequest = (col: string, value: unknown) => {
@@ -285,11 +356,18 @@ export function SqlPanel() {
     query: string,
     context?: QueryExecutionContext,
     skipConfirmation = false,
-    queryTabId?: string
+    queryTabId?: string,
+    source: SqlQuerySource = 'editor'
   ): Promise<boolean> => {
+    const targetTabId = queryTabId ?? activeQueryTabId
     const connectionId = context?.connectionId || activeConnection
     const database = context?.database ?? (connectionId ? (activeDatabases[connectionId] || connections.find(c => c.id === connectionId)?.database || '') : '')
     if (!connectionId || !query.trim()) {
+      if (targetTabId) {
+        const text = !query.trim() ? 'Execution skipped: the query is empty.' : 'Execution blocked: select a connection before running the query.'
+        setTabQueryMessages(current => ({ ...current, [targetTabId]: [{ id: crypto.randomUUID(), at: Date.now(), tone: 'error', text }] }))
+        setTabOutputViews(current => ({ ...current, [targetTabId]: 'messages' }))
+      }
       showToast('seleziona una connessione prima di eseguire la query', 'info')
       return false
     }
@@ -313,18 +391,77 @@ export function SqlPanel() {
     const safeDb = database.replace(/]/g, ']]')
     const queryWithDb = database ? `USE [${safeDb}];\n${query}` : query
     const queryId = crypto.randomUUID()
+    const verb = query.trimStart().match(/^([A-Za-z]+)/)?.[1]?.toUpperCase() || 'SQL'
+    const startedAt = Date.now()
+    if (targetTabId) {
+      setTabQueryMessages(current => ({
+        ...current,
+        [targetTabId]: [{
+          id: `${queryId}:start`, at: startedAt, tone: 'running',
+          text: `Started executing query on ${database || 'server'}.`
+        }]
+      }))
+      setTabRunningQueries(current => ({ ...current, [targetTabId]: { queryId, verb, database, startedAt } }))
+      setTabOutputViews(current => ({ ...current, [targetTabId]: 'results' }))
+    }
     setRunning(queryId)
     try {
-      const verb = query.trimStart().match(/^([A-Za-z]+)/)?.[1]?.toUpperCase() || 'SQL'
       const exec = await trackOperation(`Executing ${verb} on ${database || 'server'}`, () =>
         window.electronAPI.sql.query(connectionId, queryWithDb, queryId, undefined, database))
-      const targetTabId = queryTabId ?? activeQueryTabId
       if (targetTabId) setTabExecutions(current => ({ ...current, [targetTabId]: exec }))
+      if (targetTabId) {
+        const finishedAt = Date.now()
+        const affected = exec.rowsAffected.reduce((sum, value) => sum + Math.max(0, value), 0)
+        const completion: SqlQueryMessage[] = exec.canceled
+          ? [{ id: `${queryId}:canceled`, at: finishedAt, tone: 'error', text: 'Query canceled.' }]
+          : [
+              { id: `${queryId}:success`, at: finishedAt, tone: 'success', text: 'Commands completed successfully.' },
+              ...(exec.totalRowCount > 0 ? [{ id: `${queryId}:rows`, at: finishedAt, tone: 'info' as const, text: `${exec.totalRowCount} row${exec.totalRowCount === 1 ? '' : 's'} returned.` }] : []),
+              ...(affected > 0 ? [{ id: `${queryId}:affected`, at: finishedAt, tone: 'info' as const, text: `${affected} row${affected === 1 ? '' : 's'} affected.` }] : []),
+              { id: `${queryId}:time`, at: finishedAt, tone: 'info', text: `Completion time: ${new Date(finishedAt).toLocaleTimeString([], { hour12: false })} · ${exec.elapsedMs || finishedAt - startedAt} ms.` }
+            ]
+        setTabQueryMessages(current => ({ ...current, [targetTabId]: [...(current[targetTabId] || []), ...completion] }))
+      }
+      setWorkspace(current => {
+        const next = addHistoryEntry(current || EMPTY_SQL_WORKSPACE, {
+          query, connectionId, database, status: exec.canceled ? 'canceled' : 'success',
+          executedAt: Date.now(), durationMs: exec.elapsedMs || Date.now() - startedAt,
+          rowCount: exec.totalRowCount, source: context?.source || source
+        })
+        void window.electronAPI.sql.workspaceSave(next).catch(() => {})
+        return next
+      })
       return true
     } catch (e) {
-      showToast(`query failed: ${cleanError(e)}`, 'error')
+      const message = cleanError(e)
+      if (targetTabId) {
+        const finishedAt = Date.now()
+        setTabQueryMessages(current => ({
+          ...current,
+          [targetTabId]: [
+            ...(current[targetTabId] || []),
+            { id: `${queryId}:error`, at: finishedAt, tone: 'error', text: `Execution failed: ${message}` },
+            { id: `${queryId}:time`, at: finishedAt, tone: 'info', text: `Completion time: ${new Date(finishedAt).toLocaleTimeString([], { hour12: false })} · ${finishedAt - startedAt} ms.` }
+          ]
+        }))
+        setTabOutputViews(current => ({ ...current, [targetTabId]: 'messages' }))
+      }
+      setWorkspace(current => {
+        const next = addHistoryEntry(current || EMPTY_SQL_WORKSPACE, {
+          query, connectionId, database, status: 'error', executedAt: Date.now(), durationMs: 0,
+          rowCount: 0, source: context?.source || source, error: message
+        })
+        void window.electronAPI.sql.workspaceSave(next).catch(() => {})
+        return next
+      })
+      showToast(`query failed: ${message}`, 'error')
       return false
     } finally {
+      if (targetTabId) setTabRunningQueries(current => {
+        const next = { ...current }
+        delete next[targetTabId]
+        return next
+      })
       setRunning(null)
     }
   }
@@ -335,10 +472,10 @@ export function SqlPanel() {
     if (q.trim()) void executeSql(q)
   }
 
-  const runQuery = (query: string, context?: QueryExecutionContext) => {
+  const runQuery = (query: string, context?: QueryExecutionContext, source: SqlQuerySource = 'context-menu') => {
     if (context?.connectionId) setActiveConnection(context.connectionId)
     if (context?.connectionId && context.database) setActiveDatabase(context.connectionId, context.database)
-    queryEditorRef.current?.newQuery(query, query.trim().length > 0, context)
+    queryEditorRef.current?.newQuery(query, query.trim().length > 0, { ...context, source })
     setDiagram(null)
   }
 
@@ -459,16 +596,26 @@ export function SqlPanel() {
                 activeDatabase={activeDb}
                 handleRef={queryEditorRef}
                 onExecute={(query, context, tabId) => executeSql(query, context, false, tabId)}
+                restoredWorkspace={workspace ? { tabs: workspace.tabs, activeTabId: workspace.activeTabId } : null}
+                onWorkspaceChange={handleWorkspaceChange}
+                onOpenWorkspace={() => setWorkspaceOpen(true)}
+                onQueryChanged={(tabId) => setTabGridStates(current => {
+                  if (!current[tabId]) return current
+                  const next = { ...current }
+                  delete next[tabId]
+                  return next
+                })}
                 onActiveTabChange={(tabId, context) => {
                   setActiveQueryTabId(tabId)
                   if (context?.connectionId) setActiveConnection(context.connectionId)
                   if (context?.connectionId && context.database) setActiveDatabase(context.connectionId, context.database)
                 }}
-                onTabClosed={(tabId) => setTabExecutions(current => {
-                  const next = { ...current }
-                  delete next[tabId]
-                  return next
-                })}
+                onTabClosed={(tabId) => {
+                  setTabExecutions(current => { const next = { ...current }; delete next[tabId]; return next })
+                  setTabQueryMessages(current => { const next = { ...current }; delete next[tabId]; return next })
+                  setTabRunningQueries(current => { const next = { ...current }; delete next[tabId]; return next })
+                  setTabOutputViews(current => { const next = { ...current }; delete next[tabId]; return next })
+                }}
               />
               {diagram ? (
                 <DiagramView
@@ -476,36 +623,76 @@ export function SqlPanel() {
                   database={diagram.database}
                   tables={diagram.tables}
                   onClose={() => setDiagram(null)}
-                  onRunQuery={(query) => runQuery(query, { connectionId: diagram.connId, database: diagram.database })}
+                  onRunQuery={(query) => runQuery(query, { connectionId: diagram.connId, database: diagram.database }, 'diagram')}
                   trackOperation={trackOperation}
                 />
               ) : (
-                <ResultViewer
+                <SqlQueryOutput
                   execution={execution}
-                  getResultTableName={getResultTableName}
-                  onJoinRequest={handleJoinRequest}
-                  onFilterRequest={handleFilterRequest}
-                  onClear={() => {
-                    if (!activeQueryTabId) return
-                    setTabExecutions(current => {
-                      const next = { ...current }
-                      delete next[activeQueryTabId]
-                      return next
-                    })
+                  messages={activeQueryTabId ? tabQueryMessages[activeQueryTabId] || [] : []}
+                  running={activeQueryTabId ? tabRunningQueries[activeQueryTabId] || null : null}
+                  selected={activeQueryTabId ? tabOutputViews[activeQueryTabId] || 'results' : 'results'}
+                  onSelected={(value) => {
+                    if (activeQueryTabId) setTabOutputViews(current => ({ ...current, [activeQueryTabId]: value }))
                   }}
-                  onExecuteSql={async (q) => {
-                    const ok = await executeSql(q)
-                    if (ok) refreshGrid()
-                    return ok
-                  }}
-                  onDeleteRequest={(query) => { void executeSql(query).then(ok => { if (ok) refreshGrid() }) }}
-                />
+                >
+                  <ResultViewer
+                    execution={execution}
+                    getResultTableName={getResultTableName}
+                    onJoinRequest={handleJoinRequest}
+                    onFilterRequest={handleFilterRequest}
+                    onClear={() => {
+                      if (!activeQueryTabId) return
+                      setTabExecutions(current => {
+                        const next = { ...current }
+                        delete next[activeQueryTabId]
+                        return next
+                      })
+                    }}
+                    onExecuteSql={async (q) => {
+                      const ok = await executeSql(q)
+                      if (ok) refreshGrid()
+                      return ok
+                    }}
+                    onDeleteRequest={(query) => { void executeSql(query).then(ok => { if (ok) refreshGrid() }) }}
+                    gridQueryState={activeGridState}
+                    gridQuerySupported={gridCapability}
+                    onGridQueryStateChange={applyGridQueryState}
+                  />
+                </SqlQueryOutput>
               )}
             </ResizableSplitter>
           </div>
           </ResizableSplitter>
         </div>
-        {activities.length > 0 && <SqlActivityStrip activities={activities} />}
+        <SqlActivityStrip activities={activities} />
+        {workspaceOpen && workspace && (
+          <SqlWorkspaceDrawer
+            workspace={workspace}
+            onClose={() => setWorkspaceOpen(false)}
+            onOpenQuery={(query, context) => {
+              queryEditorRef.current?.newQuery(query, false, context)
+              setWorkspaceOpen(false)
+            }}
+            onFavoriteHistory={(entry) => persistWorkspace(favoriteHistoryEntry(workspace, entry), true)}
+            onRemoveFavorite={(id) => persistWorkspace({ ...workspace, favorites: workspace.favorites.filter(item => item.id !== id) }, true)}
+            onDeleteHistory={(id) => persistWorkspace({ ...workspace, history: workspace.history.filter(item => item.id !== id) }, true)}
+            onClearHistory={() => setPendingHistoryClear(true)}
+            onRenameTab={(id, title) => queryEditorRef.current?.renameTab(id, title)}
+            onRenameFavorite={(id, title) => {
+              const normalized = title.trim().slice(0, 120)
+              if (normalized) persistWorkspace({ ...workspace, favorites: workspace.favorites.map(item => item.id === id ? { ...item, title: normalized } : item) }, true)
+            }}
+            onNewQuery={() => {
+              queryEditorRef.current?.newQuery('', false, activeConnection ? { connectionId: activeConnection, database: activeDb || undefined, source: 'editor' } : undefined)
+              setWorkspaceOpen(false)
+            }}
+            onActivateTab={(id) => {
+              queryEditorRef.current?.activateTab(id)
+              setWorkspaceOpen(false)
+            }}
+          />
+        )}
       </div>
 
       {plusMenu && (
@@ -616,6 +803,19 @@ export function SqlPanel() {
         </Modal>
       )}
 
+      {pendingHistoryClear && workspace && (
+        <Modal onClose={() => setPendingHistoryClear(false)} width={400} label="clear query history">
+          <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px', fontFamily: 'var(--font-mono)' }}>
+            <strong style={{ fontSize: 13 }}>clear query history?</strong>
+            <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>Favorites and open query tabs will be preserved.</span>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setPendingHistoryClear(false)} style={{ padding: '7px 14px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 4, color: 'var(--text-secondary)', cursor: 'pointer' }}>cancel</button>
+              <button onClick={() => { persistWorkspace({ ...workspace, history: [] }, true); setPendingHistoryClear(false) }} style={{ padding: '7px 14px', background: 'var(--error-color)', border: 0, borderRadius: 4, color: 'var(--text-inverse)', cursor: 'pointer' }}>clear</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {serverInfo && (
         <Modal onClose={() => setServerInfo(null)} width={460} label="server info">
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -652,18 +852,26 @@ export function SqlPanel() {
 }
 
 function SqlActivityStrip({ activities }: { activities: SqlActivity[] }) {
+  const [, setTick] = useState(0)
   const running = activities.filter(item => item.status === 'running')
   const visible = running.length > 0 ? running : activities.slice(-1)
+  useEffect(() => {
+    if (running.length === 0) return
+    const timer = window.setInterval(() => setTick(value => value + 1), 250)
+    return () => window.clearInterval(timer)
+  }, [running.length])
   return (
-    <div role="status" aria-live="polite" style={{
-      position: 'absolute', right: '12px', bottom: '12px', zIndex: 30,
-      minHeight: '32px', maxWidth: 'min(520px, calc(100% - 24px))', padding: '5px 9px',
+    <footer role="status" aria-live="polite" data-testid="sql-operation-status" style={{
+      height: 27, flexShrink: 0, padding: '0 9px',
       display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden',
-      background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-      borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-      pointerEvents: 'none', fontFamily: 'var(--font-mono)'
+      background: 'var(--bg-secondary)', borderTop: '1px solid var(--border-subtle)',
+      fontFamily: 'var(--font-mono)'
     }}>
-      {visible.map(item => (
+      {visible.length === 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 9.5 }}>
+          <Check size={10} style={{ color: 'var(--success-color)' }} /> Ready
+        </div>
+      ) : visible.map(item => (
         <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
           {item.status === 'running'
             ? <Loader2 size={11} style={{ color: 'var(--accent-color)', animation: 'spin 0.9s linear infinite', flexShrink: 0 }} />
@@ -671,11 +879,12 @@ function SqlActivityStrip({ activities }: { activities: SqlActivity[] }) {
               ? <Check size={11} style={{ color: 'var(--success-color)', flexShrink: 0 }} />
               : <XCircle size={11} style={{ color: 'var(--error-color)', flexShrink: 0 }} />}
           <span style={{ color: item.status === 'error' ? 'var(--error-color)' : 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-            {item.label}{item.detail ? ` · ${item.detail}` : '…'}
+            {item.label}{item.status === 'running' ? ` · ${((Date.now() - item.startedAt) / 1000).toFixed(1)} s` : item.detail ? ` · ${item.detail}` : ''}
           </span>
         </div>
       ))}
-    </div>
+      {running.length > 1 && <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: 9 }}>{running.length} operations running</span>}
+    </footer>
   )
 }
 

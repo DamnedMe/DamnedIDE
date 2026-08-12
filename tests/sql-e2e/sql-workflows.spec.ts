@@ -9,6 +9,21 @@ test('a SELECT shows live operation feedback before results arrive', async ({ pa
   await expect(page.getByText('250000 rows', { exact: true })).toBeVisible()
 })
 
+test('query output exposes persistent SSMS-style results and messages', async ({ page }) => {
+  await openMockTables(page)
+  await page.getByLabel('table dbo.AuditLog').click({ button: 'right' })
+  await page.getByText('select top 1000 rows', { exact: true }).click()
+
+  await expect(page.getByTestId('sql-query-progress')).toContainText('Executing SELECT')
+  await expect(page.getByText('1 rows', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Messages' }).click()
+  const messages = page.getByRole('tabpanel', { name: 'Messages' })
+  await expect(messages).toContainText('Started executing query')
+  await expect(messages).toContainText('Commands completed successfully')
+  await expect(messages).toContainText('1 row returned')
+  await expect(messages).toContainText('Completion time')
+})
+
 test('essentials mode leaves only tables, diagram and programmability', async ({ page }) => {
   await openMockDatabase(page)
   await expect(page.getByText('views', { exact: true })).toBeVisible()
@@ -85,6 +100,18 @@ test('diagram zoom responds to Ctrl plus, Ctrl minus and Ctrl wheel', async ({ p
   await page.keyboard.press('-')
   await page.keyboard.up('Control')
   await expect.poll(readZoom).toBeLessThan(beforeMinus)
+})
+
+test('double-clicking a diagram table opens an explicit-column SELECT', async ({ page }) => {
+  await openMockDatabase(page)
+  await page.getByLabel('diagram massive_mock_db').click()
+  const diagram = page.getByRole('img', { name: 'database diagram massive_mock_db' })
+  await expect(diagram).toBeVisible()
+  await diagram.locator('[data-diagram-table="dbo.DiagramTable000"]').dblclick()
+  await expect.poll(async () => {
+    const queries = await page.evaluate(() => (window as unknown as { __sqlMock: { queries: string[] } }).__sqlMock.queries)
+    return queries.some(query => /FROM \[dbo\]\.\[DiagramTable000\]/i.test(query) && /\[DiagramTable000\]\.\[Id\]/i.test(query) && !/SELECT\s+(?:TOP\s*\(1000\)\s+)?\*/i.test(query))
+  }).toBe(true)
 })
 
 test('editing and deleting rows always require confirmation', async ({ page }) => {

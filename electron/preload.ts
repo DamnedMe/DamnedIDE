@@ -72,6 +72,10 @@ const electronAPI = {
       ipcRenderer.invoke('sql:objectDefinition', connectionId, database, objectName),
     diagram: (connectionId: string, database: string, tables?: string[]) =>
       ipcRenderer.invoke('sql:diagram', connectionId, database, tables),
+    schemaSnapshot: (connectionId: string, database: string) =>
+      ipcRenderer.invoke('sql:schemaSnapshot', connectionId, database),
+    workspaceLoad: () => ipcRenderer.invoke('sql:workspaceLoad'),
+    workspaceSave: (workspace: import('../src/types/sql').SqlWorkspaceState) => ipcRenderer.invoke('sql:workspaceSave', workspace),
     buildConnectionString: (config: SqlConnectionConfig) => ipcRenderer.invoke('sql:buildConnectionString', config),
     parseConnectionString: (cs: string) => ipcRenderer.invoke('sql:parseConnectionString', cs)
   },

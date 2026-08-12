@@ -8,6 +8,7 @@ import { WorktreeService } from './services/git/worktree.service'
 import { DiffService } from './services/git/diff.service'
 import { AdoService } from './services/ado/ado.service'
 import { SqlService, SqlConnectionConfig, buildConnectionString, parseConnectionString } from './services/sql/sql.service'
+import { SqlWorkspaceDocument, SqlWorkspaceService } from './services/sql/sql-workspace.service'
 import { RoslynService } from './services/roslyn/roslyn.service'
 import { createTerminal, writeToTerminal, resizeTerminal, destroyTerminal, destroyAllTerminals, TerminalType } from './services/terminal/terminal.service'
 import { startProcess, stopProcess, stopAllProcesses } from './services/process/process.service'
@@ -103,9 +104,10 @@ app.whenReady().then(() => {
   const diffService = new DiffService()
   const adoService = new AdoService()
   const sqlService = new SqlService()
+  const sqlWorkspaceService = new SqlWorkspaceService(app.getPath('userData'))
   roslynService = new RoslynService()
 
-  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, roslynService)
+  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService)
   createWindow()
   setupAutoUpdater()
 
@@ -134,6 +136,7 @@ function registerIpcHandlers(
   diff: DiffService,
   ado: AdoService,
   sql: SqlService,
+  sqlWorkspace: SqlWorkspaceService,
   roslyn: RoslynService
 ): void {
   // ─── Git ───────────────────────────────────────────
@@ -196,6 +199,10 @@ function registerIpcHandlers(
     sql.objectDefinition(connectionId, database, objectName)))
   ipcMain.handle('sql:diagram', ipc((connectionId: string, database: string, tables?: string[]) =>
     sql.getDiagram(connectionId, database, tables)))
+  ipcMain.handle('sql:schemaSnapshot', ipc((connectionId: string, database: string) =>
+    sql.getSchemaSnapshot(connectionId, database)))
+  ipcMain.handle('sql:workspaceLoad', ipc(() => sqlWorkspace.load()))
+  ipcMain.handle('sql:workspaceSave', ipc((workspace: SqlWorkspaceDocument) => sqlWorkspace.save(workspace)))
   ipcMain.handle('sql:buildConnectionString', ipc((config: SqlConnectionConfig) => buildConnectionString(config)))
   ipcMain.handle('sql:parseConnectionString', ipc((cs: string) => parseConnectionString(cs)))
 

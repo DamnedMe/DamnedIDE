@@ -161,6 +161,7 @@ export default function App() {
         statusBar={null}
       >
         {renderPanel(detachedPanel)}
+        <ToastHost />
       </AppShell>
     )
   }

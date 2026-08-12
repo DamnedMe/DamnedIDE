@@ -7,13 +7,31 @@ import { GitService } from './services/git/git.service'
 import { WorktreeService } from './services/git/worktree.service'
 import { DiffService } from './services/git/diff.service'
 import { AdoService } from './services/ado/ado.service'
-import { SqlService, SqlConnectionConfig } from './services/sql/sql.service'
+import { SqlService, SqlConnectionConfig, buildConnectionString, parseConnectionString } from './services/sql/sql.service'
 import { RoslynService } from './services/roslyn/roslyn.service'
 import { createTerminal, writeToTerminal, resizeTerminal, destroyTerminal, destroyAllTerminals, TerminalType } from './services/terminal/terminal.service'
 import { startProcess, stopProcess, stopAllProcesses } from './services/process/process.service'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
+
+// IPC wrapper: rejects with a clean one-line Error (no mssql stack trace) so the
+// dev console does not flood with "Error occurred in handler for 'sql:...'".
+function ipc<TArgs extends unknown[], TResult>(
+  fn: (...args: TArgs) => Promise<TResult> | TResult
+): (_e: Electron.IpcMainInvokeEvent, ...args: TArgs) => Promise<TResult> {
+  return async (_e, ...args) => {
+    try {
+      return await fn(...args)
+    } catch (err) {
+      const msg = (err as Error)?.message || String(err)
+      console.error(`[sql] ${msg}`)
+      const clean = new Error(msg)
+      ;(clean as Error & { stack?: string | undefined }).stack = undefined
+      throw clean
+    }
+  }
+}
 
 function appIcon(): Electron.NativeImage {
   return nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.ico'))
@@ -160,11 +178,26 @@ function registerIpcHandlers(
   ipcMain.handle('ado:createPr', (_e, project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean }) => ado.createPullRequest(project, repo, opts))
 
   // ─── SQL Server ────────────────────────────────────
-  ipcMain.handle('sql:connect', (_e, config: SqlConnectionConfig) => sql.connect(config))
-  ipcMain.handle('sql:disconnect', (_e, connectionId: string) => sql.disconnect(connectionId))
-  ipcMain.handle('sql:query', (_e, connectionId: string, query: string) => sql.executeQuery(connectionId, query))
-  ipcMain.handle('sql:databases', (_e, connectionId: string) => sql.listDatabases(connectionId))
-  ipcMain.handle('sql:tables', (_e, connectionId: string, database: string) => sql.listTables(connectionId, database))
+  ipcMain.handle('sql:connect', ipc((config: SqlConnectionConfig) => sql.connect(config)))
+  ipcMain.handle('sql:disconnect', ipc((connectionId: string) => sql.disconnect(connectionId)))
+  ipcMain.handle('sql:query', ipc((connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) =>
+    sql.executeQuery(connectionId, query, queryId, maxRows, database)))
+  ipcMain.handle('sql:cancelQuery', ipc((queryId: string) => sql.cancelQuery(queryId)))
+  ipcMain.handle('sql:testConnection', ipc((config: SqlConnectionConfig) => sql.testConnection(config)))
+  ipcMain.handle('sql:serverInfo', ipc((connectionId: string) => sql.getServerInfo(connectionId)))
+  ipcMain.handle('sql:databases', ipc((connectionId: string) => sql.listDatabases(connectionId)))
+  ipcMain.handle('sql:tables', ipc((connectionId: string, database: string) => sql.listTables(connectionId, database)))
+  ipcMain.handle('sql:views', ipc((connectionId: string, database: string) => sql.listViews(connectionId, database)))
+  ipcMain.handle('sql:procedures', ipc((connectionId: string, database: string) => sql.listStoredProcedures(connectionId, database)))
+  ipcMain.handle('sql:functions', ipc((connectionId: string, database: string) => sql.listFunctions(connectionId, database)))
+  ipcMain.handle('sql:columns', ipc((connectionId: string, database: string, table: string) =>
+    sql.listColumns(connectionId, database, table)))
+  ipcMain.handle('sql:objectDefinition', ipc((connectionId: string, database: string, objectName: string) =>
+    sql.objectDefinition(connectionId, database, objectName)))
+  ipcMain.handle('sql:diagram', ipc((connectionId: string, database: string, tables?: string[]) =>
+    sql.getDiagram(connectionId, database, tables)))
+  ipcMain.handle('sql:buildConnectionString', ipc((config: SqlConnectionConfig) => buildConnectionString(config)))
+  ipcMain.handle('sql:parseConnectionString', ipc((cs: string) => parseConnectionString(cs)))
 
   // ─── Dialog ────────────────────────────────────────
   ipcMain.handle('dialog:openFolder', async () => {

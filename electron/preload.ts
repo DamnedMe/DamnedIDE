@@ -56,9 +56,24 @@ const electronAPI = {
   sql: {
     connect: (config: SqlConnectionConfig) => ipcRenderer.invoke('sql:connect', config),
     disconnect: (connectionId: string) => ipcRenderer.invoke('sql:disconnect', connectionId),
-    query: (connectionId: string, query: string) => ipcRenderer.invoke('sql:query', connectionId, query),
+    query: (connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) =>
+      ipcRenderer.invoke('sql:query', connectionId, query, queryId, maxRows, database),
+    cancelQuery: (queryId: string) => ipcRenderer.invoke('sql:cancelQuery', queryId),
+    testConnection: (config: SqlConnectionConfig) => ipcRenderer.invoke('sql:testConnection', config),
+    serverInfo: (connectionId: string) => ipcRenderer.invoke('sql:serverInfo', connectionId),
     databases: (connectionId: string) => ipcRenderer.invoke('sql:databases', connectionId),
-    tables: (connectionId: string, database: string) => ipcRenderer.invoke('sql:tables', connectionId, database)
+    tables: (connectionId: string, database: string) => ipcRenderer.invoke('sql:tables', connectionId, database),
+    views: (connectionId: string, database: string) => ipcRenderer.invoke('sql:views', connectionId, database),
+    procedures: (connectionId: string, database: string) => ipcRenderer.invoke('sql:procedures', connectionId, database),
+    functions: (connectionId: string, database: string) => ipcRenderer.invoke('sql:functions', connectionId, database),
+    columns: (connectionId: string, database: string, table: string) =>
+      ipcRenderer.invoke('sql:columns', connectionId, database, table),
+    objectDefinition: (connectionId: string, database: string, objectName: string) =>
+      ipcRenderer.invoke('sql:objectDefinition', connectionId, database, objectName),
+    diagram: (connectionId: string, database: string, tables?: string[]) =>
+      ipcRenderer.invoke('sql:diagram', connectionId, database, tables),
+    buildConnectionString: (config: SqlConnectionConfig) => ipcRenderer.invoke('sql:buildConnectionString', config),
+    parseConnectionString: (cs: string) => ipcRenderer.invoke('sql:parseConnectionString', cs)
   },
   roslyn: {
     ensure: (rootPath: string) => ipcRenderer.invoke('roslyn:ensure', rootPath),

@@ -79,10 +79,15 @@
 | | |
 |---|---|
 | 🖇️ **Connector LocalDB** | named pipe via registry, con connessioni **persistenti** ripristinate all'avvio |
-| ⚡ **Risultati interattivi** | click su una **PK** → aggiunge `WHERE`; click su una **FK** → aggiunge la `LEFT JOIN` automatica |
+| 🔐 **Connessioni stile SSMS 2022** | 8 tipi di autenticazione (Windows, SQL, Azure AD Password/Default/Service Principal/MSI/Access Token), test connection, connection string ADO.NET con parse inverso, cronologia recenti |
+| 🌳 **Object Explorer** | albero server → database → tabelle/views/programmabilità con lazy-load, **refresh singolo DB o tutti**, modalità *essentials* (solo tabelle · diagramma · programmabilità) |
+| 🖱️ **Click su tabella** | *Select Top 1000 / Top N / tutte*, *Script table as* CREATE/SELECT/INSERT/UPDATE/DELETE |
+| ⚡ **Risultati virtualizzati** | griglia a finestra (windowing) per centinaia di migliaia di righe senza lag, multi-result set, righe affette, tempi di esecuzione |
+| 🧭 **ER Diagram** | diagramma auto-generato con relazioni FK, tabelle trascinabili, pan/zoom, export SVG/PNG |
 | 🎨 **PK / FK evidenziate** | colori diversi, colonne ridimensionabili e pinnabili |
-| 🗓️ **Date formattate** | `dd/MM/yyyy HH:mm:ss.fffff` |
 | 📋 **Copy righe** | `Ctrl+C` su righe selezionate in formato tab-separated |
+| ⏹️ **Cancellazione query** | esecuzione annullabile, editor Monaco SQL con `F5` |
+| 🗓️ **Date formattate** | `dd/MM/yyyy HH:mm:ss.fffff` |
 
 </details>
 
@@ -164,6 +169,32 @@ npm run package
 | `Ctrl+Shift+F` | Ricerca globale |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom editor |
 | `F5` | Esegui query SQL |
+
+### Test SQL Server
+
+La sezione SQL dispone di due livelli di verifica separati:
+
+```bash
+# test deterministici di parser JOIN, layout diagramma e matematica griglia
+npm run test:sql-ui
+
+# test Playwright con bridge Electron mockato e dati massivi
+npx playwright install chromium
+npm run test:sql-playwright
+
+# entrambi
+npm run test:sql
+```
+
+La suite Playwright copre query a tab, SELECT dal menu contestuale, feedback delle operazioni,
+modalità essenziali, JOIN da FK, conferme UPDATE/DELETE e diagrammi ciclici. I profili prestazionali
+usano 250.000 righe, 5.000 righe × 240 colonne e un diagramma da 300 tabelle/300 relazioni.
+Le metriche sono allegate al report HTML in `playwright-report/sql` e aggregate in
+`test-results/sql-performance.json`; per aprire il report:
+
+```bash
+npm run test:sql-playwright:report
+```
 
 ---
 

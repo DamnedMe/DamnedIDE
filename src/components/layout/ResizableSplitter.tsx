@@ -26,6 +26,13 @@ export function ResizableSplitter({
   const sizeRef = useRef(size)
   sizeRef.current = size
 
+  // A caller may intentionally change the preferred split for a different
+  // workspace mode (for example, results versus a visual diagram).
+  useEffect(() => {
+    sizeRef.current = defaultSize
+    setSize(defaultSize)
+  }, [defaultSize])
+
   const clampSize = useCallback((containerSize: number) => {
     let s = sizeRef.current
     const effectiveMax = maxSize ?? containerSize - 40

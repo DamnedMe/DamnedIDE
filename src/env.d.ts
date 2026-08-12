@@ -1,15 +1,5 @@
 /// <reference types="vite/client" />
 
-interface SqlConnectionConfig {
-  server: string
-  database?: string
-  user?: string
-  password?: string
-  port?: number
-  trustServerCertificate?: boolean
-  connectionId?: string
-}
-
 interface Window {
   electronAPI: {
     git: {
@@ -61,11 +51,22 @@ interface Window {
       createPr: (project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; workItemIds?: number[] }) => Promise<{ id: number; title: string; mode: 'autocomplete' | 'completed' | 'open' } | null>
     }
     sql: {
-      connect: (config: SqlConnectionConfig) => Promise<string>
+      connect: (config: import('./types/sql').SqlConnectionConfig) => Promise<string>
       disconnect: (connectionId: string) => Promise<void>
-      query: (connectionId: string, query: string) => Promise<import('./types/sql').SqlQueryResult>
+      query: (connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) => Promise<import('./types/sql').SqlExecutionResult>
+      cancelQuery: (queryId: string) => Promise<void>
+      testConnection: (config: import('./types/sql').SqlConnectionConfig) => Promise<import('./types/sql').SqlTestResult>
+      serverInfo: (connectionId: string) => Promise<import('./types/sql').SqlServerInfo>
       databases: (connectionId: string) => Promise<string[]>
       tables: (connectionId: string, database: string) => Promise<string[]>
+      views: (connectionId: string, database: string) => Promise<string[]>
+      procedures: (connectionId: string, database: string) => Promise<string[]>
+      functions: (connectionId: string, database: string) => Promise<string[]>
+      columns: (connectionId: string, database: string, table: string) => Promise<import('./types/sql').SqlColumnInfo[]>
+      objectDefinition: (connectionId: string, database: string, objectName: string) => Promise<string>
+      diagram: (connectionId: string, database: string, tables?: string[]) => Promise<import('./types/sql').SqlDiagramData>
+      buildConnectionString: (config: import('./types/sql').SqlConnectionConfig) => Promise<string>
+      parseConnectionString: (cs: string) => Promise<import('./types/sql').SqlConnectionConfig>
     }
     roslyn: {
       ensure: (rootPath: string) => Promise<boolean>

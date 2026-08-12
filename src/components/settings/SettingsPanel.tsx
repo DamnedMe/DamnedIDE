@@ -156,7 +156,7 @@ export function SettingsPanel() {
   ]
 
   return (
-    <PanelContainer title={t('settings')}>
+    <PanelContainer>
       <div style={{
         height: '100%', display: 'flex', flexDirection: 'column',
         padding: '12px', gap: '8px', overflow: 'auto'

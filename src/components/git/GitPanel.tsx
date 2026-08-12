@@ -5,8 +5,8 @@ import { StagingArea } from './StagingArea'
 import { CommitDialog } from './CommitDialog'
 import { BranchList } from './BranchList'
 import { useGitStore } from '../../store'
-import { useI18n } from '../../i18n'
 import { FolderOpen, RefreshCw } from 'lucide-react'
+import { TerminalDock } from '../terminal/TerminalDock'
 import { GitFileStatus } from '../../types/git'
 
 interface GitPanelProps {
@@ -16,7 +16,6 @@ interface GitPanelProps {
 export function GitPanel({ repoPath }: GitPanelProps) {
   const { status, setStatus, files, setFiles, branches, setBranches, isLoading, setLoading } = useGitStore()
   const [showCommit, setShowCommit] = useState(false)
-  const t = useI18n()
 
   const loadStatus = async () => {
     if (!repoPath) return
@@ -44,29 +43,31 @@ export function GitPanel({ repoPath }: GitPanelProps) {
 
   if (!repoPath) {
     return (
-      <PanelContainer title={t('git')}>
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          gap: '20px',
-          color: 'var(--text-muted)'
-        }}>
+      <PanelContainer>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '50%',
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-color)',
-            display: 'flex',
+            display: 'flex', flex: 1, minHeight: 0,
+            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            gap: '20px',
+            color: 'var(--text-muted)'
           }}>
-            <FolderOpen size={28} strokeWidth={1} />
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <FolderOpen size={28} strokeWidth={1} />
+            </div>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>open a repo to view changes</p>
           </div>
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>open a repo to view changes</p>
+          <TerminalDock repoPath={null} />
         </div>
       </PanelContainer>
     )
@@ -93,21 +94,21 @@ export function GitPanel({ repoPath }: GitPanelProps) {
 
   return (
     <PanelContainer
-      title="Git"
       actions={
         <ActionBtn onClick={loadStatus} title="refresh">
           <RefreshCw size={13} />
         </ActionBtn>
       }
     >
-      <div style={{ height: '100%' }}>
-        <ResizableSplitter direction="horizontal" defaultSize={220} minSize={160} maxSize={360}>
-          <BranchList
-            branches={branches}
-            currentBranch={status?.current || ''}
-            repoPath={repoPath}
-            onBranchChanged={loadStatus}
-          />
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ResizableSplitter direction="horizontal" defaultSize={220} minSize={160} maxSize={360}>
+            <BranchList
+              branches={branches}
+              currentBranch={status?.current || ''}
+              repoPath={repoPath}
+              onBranchChanged={loadStatus}
+            />
           <div style={{ padding: '0 0 0 0', overflow: 'auto' }}>
             <StagingArea
               modifiedFiles={modifiedFiles}
@@ -118,6 +119,8 @@ export function GitPanel({ repoPath }: GitPanelProps) {
             />
           </div>
         </ResizableSplitter>
+        </div>
+        <TerminalDock repoPath={repoPath} />
       </div>
 
       {showCommit && (

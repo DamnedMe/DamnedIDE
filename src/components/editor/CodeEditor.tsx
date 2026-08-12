@@ -11,11 +11,12 @@ import { findBestLine, searchWorkspaceFiles, findReferenceLines, searchWorkspace
 import { ReferencesModal } from './ReferencesModal'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics, type DiagnosticCounts } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
+import { FileTypeIcon } from '../../utils/file-icon'
+import { TerminalDock } from '../terminal/TerminalDock'
 import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useEditorStore, useWorktreeStore, useUIStore, useSettingsStore } from '../../store'
-import { useI18n } from '../../i18n'
 import {
   FileCode, FolderOpen, X, Circle,
   PanelLeftClose, PanelLeftOpen, FolderTree, Search,
@@ -60,7 +61,6 @@ interface NavEntry {
 }
 
 export function CodeEditor() {
-  const t = useI18n()
   const [rootPath, setRootPath] = useState<string | null>(null)
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
@@ -772,7 +772,7 @@ export function CodeEditor() {
   // ─── Empty state ───────────────────────────────────
   if (!rootPath) {
     return (
-      <PanelContainer title={t('editor')}>
+      <PanelContainer>
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           justifyContent: 'center', height: '100%', gap: '20px', color: 'var(--text-muted)'
@@ -916,7 +916,7 @@ export function CodeEditor() {
                   onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = 'var(--text-secondary)' }}
                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = 'var(--text-muted)' }}
                 >
-                  <FileCode size={10} />
+                  <FileTypeIcon path={f.path} size={10} />
                   {name}
                   {f.dirty && <Circle size={6} fill="var(--accent-color)" style={{ color: 'var(--accent-color)' }} />}
                   <button
@@ -1069,7 +1069,8 @@ export function CodeEditor() {
       )}
 
       {/* ─── Editor / Diff area ───────────────── */}
-      <div style={{ flex: 1, minHeight: 0, background: 'var(--bg-card)' }}>
+      <div style={{ flex: 1, minHeight: 0, background: 'var(--bg-card)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {diffView ? (
           <DiffViewer
             original={diffView.original}
@@ -1165,11 +1166,13 @@ export function CodeEditor() {
           }}>{renderAnsi(quickOutput)}</pre>
         </div>
       )}
+        </div>
+        <TerminalDock repoPath={rootPath} />
     </div>
   )
 
   return (
-    <PanelContainer title={t('editor')}>
+    <PanelContainer>
       <div style={{
         height: '100%',
         background: 'var(--bg-card)', border: '1px solid var(--border-color)',

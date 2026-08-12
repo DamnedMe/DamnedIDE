@@ -471,6 +471,28 @@ export const useEditorStore = create<EditorState>((set) => ({
   setEditorNav: (nav) => set({ editorNav: nav })
 }))
 
+interface TerminalState {
+  open: boolean
+  height: number
+  setOpen: (open: boolean) => void
+  setHeight: (h: number) => void
+}
+
+function defaultTerminalHeight(): number {
+  try {
+    const inner = window.innerHeight - 54
+    return Math.max(120, Math.round((inner - 32) / 2))
+  } catch { /* ignore */ }
+  return 280
+}
+
+export const useTerminalStore = create<TerminalState>((set) => ({
+  open: false,
+  height: defaultTerminalHeight(),
+  setOpen: (open) => set({ open }),
+  setHeight: (height) => set({ height })
+}))
+
 const RECENT_REPOS_KEY = 'damnedide_recent_repos'
 const RECENT_REPOS_MAX = 5
 

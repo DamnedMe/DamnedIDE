@@ -4,7 +4,6 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { PanelContainer } from '../layout/PanelContainer'
 import { useUIStore, useSettingsStore } from '../../store'
-import { useI18n } from '../../i18n'
 import { hexToRgba } from '../../utils/color'
 import { Monitor, ExternalLink, Plus, X, ChevronDown } from 'lucide-react'
 
@@ -51,7 +50,6 @@ interface TerminalPanelProps {
 }
 
 export function TerminalPanel({ repoPath }: TerminalPanelProps) {
-  const t = useI18n()
   const [tabs, setTabs] = useState<Tab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [showTypeMenu, setShowTypeMenu] = useState(false)
@@ -208,6 +206,28 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     setActiveTabId(tab.id)
   }
 
+  // auto-open a default shell when the terminal mounts (dock open / panel), so it's
+  // usable immediately without picking a shell type
+  const defaultTabAddedRef = useRef(false)
+  useEffect(() => {
+    if (defaultTabAddedRef.current) return
+    defaultTabAddedRef.current = true
+    addTab('pwsh')
+  }, [])
+
+  // keep the terminal textarea focused so keystrokes reach the shell
+  useEffect(() => {
+    if (!activeTabId) return
+    let tries = 0
+    const focusTerm = () => {
+      const ta = xtermRef.current?.textarea as HTMLTextAreaElement | undefined
+      if (ta) { ta.focus(); return }
+      if (tries++ < 25) setTimeout(focusTerm, 150)
+    }
+    const t = setTimeout(focusTerm, 50)
+    return () => clearTimeout(t)
+  }, [activeTabId])
+
   useEffect(() => {
     if (activeTabId) {
       const tab = tabs.find(t => t.id === activeTabId)
@@ -226,7 +246,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
   }, [activeTabId])
 
   return (
-    <PanelContainer title={t('terminal')}>
+    <PanelContainer>
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a', overflow: 'hidden' }}>
         {/* Tabs bar */}
         <div style={{

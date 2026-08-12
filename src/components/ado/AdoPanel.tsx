@@ -7,13 +7,12 @@ import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 import { CreatePrDialog } from './CreatePrDialog'
 import { useAdoStore } from '../../store'
-import { useI18n } from '../../i18n'
 import { AdoConnection, AdoPullRequest, AdoPullRequestDetail } from '../../types/ado'
+import { TerminalDock } from '../terminal/TerminalDock'
 import { Network, Key, FolderOpen, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 
 export function AdoPanel() {
   const { connection, setConnection, workItems, setWorkItems, pullRequests, setPullRequests, isLoading, setLoading } = useAdoStore()
-  const t = useI18n()
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<number | null>(null)
   const [selectedPr, setSelectedPr] = useState<AdoPullRequestDetail | null>(null)
   const [leftCollapsed, setLeftCollapsed] = useState(false)
@@ -82,43 +81,47 @@ export function AdoPanel() {
 
   if (!connection?.isConnected) {
     return (
-      <PanelContainer title={t('ado')}>
-        <div style={{
-          maxWidth: '420px',
-          margin: '0 auto',
-          padding: '32px 0'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-secondary)' }}>
-            <Network size={32} strokeWidth={1} style={{ marginBottom: '12px' }} />
-            <p style={{ margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>Connettiti ad Azure DevOps</p>
+      <PanelContainer>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div style={{
+            flex: 1, minHeight: 0, overflow: 'auto',
+            maxWidth: '420px',
+            margin: '0 auto',
+            padding: '32px 0'
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-secondary)' }}>
+              <Network size={32} strokeWidth={1} style={{ marginBottom: '12px' }} />
+              <p style={{ margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>Connettiti ad Azure DevOps</p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+                Organization
+                <input value={org} onChange={e => setOrg(e.target.value)} placeholder="es. revoltech" style={inputStyle} />
+              </label>
+              <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+                Project
+                <input value={project} onChange={e => setProject(e.target.value)} placeholder="es. Themis_Platform" style={inputStyle} />
+              </label>
+              <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+                Repository
+                <input value={repo} onChange={e => setRepo(e.target.value)} placeholder="es. Themis-API" style={inputStyle} />
+              </label>
+              <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+                Personal Access Token
+                <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="PAT..." style={inputStyle} />
+              </label>
+              <button onClick={handleConnect} disabled={isLoading} style={{
+                padding: '8px 16px',
+                background: isLoading ? 'var(--bg-disabled)' : 'var(--accent-color)',
+                color: '#fff', border: 'none', borderRadius: '4px',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 500, marginTop: '8px'
+              }}>
+                {isLoading ? 'Connessione...' : 'Connetti'}
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-              Organization
-              <input value={org} onChange={e => setOrg(e.target.value)} placeholder="es. revoltech" style={inputStyle} />
-            </label>
-            <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-              Project
-              <input value={project} onChange={e => setProject(e.target.value)} placeholder="es. Themis_Platform" style={inputStyle} />
-            </label>
-            <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-              Repository
-              <input value={repo} onChange={e => setRepo(e.target.value)} placeholder="es. Themis-API" style={inputStyle} />
-            </label>
-            <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-              Personal Access Token
-              <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="PAT..." style={inputStyle} />
-            </label>
-            <button onClick={handleConnect} disabled={isLoading} style={{
-              padding: '8px 16px',
-              background: isLoading ? 'var(--bg-disabled)' : 'var(--accent-color)',
-              color: '#fff', border: 'none', borderRadius: '4px',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 500, marginTop: '8px'
-            }}>
-              {isLoading ? 'Connessione...' : 'Connetti'}
-            </button>
-          </div>
+          <TerminalDock repoPath={null} />
         </div>
       </PanelContainer>
     )
@@ -138,8 +141,9 @@ export function AdoPanel() {
   }, [leftCollapsed])
 
   return (
-    <PanelContainer title={t('ado')}>
-      <div style={{ display: 'flex', height: '100%', gap: '4px', overflow: 'hidden' }}>
+    <PanelContainer>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', height: '100%', gap: '4px', overflow: 'hidden', flex: 1, minHeight: 0 }}>
         {/* Left tool strip — always visible */}
         <div style={{
           width: '36px', flexShrink: 0, background: 'var(--bg-card)',
@@ -206,6 +210,8 @@ export function AdoPanel() {
           </div>
         </ResizableSplitter>
         </div>
+        <TerminalDock repoPath={null} />
+      </div>
       </div>
 
       {showCreatePr && (

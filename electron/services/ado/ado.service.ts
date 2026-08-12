@@ -62,11 +62,11 @@ export class AdoService {
 
     const orgName = this.baseUrl.replace('https://dev.azure.com/', '').replace(/\/$/, '')
     const attempts: { url: string; kind: string }[] = [
-      { url: `${this.baseUrl}/_apis/ConnectionData?api-version=7.0`, kind: 'connData-7.0' },
       { url: `${this.baseUrl}/_apis/ConnectionData?api-version=1.0`, kind: 'connData-1.0' },
-      { url: `${this.baseUrl}/DefaultCollection/_apis/ConnectionData?api-version=7.0`, kind: 'connData-defaultcollection' },
-      { url: `https://${orgName}.visualstudio.com/_apis/ConnectionData?api-version=7.0`, kind: 'connData-legacy' },
-      { url: `https://app.vssps.visualstudio.com/_apis/ConnectionData?api-version=7.0`, kind: 'connData-vssps' }
+      { url: `${this.baseUrl}/_apis/ConnectionData?api-version=7.0-preview.1`, kind: 'connData-7.0' },
+      { url: `${this.baseUrl}/DefaultCollection/_apis/ConnectionData?api-version=7.0-preview.1`, kind: 'connData-defaultcollection' },
+      { url: `https://${orgName}.visualstudio.com/_apis/ConnectionData?api-version=7.0-preview.1`, kind: 'connData-legacy' },
+      { url: `https://app.vssps.visualstudio.com/_apis/ConnectionData?api-version=7.0-preview.1`, kind: 'connData-vssps' }
     ]
 
     for (const { url, kind } of attempts) {
@@ -333,6 +333,10 @@ export class AdoService {
     return res.ok
   }
 
+  // Explicit override reason for completions that would otherwise be blocked by
+  // branch policies that aren't passing (required reviewers/builds, etc.).
+  private readonly bypassReason = 'Completata da DamnedIDE (chiusura worktree) — bypass policy esplicito'
+
   async completePr(project: string, repo: string, prId: number, sourceCommitId: string, deleteSourceBranch = true): Promise<boolean> {
     const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}?api-version=7.0`
     const res = await fetch(url, {
@@ -342,7 +346,9 @@ export class AdoService {
         status: 'completed',
         lastMergeSourceCommit: { commitId: sourceCommitId },
         // real merge commit (no squash): the feature branch stays visible in the git graph
-        completionOptions: { deleteSourceBranch, mergeStrategy: 'noFastForward' }
+        completionOptions: { deleteSourceBranch, mergeStrategy: 'noFastForward' },
+        // let the merge go through even when a branch policy isn't passing
+        bypassReason: this.bypassReason
       })
     })
     if (!res.ok) console.error('[ado] completePr: PATCH fallita', res.status, await res.text().catch(() => ''))
@@ -358,7 +364,9 @@ export class AdoService {
       const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}?api-version=7.0`
       const body: Record<string, unknown> = {
         status: 'completed',
-        completionOptions: { deleteSourceBranch, mergeStrategy: 'noFastForward' }
+        completionOptions: { deleteSourceBranch, mergeStrategy: 'noFastForward' },
+        // bypass branch policies that aren't passing (explicit override)
+        bypassReason: this.bypassReason
       }
       if (commitId) body.lastMergeSourceCommit = { commitId }
       const res = await fetch(url, {

@@ -12,44 +12,42 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      position: 'relative',
+      display: 'flex', alignItems: 'center',
       height: '32px', background: 'var(--bg-titlebar)',
       borderBottom: '1px solid var(--border-color)',
       userSelect: 'none', ...dragRegion,
-      paddingLeft: '10px'
+      padding: '0 8px'
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {onSettings && (
-          <button
-            onClick={onSettings}
-            title="settings"
-            data-tip="settings"
-            data-tip-desc="open the IDE settings panel"
-            style={{
-              ...noDragRegion, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '22px', height: '22px', border: 'none', borderRadius: 'var(--radius-sm)',
-              background: settingsActive ? 'var(--bg-active)' : 'transparent',
-              color: settingsActive ? 'var(--accent-color)' : 'var(--text-muted)',
-              cursor: 'pointer', transition: 'all 0.15s ease'
-            }}
-            onMouseEnter={(e) => {
-              if (!settingsActive) { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }
-            }}
-            onMouseLeave={(e) => {
-              if (!settingsActive) { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent' }
-            }}
-          >
-            <Settings size={13} strokeWidth={1.5} />
-          </button>
-        )}
-        <span style={{
-          fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)',
-          color: 'var(--text-secondary)', letterSpacing: '0.5px'
-        }}>
-          {title}
-        </span>
-      </div>
-      <div style={{ display: 'flex', ...noDragRegion }}>
+      {onSettings && (
+        <button
+          onClick={onSettings}
+          title="settings"
+          data-tip="settings"
+          data-tip-desc="open the IDE settings panel"
+          style={{
+            ...noDragRegion, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '22px', height: '22px', border: 'none', borderRadius: 'var(--radius-sm)',
+            background: settingsActive ? 'var(--accent-bg)' : 'transparent',
+            color: 'var(--accent-color)',
+            cursor: 'pointer', transition: 'background 0.15s ease'
+          }}
+          onMouseEnter={(e) => { if (!settingsActive) e.currentTarget.style.background = 'var(--bg-hover)' }}
+          onMouseLeave={(e) => { if (!settingsActive) e.currentTarget.style.background = 'transparent' }}
+        >
+          <Settings size={13} strokeWidth={1.5} />
+        </button>
+      )}
+      <span style={{
+        position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600,
+        fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', letterSpacing: '0.5px',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        maxWidth: '55%'
+      }}>
+        {title}
+      </span>
+      <div style={{ display: 'flex', marginLeft: 'auto', ...noDragRegion }}>
         <WinBtn onClick={() => window.electronAPI.window.minimize()} isClose={false}>
           <Minus size={13} strokeWidth={1.5} />
         </WinBtn>

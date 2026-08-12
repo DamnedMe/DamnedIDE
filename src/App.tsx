@@ -13,7 +13,7 @@ import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ToastHost } from './components/layout/ToastHost'
 import { TooltipHost } from './components/layout/TooltipHost'
 import { RecentReposDialog } from './components/layout/RecentReposDialog'
-import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore } from './store'
+import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore, useTerminalStore } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from './components/editor/monaco-theme'
@@ -22,8 +22,7 @@ import {
   Network,
   Database,
   Code2,
-  Boxes,
-  Terminal
+  Boxes
 } from 'lucide-react'
 import './styles/themes/dark.css'
 import './styles/themes/light.css'
@@ -31,9 +30,16 @@ import './styles/themes/light.css'
 type PanelId = 'worktree' | 'git' | 'ado' | 'sql' | 'editor' | 'terminal' | 'settings'
 
 export default function App() {
-  const [activePanel, setActivePanel] = useState<PanelId>('worktree')
+  const [activePanel, setActivePanel] = useState<PanelId>(() => {
+    try {
+      const p = localStorage.getItem('damnedide_last_panel')
+      if (p && ['worktree', 'git', 'ado', 'sql', 'editor', 'settings'].includes(p)) return p as PanelId
+    } catch { /* ignore */ }
+    return 'worktree'
+  })
   const [repoPath, setRepoPath] = useState<string | null>(null)
   const [showRecent, setShowRecent] = useState(false)
+  const terminalOpen = useTerminalStore(s => s.open)
   const { theme, setTheme } = useUIStore()
   const settingsTheme = useSettingsStore(s => s.settings.theme)
   const accentColor = useSettingsStore(s => s.settings.accentColor)
@@ -123,6 +129,15 @@ export default function App() {
 
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
 
+  // Remember the last active panel at startup.
+  useEffect(() => {
+    try { localStorage.setItem('damnedide_last_panel', activePanel) } catch { /* ignore */ }
+  }, [activePanel])
+
+  const handleTerminalToggle = () => {
+    useTerminalStore.getState().setOpen(!useTerminalStore.getState().open)
+  }
+
   // Global icon scale (lucide) and IDE text scale from settings. The font size
   // scales ONLY the IDE UI text (inline font sizes use var(--ui-text-scale) via
   // calc); source editors (Monaco), icons and layout are not affected.
@@ -141,8 +156,7 @@ export default function App() {
     { id: 'editor', icon: Code2, label: t('editor') },
     { id: 'git', icon: GitBranch, label: t('git') },
     { id: 'ado', icon: Network, label: t('ado') },
-    { id: 'sql', icon: Database, label: t('sql') },
-    { id: 'terminal', icon: Terminal, label: t('terminal') }
+    { id: 'sql', icon: Database, label: t('sql') }
   ]
 
   const lastPanelRef = useRef<PanelId>('worktree')
@@ -189,7 +203,7 @@ export default function App() {
 
   return (
     <AppShell
-      titleBar={<TitleBar title={`DamnedIDE${repoPath ? ` — ${repoPath}` : ''}`} onSettings={handleSettingsToggle} settingsActive={activePanel === 'settings'} />}
+      titleBar={<TitleBar title={t(activePanel)} onSettings={handleSettingsToggle} settingsActive={activePanel === 'settings'} />}
       sidebar={<Sidebar tabs={tabs} activeTab={activePanel} onTabChange={(id) => setActivePanel(id as PanelId)} onOpenFolder={handleOpenFolder} />}
       statusBar={
         <StatusBar
@@ -198,10 +212,14 @@ export default function App() {
           modifiedCount={modifiedCount}
           theme={theme}
           onToggleTheme={toggleTheme}
+          onToggleTerminal={handleTerminalToggle}
+          terminalOpen={terminalOpen}
         />
       }
     >
-      {renderPanel(activePanel)}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {renderPanel(activePanel)}
+      </div>
       <ToastHost />
       <TooltipHost />
 

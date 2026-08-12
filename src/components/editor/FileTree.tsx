@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronRight, Folder, FolderOpen, File, Loader2, ChevronsUpDown, ChevronsDownUp, Trash2, FolderPlus, FilePlus, ExternalLink } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, Loader2, ChevronsUpDown, ChevronsDownUp, Trash2, FolderPlus, FilePlus, ExternalLink } from 'lucide-react'
+import { FileTypeIcon } from '../../utils/file-icon'
 
 interface TreeNode {
   name: string
@@ -540,7 +541,7 @@ function TreeNodeItem({
         ) : (
           <>
             <span style={{ width: '12px', flexShrink: 0 }} />
-            <File size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <FileTypeIcon path={node.path} size={13} />
           </>
         )}
         {node.isLoading && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />}

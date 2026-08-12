@@ -7,11 +7,13 @@ import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 import { CreatePrDialog } from './CreatePrDialog'
 import { useAdoStore } from '../../store'
+import { useI18n } from '../../i18n'
 import { AdoConnection, AdoPullRequest, AdoPullRequestDetail } from '../../types/ado'
 import { Network, Key, FolderOpen, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 
 export function AdoPanel() {
   const { connection, setConnection, workItems, setWorkItems, pullRequests, setPullRequests, isLoading, setLoading } = useAdoStore()
+  const t = useI18n()
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<number | null>(null)
   const [selectedPr, setSelectedPr] = useState<AdoPullRequestDetail | null>(null)
   const [leftCollapsed, setLeftCollapsed] = useState(false)
@@ -80,7 +82,7 @@ export function AdoPanel() {
 
   if (!connection?.isConnected) {
     return (
-      <PanelContainer title="Azure DevOps">
+      <PanelContainer title={t('ado')}>
         <div style={{
           maxWidth: '420px',
           margin: '0 auto',
@@ -136,7 +138,7 @@ export function AdoPanel() {
   }, [leftCollapsed])
 
   return (
-    <PanelContainer title="Azure DevOps">
+    <PanelContainer title={t('ado')}>
       <div style={{ display: 'flex', height: '100%', gap: '4px', overflow: 'hidden' }}>
         {/* Left tool strip — always visible */}
         <div style={{

@@ -11,10 +11,12 @@ import { findBestLine, searchWorkspaceFiles, findReferenceLines, searchWorkspace
 import { ReferencesModal } from './ReferencesModal'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics, type DiagnosticCounts } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
+import { adjustFontSize, attachWheelZoom, resetFontSize } from '../../utils/editor-zoom'
 import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useEditorStore, useWorktreeStore, useUIStore, useSettingsStore } from '../../store'
+import { useI18n } from '../../i18n'
 import {
   FileCode, FolderOpen, X, Circle,
   PanelLeftClose, PanelLeftOpen, FolderTree, Search,
@@ -59,6 +61,7 @@ interface NavEntry {
 }
 
 export function CodeEditor() {
+  const t = useI18n()
   const [rootPath, setRootPath] = useState<string | null>(null)
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
@@ -493,9 +496,9 @@ export function CodeEditor() {
     setReferencesModal({ symbol, hits: unique })
   }
 
-  const zoomIn = () => { const f = Math.min(fontSizeRef.current + 1, 28); fontSizeRef.current = f; setFontSize(f); editorRef.current?.updateOptions({ fontSize: f }) }
-  const zoomOut = () => { const f = Math.max(fontSizeRef.current - 1, 6); fontSizeRef.current = f; setFontSize(f); editorRef.current?.updateOptions({ fontSize: f }) }
-  const zoomReset = () => { fontSizeRef.current = 12.5; setFontSize(12.5); editorRef.current?.updateOptions({ fontSize: 12.5 }) }
+  const zoomIn = () => adjustFontSize(-1)
+  const zoomOut = () => adjustFontSize(1)
+  const zoomReset = () => resetFontSize()
 
   const goBack = () => {    const back = navBackRef.current
     if (back.length === 0) return
@@ -547,6 +550,8 @@ export function CodeEditor() {
     editorRef.current = editor
     monacoRef.current = monaco
     applyEditorTheme(monaco)
+    // Ctrl/Cmd+wheel scales the global font setting (keeps the settings slider in sync)
+    attachWheelZoom(editor.getDomNode())
     registerCSharpHover(monaco)
     trackHoverModel(editor.getModel(), activeFileRef.current)
     editor.onDidChangeModel(() => {
@@ -775,7 +780,7 @@ export function CodeEditor() {
   // ─── Empty state ───────────────────────────────────
   if (!rootPath) {
     return (
-      <PanelContainer title="Editor">
+      <PanelContainer title={t('editor')}>
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           justifyContent: 'center', height: '100%', gap: '20px', color: 'var(--text-muted)'
@@ -1093,7 +1098,7 @@ export function CodeEditor() {
               fontSize,
               fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
               fontLigatures: settings.fontLigatures,
-              mouseWheelZoom: true,
+              mouseWheelZoom: false,
               minimap: { enabled: settings.minimap, maxColumn: 80, renderCharacters: false },
               lineNumbers: settings.lineNumbers,
               renderWhitespace: 'selection',
@@ -1172,7 +1177,7 @@ export function CodeEditor() {
   )
 
   return (
-    <PanelContainer title="Editor">
+    <PanelContainer title={t('editor')}>
       <div style={{
         height: '100%',
         background: 'var(--bg-card)', border: '1px solid var(--border-color)',

@@ -8,7 +8,8 @@ import { NewWorktreeDialog } from './NewWorktreeDialog'
 import { FileTree } from '../editor/FileTree'
 import { FileFilterBar } from '../editor/CodeEditor'
 import { useWorktreeStore } from '../../store'
-import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2 } from 'lucide-react'
+import { useI18n } from '../../i18n'
+import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2, Bug } from 'lucide-react'
 import { WorktreeEntry } from '../../types/worktree'
 
 type CheckState = 'ok' | 'ko'
@@ -28,6 +29,7 @@ function shortBranch(branch: string): string {
 
 export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) {
   const { entries, setEntries, selectedWorktree, isLoading, setLoading, selectWorktree } = useWorktreeStore()
+  const t = useI18n()
   const [listCollapsed, setListCollapsed] = useState(false)
   const [checkMarks, setCheckMarks] = useState<CheckMarks>({})
   const [explorerSelectedFile, setExplorerSelectedFile] = useState<string | null>(null)
@@ -144,6 +146,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
           const isMain = !entry.path.includes('.worktrees')
           const isSelected = selectedWorktree === entry.path
           const label = shortBranch(entry.branch)
+          const isBugfix = entry.branch.includes('bugfix')
           return (
             <div key={entry.path}
               onClick={() => selectWorktree(isSelected ? null : entry.path)}
@@ -152,10 +155,10 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               style={{
                 width: '30px', height: '22px', borderRadius: '4px', flexShrink: 0,
                 background: isSelected ? 'var(--bg-active)' : 'transparent',
-                border: isSelected ? '1.5px solid var(--accent-color)' : '1.5px solid var(--border-color)',
+                border: isSelected ? `1.5px solid ${isBugfix ? 'var(--warning-color)' : 'var(--accent-color)'}` : '1.5px solid var(--border-color)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', fontSize: '8px', fontWeight: 700,
-                fontFamily: 'var(--font-mono)', color: isSelected ? 'var(--accent-color)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)', color: isSelected ? (isBugfix ? 'var(--warning-color)' : 'var(--accent-color)') : 'var(--text-muted)',
                 transition: 'all 0.15s ease'
               }}
               onMouseEnter={(e) => {
@@ -164,7 +167,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               onMouseLeave={(e) => {
                 if (!isSelected) { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-muted)' }
               }}>
-              {isMain ? 'main' : label.substring(0, 4)}
+              {isMain ? 'main' : isBugfix ? <Bug size={10} style={{ color: 'var(--warning-color)' }} /> : label.substring(0, 4)}
             </div>
           )
         })}
@@ -182,7 +185,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
 
   if (!repoPath) {
     return (
-      <PanelContainer title="Worktree">
+      <PanelContainer title={t('worktree')}>
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           justifyContent: 'center', height: '100%', gap: '20px', color: 'var(--text-muted)'
@@ -191,20 +194,19 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
             <FolderOpen size={28} strokeWidth={1} />
           </div>
           <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
-            <p style={{ margin: '0 0 4px', fontSize: '13px', color: 'var(--text-secondary)' }}>open a git repository</p>
-            <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)' }}>to manage worktrees</p>
+            <p style={{ margin: '0 0 4px', fontSize: '13px', color: 'var(--text-secondary)' }}>{t('open a git repository')}</p>
+            <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)' }}>{t('to manage worktrees')}</p>
           </div>
           <button onClick={async () => { const p = await window.electronAPI.dialog.openFolder(); if (p) onRepoSelected(p) }}
             style={{ padding: '8px 20px', background: 'var(--accent-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
-            open repo
-          </button>
-        </div>
+            {t('open repo')}
+          </button>        </div>
       </PanelContainer>
     )
   }
 
   return (
-    <PanelContainer title="Worktree">
+    <PanelContainer title={t('worktree')}>
       <div style={{ height: '100%', display: 'flex', gap: '4px', overflow: 'hidden' }}>
         {ToolStrip}
         {selectedWorktree ? (
@@ -221,7 +223,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <FolderTree size={12} />
-                      worktrees
+                      {t('worktrees')}
                     </div>
                     <button
                       onClick={() => setWorktreesCollapsed(!worktreesCollapsed)}
@@ -251,7 +253,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <FolderOpen size={12} />
-                      files
+                      {t('files')}
                     </div>
                     <button
                       onClick={() => setFilesCollapsed(!filesCollapsed)}

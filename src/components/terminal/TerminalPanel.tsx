@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { PanelContainer } from '../layout/PanelContainer'
 import { useUIStore, useSettingsStore } from '../../store'
+import { useI18n } from '../../i18n'
 import { hexToRgba } from '../../utils/color'
 import { Monitor, ExternalLink, Plus, X, ChevronDown } from 'lucide-react'
 
@@ -50,6 +51,7 @@ interface TerminalPanelProps {
 }
 
 export function TerminalPanel({ repoPath }: TerminalPanelProps) {
+  const t = useI18n()
   const [tabs, setTabs] = useState<Tab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [showTypeMenu, setShowTypeMenu] = useState(false)
@@ -224,7 +226,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
   }, [activeTabId])
 
   return (
-    <PanelContainer title="Terminal">
+    <PanelContainer title={t('terminal')}>
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a', overflow: 'hidden' }}>
         {/* Tabs bar */}
         <div style={{

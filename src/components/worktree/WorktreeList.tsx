@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useWorktreeStore } from '../../store'
 import { WorktreeEntry } from '../../types/worktree'
-import { GitBranch, Loader2, Trash2, EyeOff, Eye, GitPullRequest } from 'lucide-react'
+import { GitBranch, Bug, Loader2, Trash2, EyeOff, Eye, GitPullRequest } from 'lucide-react'
 
 interface WorktreeListProps {
   repoPath: string
@@ -114,6 +114,8 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
           const isSelected = selectedWorktree === entry.path
           const isMain = !entry.path.includes('.worktrees')
           const isHidden = hiddenPaths.has(entry.path)
+          const isBugfix = entry.branch.includes('bugfix')
+          const iconColor = isBugfix ? 'var(--warning-color)' : isSelected ? 'var(--accent-color)' : 'var(--text-muted)'
           return (
             <div
               key={entry.path}
@@ -142,7 +144,11 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
                   fontWeight: 600, fontSize: '12.5px', fontFamily: 'var(--font-mono)',
                   color: isSelected ? 'var(--accent-color)' : 'var(--text-primary)'
                 }}>
-                  <GitBranch size={13} style={{ color: isSelected ? 'var(--accent-color)' : 'var(--text-muted)' }} />
+                  {isBugfix ? (
+                    <Bug size={13} style={{ color: iconColor }} />
+                  ) : (
+                    <GitBranch size={13} style={{ color: iconColor }} />
+                  )}
                   {entry.branch || entry.head.substring(0, 7)}
                 </div>
                 <div style={{ display: 'flex', gap: '3px' }}>

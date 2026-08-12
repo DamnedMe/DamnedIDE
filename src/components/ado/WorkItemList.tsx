@@ -49,7 +49,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
     }}>
       <div style={{
         padding: '6px 10px', borderBottom: '1px solid var(--border-color)',
-        fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)',
+        fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-secondary)',
         textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0
       }}>
@@ -58,7 +58,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
           style={{
             display: 'flex', alignItems: 'center', gap: '3px', background: 'none',
             border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-            fontSize: '9px', fontFamily: 'var(--font-mono)'
+            fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
           }}
           onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
           onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -79,14 +79,14 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
             spellCheck={false}
             style={{
               flex: 1, background: 'none', border: 'none', outline: 'none',
-              color: 'var(--text-primary)', fontSize: '10px', fontFamily: 'var(--font-mono)'
+              color: 'var(--text-primary)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
             }}
           />
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {paged.length === 0 ? (
-          <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             no work items
           </div>
         ) : paged.map((wi) => (
@@ -107,13 +107,13 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
               {typeIcons[wi.type] || <Bookmark size={13} />}
             </span>
             <span style={{
-              flex: 1, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis',
+              flex: 1, fontSize: 'calc(11px * var(--ui-text-scale, 1))', overflow: 'hidden', textOverflow: 'ellipsis',
               whiteSpace: 'nowrap', color: 'var(--text-primary)'
             }}>
               #{wi.id}: {wi.title}
             </span>
             <span style={{
-              fontSize: '9px', padding: '1px 6px', background: 'var(--bg-tag)',
+              fontSize: 'calc(9px * var(--ui-text-scale, 1))', padding: '1px 6px', background: 'var(--bg-tag)',
               borderRadius: '3px', color: 'var(--text-secondary)', flexShrink: 0
             }}>
               {wi.state}
@@ -136,7 +136,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
             }}>
             <ChevronLeft size={10} />
           </button>
-          <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
             {safePage + 1} / {pageCount}
           </span>
           <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1}

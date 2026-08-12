@@ -123,13 +123,16 @@ export default function App() {
 
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
 
-  // Global icon scale (lucide) and base font for the whole UI, from settings.
+  // Global icon scale (lucide) and IDE text scale from settings. The font size
+  // scales ONLY the IDE UI text (inline font sizes use var(--ui-text-scale) via
+  // calc); source editors (Monaco), icons and layout are not affected.
   useEffect(() => {
     document.documentElement.style.setProperty('--icon-zoom', String(iconSize / 14))
   }, [iconSize])
 
   useEffect(() => {
-    document.body.style.fontSize = `${fontSize}px`
+    const scale = Math.min(1.9, Math.max(0.6, fontSize / 12.5))
+    document.documentElement.style.setProperty('--ui-text-scale', String(scale))
   }, [fontSize])
 
   const t = useI18n()
@@ -209,14 +212,14 @@ export default function App() {
           padding: '10px 14px', background: 'var(--bg-card)',
           border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-md)',
           boxShadow: '0 8px 24px rgba(0,0,0,0.5)', fontFamily: 'var(--font-mono)',
-          fontSize: '11px', color: 'var(--text-primary)'
+          fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)'
         }}>
           <span>🔄 nuova versione scaricata</span>
           <button onClick={() => window.electronAPI.updater.install()}
             style={{
               padding: '5px 12px', background: 'var(--accent-color)', color: 'var(--text-inverse)',
               border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-              fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 600
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
             }}>
             riavvia e aggiorna
           </button>

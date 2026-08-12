@@ -585,7 +585,7 @@ export function SqlPanel() {
               padding: '5px 14px', height: '30px',
               background: 'var(--accent-color)', color: 'var(--text-inverse)',
               border: 'none', borderRadius: 'var(--radius-md)',
-              cursor: 'pointer', fontSize: '11px', fontWeight: 600,
+              cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600,
               fontFamily: 'var(--font-mono)', transition: 'transform 140ms ease'
             }}
             onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)' }}
@@ -782,30 +782,30 @@ export function SqlPanel() {
       {pendingMutation && (
         <Modal onClose={closeMutationConfirmation} width={440} label={`confirm ${pendingMutation.kind}`}>
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
               confirm {pendingMutation.kind}?
             </div>
             <pre style={{
               background: 'var(--bg-input)', border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-sm)', padding: '10px', fontSize: '10px',
+              borderRadius: 'var(--radius-sm)', padding: '10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
               fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)',
               whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '160px', overflow: 'auto',
               margin: 0
             }}>{pendingMutation.query}</pre>
-            <div style={{ fontSize: '10px', color: 'var(--error-color)', fontFamily: 'var(--font-mono)' }}>
+            <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--error-color)', fontFamily: 'var(--font-mono)' }}>
               The statement will modify data. Review the SQL before continuing.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <button onClick={closeMutationConfirmation} style={{
                 padding: '7px 16px', background: 'var(--bg-card)',
                 border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-                color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px',
+                color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
                 fontFamily: 'var(--font-mono)'
               }}>cancel</button>
               <button onClick={confirmMutation} style={{
                 padding: '7px 16px', background: pendingMutation.kind === 'delete' ? 'var(--error-color)' : 'var(--warning-color)', color: 'var(--text-inverse)',
                 border: 'none', borderRadius: 'var(--radius-md)',
-                cursor: 'pointer', fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 600
+                cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
               }}>
                 run {pendingMutation.kind}
               </button>
@@ -817,19 +817,19 @@ export function SqlPanel() {
       {pendingConnectionRemoval && (
         <Modal onClose={() => setPendingConnectionRemoval(null)} width={400} label="remove connection">
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
               remove saved connection?
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+            <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
               {pendingConnectionRemoval.label}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button onClick={() => setPendingConnectionRemoval(null)} style={{ padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>cancel</button>
+              <button onClick={() => setPendingConnectionRemoval(null)} style={{ padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>cancel</button>
               <button onClick={() => {
                 const id = pendingConnectionRemoval.id
                 setPendingConnectionRemoval(null)
                 void handleRemove(id)
-              }} style={{ padding: '7px 16px', background: 'var(--error-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>remove</button>
+              }} style={{ padding: '7px 16px', background: 'var(--error-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>remove</button>
             </div>
           </div>
         </Modal>
@@ -851,19 +851,19 @@ export function SqlPanel() {
       {serverInfo && (
         <Modal onClose={() => setServerInfo(null)} width={460} label="server info">
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
               server info — {serverInfo.conn.label}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', gap: '8px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ display: 'flex', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
                 <span style={{ color: 'var(--text-muted)', width: '80px', flexShrink: 0 }}>server</span>
                 <span style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>{serverInfo.info.server}</span>
               </div>
-              <div style={{ display: 'flex', gap: '8px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ display: 'flex', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
                 <span style={{ color: 'var(--text-muted)', width: '80px', flexShrink: 0 }}>database</span>
                 <span style={{ color: 'var(--text-primary)' }}>{serverInfo.info.database}</span>
               </div>
-              <div style={{ display: 'flex', gap: '8px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ display: 'flex', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
                 <span style={{ color: 'var(--text-muted)', width: '80px', flexShrink: 0 }}>version</span>
                 <span style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{serverInfo.info.version}</span>
               </div>
@@ -872,7 +872,7 @@ export function SqlPanel() {
               <button onClick={() => setServerInfo(null)} style={{
                 padding: '7px 16px', background: 'var(--bg-card)',
                 border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-                color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px',
+                color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
                 fontFamily: 'var(--font-mono)'
               }}>close</button>
             </div>
@@ -904,7 +904,7 @@ function SqlActivityStrip({ activities }: { activities: SqlActivity[] }) {
           <Check size={10} style={{ color: 'var(--success-color)' }} /> Ready
         </div>
       ) : visible.map(item => (
-        <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
+        <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, fontFamily: 'var(--font-mono)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
           {item.status === 'running'
             ? <Loader2 size={11} style={{ color: 'var(--accent-color)', animation: 'spin 0.9s linear infinite', flexShrink: 0 }} />
             : item.status === 'success'
@@ -928,10 +928,10 @@ function ConfirmSelectAllDialog({ table, onClose, onConfirm }: {
   return (
     <Modal onClose={onClose} width={360} label="select all rows">
       <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+        <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
           select all rows?
         </div>
-        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>
           <span style={{ wordBreak: 'break-all' }}>{table}</span>
           <br />
           large tables can take a long time and the result is truncated at 250k rows.
@@ -941,13 +941,13 @@ function ConfirmSelectAllDialog({ table, onClose, onConfirm }: {
           <button onClick={onClose} style={{
             padding: '7px 16px', background: 'var(--bg-card)',
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-            color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px',
+            color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
             fontFamily: 'var(--font-mono)'
           }}>cancel</button>
           <button onClick={onConfirm} style={{
             padding: '7px 16px', background: 'var(--warning-color)', color: 'var(--text-inverse)',
             border: 'none', borderRadius: 'var(--radius-md)',
-            cursor: 'pointer', fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 600
+            cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
           }}>
             select all
           </button>
@@ -967,10 +967,10 @@ function RowLimitDialog({ table, onClose, onConfirm }: {
   return (
     <Modal onClose={onClose} width={320} label="select top n rows">
       <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+        <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
           select top N rows
         </div>
-        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
+        <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
           {table}
         </div>
         <input
@@ -982,7 +982,7 @@ function RowLimitDialog({ table, onClose, onConfirm }: {
           style={{
             width: '100%', padding: '8px 10px', background: 'var(--bg-input)',
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'var(--font-mono)',
+            color: 'var(--text-primary)', fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
             outline: 'none', boxSizing: 'border-box'
           }}
         />
@@ -990,14 +990,14 @@ function RowLimitDialog({ table, onClose, onConfirm }: {
           <button onClick={onClose} style={{
             padding: '7px 16px', background: 'var(--bg-card)',
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-            color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px',
+            color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
             fontFamily: 'var(--font-mono)'
           }}>cancel</button>
           <button onClick={() => valid && onConfirm(parseInt(n, 10))} disabled={!valid} style={{
             padding: '7px 16px', background: valid ? 'var(--accent-color)' : 'var(--bg-disabled)',
             color: valid ? 'var(--text-inverse)' : 'var(--text-muted)',
             border: 'none', borderRadius: 'var(--radius-md)',
-            cursor: valid ? 'pointer' : 'not-allowed', fontSize: '11px',
+            cursor: valid ? 'pointer' : 'not-allowed', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
             fontFamily: 'var(--font-mono)', fontWeight: 600
           }}>
             run

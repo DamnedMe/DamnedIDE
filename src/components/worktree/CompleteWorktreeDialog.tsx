@@ -200,7 +200,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
         padding: '22px', fontFamily: 'var(--font-mono)', overflow: 'auto'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <GitPullRequest size={15} style={{ color: 'var(--accent-color)' }} />
             completa worktree
           </h3>
@@ -217,7 +217,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+          <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             commit message
             <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="es. feat: add new endpoint"
               spellCheck={false}
@@ -225,18 +225,18 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                 display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
                 background: 'var(--bg-input)', border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-                fontSize: '12px', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
+                fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
               }}
             />
             {fullMessage !== message.trim() && (
-              <div style={{ marginTop: '4px', fontSize: '10px', color: 'var(--accent-color)', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ marginTop: '4px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--accent-color)', fontFamily: 'var(--font-mono)' }}>
                 commit e titolo PR: <span style={{ color: 'var(--text-secondary)' }}>{fullMessage}</span>
               </div>
             )}
           </label>
 
           {ado?.isConnected && (
-            <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+            <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
               repository
               <select value={repo} onChange={(e) => setRepo(e.target.value)}
                 disabled={repos.length === 0}
@@ -244,7 +244,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                   display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
                   background: 'var(--bg-input)', border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-                  fontSize: '12px', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
+                  fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
                 }}>
                 {repos.length === 0 ? <option value="">loading repositories...</option> : repos.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
@@ -256,7 +256,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
               onClick={() => setAutoComplete(!autoComplete)}
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
-                fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)',
+                fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)',
                 padding: '6px 10px', background: 'var(--bg-card)',
                 border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
                 userSelect: 'none'
@@ -276,10 +276,10 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
           {steps.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
               {steps.map((s, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
                   {stepIcon(s)}
                   <span>{s.label}</span>
-                  {s.detail && <span style={{ color: 'var(--text-muted)', fontSize: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>— {s.detail}</span>}
+                  {s.detail && <span style={{ color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>— {s.detail}</span>}
                 </div>
               ))}
             </div>
@@ -288,7 +288,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
           {conflicts.length > 0 && (
             <div style={{
               padding: '8px 10px', background: 'var(--error-bg)', color: 'var(--error-color)',
-              borderRadius: 'var(--radius-sm)', fontSize: '10px'
+              borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))'
             }}>
               <div style={{ marginBottom: '4px', fontWeight: 600 }}>Risolvi i conflitti, poi riavvia "completa":</div>
               {conflicts.slice(0, 8).map(f => (
@@ -296,7 +296,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                   style={{
                     display: 'flex', alignItems: 'center', gap: '4px', background: 'none',
                     border: 'none', color: 'var(--error-color)', cursor: 'pointer',
-                    fontSize: '10px', fontFamily: 'var(--font-mono)', padding: '1px 0'
+                    fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', padding: '1px 0'
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline' }}
                   onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none' }}>
@@ -307,7 +307,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
           )}
 
           {prCreated !== null && (
-            <div style={{ padding: '8px 10px', background: 'var(--success-bg)', color: 'var(--success-color)', borderRadius: 'var(--radius-sm)', fontSize: '10px' }}>
+            <div style={{ padding: '8px 10px', background: 'var(--success-bg)', color: 'var(--success-color)', borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
               Pull request #{prCreated} creata verso develop{autoComplete ? ' (autocomplete)' : ''}
             </div>
           )}
@@ -317,14 +317,14 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
               <button onClick={onClose} style={{
                 padding: '7px 16px', background: 'var(--success-bg)', border: '1px solid var(--success-color)',
                 borderRadius: 'var(--radius-md)', color: 'var(--success-color)', cursor: 'pointer',
-                fontSize: '12px', fontFamily: 'var(--font-mono)', fontWeight: 600
+                fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
               }}>done</button>
             ) : prFailed ? (
               <>
                 <button onClick={onClose} style={{
                   padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
-                  fontSize: '12px', fontFamily: 'var(--font-mono)'
+                  fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
                 }}>close</button>
                 <button onClick={createPr} disabled={isRunning}
                   style={{
@@ -333,7 +333,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                     border: 'none', borderRadius: 'var(--radius-md)',
                     color: isRunning ? 'var(--text-muted)' : 'var(--text-inverse)',
                     cursor: isRunning ? 'not-allowed' : 'pointer',
-                    fontSize: '12px', fontFamily: 'var(--font-mono)', fontWeight: 600
+                    fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                   }}>
                   {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : 'retry PR'}
                 </button>
@@ -343,7 +343,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                 <button onClick={onClose} style={{
                   padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
-                  fontSize: '12px', fontFamily: 'var(--font-mono)'
+                  fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
                 }}>close</button>
                 <button onClick={run} disabled={!message.trim() || isRunning}
                   style={{
@@ -352,7 +352,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                     border: 'none', borderRadius: 'var(--radius-md)',
                     color: message.trim() && !isRunning ? 'var(--text-inverse)' : 'var(--text-muted)',
                     cursor: message.trim() && !isRunning ? 'pointer' : 'not-allowed',
-                    fontSize: '12px', fontFamily: 'var(--font-mono)', fontWeight: 600
+                    fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                   }}>
                   {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : 'start'}
                 </button>

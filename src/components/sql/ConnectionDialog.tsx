@@ -130,10 +130,10 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
       <div style={{ padding: '16px 20px 0', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
               {initial?.id ? 'edit connection' : 'connect to server'}
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginTop: '2px' }}>
               database engine · damnedide
             </div>
           </div>
@@ -153,7 +153,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               style={{
-                padding: '6px 12px', fontSize: '11px', fontFamily: 'var(--font-mono)',
+                padding: '6px 12px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                 background: tab === t.id ? 'var(--bg-card)' : 'transparent',
                 color: tab === t.id ? 'var(--accent-color)' : 'var(--text-secondary)',
                 border: '1px solid transparent', borderBottom: 'none',
@@ -197,11 +197,11 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               {showHistory && (
                 <div style={{ marginTop: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', animation: 'menuIn 140ms ease' }}>
                   {history.length === 0 && (
-                    <div style={{ padding: '8px 10px', fontSize: '10px', color: 'var(--text-muted)' }}>no recent connections</div>
+                    <div style={{ padding: '8px 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>no recent connections</div>
                   )}
                   {history.map((r, i) => (
                     <div key={i} onClick={() => pickHistory(r)}
-                      style={{ padding: '6px 10px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-primary)' }}
+                      style={{ padding: '6px 10px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', cursor: 'pointer', color: 'var(--text-primary)' }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
                       <span style={{ fontWeight: 500 }}>{r.server}</span>
@@ -272,7 +272,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               <button onClick={handleTest} disabled={!canConnect || testing}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '6px',
-                  padding: '6px 14px', fontSize: '11px', fontFamily: 'var(--font-mono)',
+                  padding: '6px 14px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                   background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-pill, 999px)', color: 'var(--text-primary)',
                   cursor: canConnect && !testing ? 'pointer' : 'not-allowed',
@@ -286,7 +286,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               {testResult && (
                 <div style={{
                   display: 'flex', alignItems: 'flex-start', gap: '5px',
-                  maxWidth: '62%', fontSize: '9.5px', lineHeight: 1.45,
+                  maxWidth: '62%', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', lineHeight: 1.45,
                   color: testResult.ok ? 'var(--success-color)' : 'var(--error-color)',
                   overflow: 'hidden'
                 }}>
@@ -324,13 +324,13 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                   }}
                   disabled={loadingDbs}
                   title="load databases"
-                  style={{ ...iconBtnStyle, width: 'auto', padding: '0 10px', fontSize: '10px', gap: '4px' }}
+                  style={{ ...iconBtnStyle, width: 'auto', padding: '0 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', gap: '4px' }}
                 >
                   {loadingDbs ? <Loader2 size={12} style={{ animation: 'spin 0.9s linear infinite' }} /> : <Database size={12} />}
                   load
                 </button>
               </div>
-              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '3px' }}>
+              <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginTop: '3px' }}>
                 {databases === null ? 'connect or test first, then load the database list' : `${databases.length} databases`}
               </div>
             </Field>
@@ -363,7 +363,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
 
         {tab === 'string' && (
           <>
-            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               {stringMode === 'auto'
                 ? 'connection string derived from the form fields. edit it to override.'
                 : 'custom connection string: it will be parsed and used for the connection.'}
@@ -377,7 +377,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               onFocus={() => setStringMode('custom')}
               spellCheck={false}
               placeholder="Server=localhost;Database=myDb;User Id=sa;Password=...;TrustServerCertificate=True;Encrypt=False"
-              style={{ ...inputStyle, height: '130px', resize: 'vertical', lineHeight: 1.5, fontSize: '10.5px' }}
+              style={{ ...inputStyle, height: '130px', resize: 'vertical', lineHeight: 1.5, fontSize: 'calc(10.5px * var(--ui-text-scale, 1))' }}
             />
             <button
               onClick={async () => {
@@ -389,7 +389,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               disabled={stringMode === 'custom' && !customString.trim()}
               style={{
                 display: 'flex', alignItems: 'center', gap: '6px', alignSelf: 'flex-start',
-                padding: '6px 14px', fontSize: '11px', fontFamily: 'var(--font-mono)',
+                padding: '6px 14px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                 background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-pill, 999px)', color: 'var(--text-primary)', cursor: 'pointer'
               }}
@@ -409,7 +409,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
         <button onClick={handleConnect} disabled={!canConnect || connecting}
           style={{
             display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '7px 18px', fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 600,
+            padding: '7px 18px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600,
             background: canConnect && !connecting ? 'var(--accent-color)' : 'var(--bg-disabled)',
             color: canConnect && !connecting ? 'var(--text-inverse)' : 'var(--text-muted)',
             border: 'none', borderRadius: 'var(--radius-md)',
@@ -427,7 +427,7 @@ const inputStyle: React.CSSProperties = {
   display: 'block', width: '100%', padding: '7px 10px',
   background: 'var(--bg-input)', border: '1px solid var(--border-color)',
   borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-  fontSize: '11px', fontFamily: 'var(--font-mono)', boxSizing: 'border-box',
+  fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', boxSizing: 'border-box',
   outline: 'none'
 }
 
@@ -441,13 +441,13 @@ const iconBtnStyle: React.CSSProperties = {
 const ghostBtnStyle: React.CSSProperties = {
   padding: '7px 16px', background: 'var(--bg-card)',
   border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-  color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px',
+  color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
   fontFamily: 'var(--font-mono)'
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', display: 'block' }}>
+    <label style={{ fontSize: 'calc(10.5px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', display: 'block' }}>
       <span style={{ display: 'block', marginBottom: '3px' }}>{label}</span>
       {children}
     </label>
@@ -456,7 +456,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Checkbox({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: disabled ? 'not-allowed' : 'pointer', color: disabled ? 'var(--text-muted)' : 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', cursor: disabled ? 'not-allowed' : 'pointer', color: disabled ? 'var(--text-muted)' : 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
       <input
         type="checkbox"
         checked={checked}

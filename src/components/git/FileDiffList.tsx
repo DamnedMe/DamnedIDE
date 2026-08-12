@@ -16,7 +16,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
     return (
       <div style={{
         padding: '24px', textAlign: 'center',
-        color: 'var(--text-muted)', fontSize: '10px',
+        color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
         fontFamily: 'var(--font-mono)'
       }}>
         no changes
@@ -33,7 +33,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
             style={{
               display: 'flex', alignItems: 'center', padding: '4px 10px',
               borderBottom: '1px solid var(--border-subtle)',
-              fontSize: '10px', fontFamily: 'var(--font-mono)',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
               cursor: onViewDiff ? 'pointer' : 'default',
               background: isActive ? 'var(--bg-active)' : 'transparent',
               borderLeft: isActive ? '2px solid var(--accent-color)' : '2px solid transparent',
@@ -45,7 +45,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
             <span style={{
               marginRight: '6px', width: '14px', textAlign: 'center',
               color: f.isNew ? 'var(--success-color)' : f.isDeleted ? 'var(--error-color)' : 'var(--warning-color)',
-              fontSize: '9px', fontWeight: 700, flexShrink: 0
+              fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, flexShrink: 0
             }}>
               {f.isNew ? 'A' : f.isDeleted ? 'D' : 'M'}
             </span>

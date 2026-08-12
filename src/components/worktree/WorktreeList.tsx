@@ -80,7 +80,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
               padding: '2px 8px', background: showHidden ? 'var(--bg-active)' : 'var(--bg-card)',
               border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
               color: showHidden ? 'var(--accent-color)' : 'var(--text-muted)',
-              cursor: 'pointer', fontSize: '9px', fontFamily: 'var(--font-mono)'
+              cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
             }}>
             {showHidden ? <Eye size={10} /> : <EyeOff size={10} />}
             {hiddenPaths.size} hidden
@@ -91,7 +91,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
                 display: 'flex', alignItems: 'center', gap: '3px',
                 padding: '2px 6px', background: 'var(--bg-card)',
                 border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-muted)', cursor: 'pointer', fontSize: '9px',
+                color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
                 fontFamily: 'var(--font-mono)'
               }}>
               unhide all
@@ -105,7 +105,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
         {filteredEntries.length === 0 && entries.length > 0 && (
           <div style={{
             padding: '24px 12px', textAlign: 'center',
-            color: 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)'
+            color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
           }}>
             all worktrees hidden
           </div>
@@ -141,7 +141,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
               }}>
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '8px',
-                  fontWeight: 600, fontSize: '12.5px', fontFamily: 'var(--font-mono)',
+                  fontWeight: 600, fontSize: 'calc(12.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                   color: isSelected ? 'var(--accent-color)' : 'var(--text-primary)'
                 }}>
                   {isBugfix ? (
@@ -154,7 +154,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
                 <div style={{ display: 'flex', gap: '3px' }}>
                   {isMain && (
                     <span style={{
-                      fontSize: '9px', fontWeight: 600, padding: '2px 6px',
+                      fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600, padding: '2px 6px',
                       background: 'var(--bg-tag)', color: 'var(--accent-color)',
                       borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)'
                     }}>
@@ -163,7 +163,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
                   )}
                   {entry.detached && (
                     <span style={{
-                      fontSize: '9px', fontWeight: 600, padding: '2px 6px',
+                      fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600, padding: '2px 6px',
                       background: 'var(--warning-bg)', color: 'var(--warning-color)',
                       borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)'
                     }}>
@@ -172,7 +172,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
                   )}
                   {isHidden && showHidden && (
                     <span style={{
-                      fontSize: '9px', fontWeight: 600, padding: '2px 6px',
+                      fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600, padding: '2px 6px',
                       background: 'var(--bg-subtle)', color: 'var(--text-muted)',
                       borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)'
                     }}>
@@ -182,7 +182,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
                 </div>
               </div>
               <div style={{
-                fontSize: '10px', color: 'var(--text-muted)',
+                fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)',
                 fontFamily: 'var(--font-mono)', wordBreak: 'break-all'
               }}>
                 {entry.path}
@@ -194,7 +194,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
         {entries.length === 0 && !isLoading && (
           <div style={{
             padding: '40px 16px', textAlign: 'center',
-            color: 'var(--text-muted)', fontSize: '12px', fontFamily: 'var(--font-mono)'
+            color: 'var(--text-muted)', fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
           }}>
             no worktrees
           </div>
@@ -211,7 +211,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
             position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 200,
             background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)', padding: '4px', minWidth: '160px',
-            boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)', fontSize: '11px',
+            boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
             animation: 'fadeIn 0.1s ease'
           }}>
             {hiddenPaths.has(contextMenu.entry.path) ? (

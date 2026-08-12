@@ -159,7 +159,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                   ? (isBugfix ? 'var(--warning-color)' : 'var(--accent-color)')
                   : (isBugfix ? 'var(--warning-color)' : 'var(--border-color)')}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', fontSize: '8px', fontWeight: 700,
+                cursor: 'pointer', fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontWeight: 700,
                 fontFamily: 'var(--font-mono)', color: isBugfix ? 'var(--warning-color)' : (isSelected ? 'var(--accent-color)' : 'var(--text-muted)'),
                 transition: 'all 0.15s ease'
               }}
@@ -196,11 +196,11 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
             <FolderOpen size={28} strokeWidth={1} />
           </div>
           <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
-            <p style={{ margin: '0 0 4px', fontSize: '13px', color: 'var(--text-secondary)' }}>{t('open a git repository')}</p>
-            <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)' }}>{t('to manage worktrees')}</p>
+            <p style={{ margin: '0 0 4px', fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('open a git repository')}</p>
+            <p style={{ margin: 0, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('to manage worktrees')}</p>
           </div>
           <button onClick={async () => { const p = await window.electronAPI.dialog.openFolder(); if (p) onRepoSelected(p) }}
-            style={{ padding: '8px 20px', background: 'var(--accent-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+            style={{ padding: '8px 20px', background: 'var(--accent-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
             {t('open repo')}
           </button>        </div>
       </PanelContainer>
@@ -220,7 +220,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '4px 8px', flexShrink: 0, background: 'var(--bg-card)',
                     border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-                    fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)',
+                    fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-secondary)',
                     fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.5px'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -250,7 +250,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '4px 8px', flexShrink: 0, background: 'var(--bg-card)',
                     border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-                    fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)',
+                    fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-secondary)',
                     fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.5px'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -341,7 +341,7 @@ function StripMenuItem({ icon, label, onClick, danger }: {
     <div onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px',
-        fontSize: '11px', fontFamily: 'var(--font-mono)', cursor: 'pointer',
+        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: 'pointer',
         color: danger ? 'var(--error-color)' : 'var(--text-primary)',
         transition: 'background 0.1s ease'
       }}

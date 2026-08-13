@@ -284,7 +284,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                   <div style={{ flex: 1, minHeight: 0 }}>
                     <WorktreeChanges worktreePath={selectedWorktree} checkMarks={checkMarks[selectedWorktree] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedWorktree, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef} />
                   </div>

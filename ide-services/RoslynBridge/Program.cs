@@ -118,6 +118,7 @@ internal static class BridgeHandler
         var projects = DiscoverProjects(root);
         var sdkRefs = SdkReferences();
         _refsComplete = false;
+        _seenRefs.Clear(); // re-open on a different repo must not skip refs seen before
 
         // per-project metadata references (SDK + NuGet from that project's assets)
         var projRefs = new Dictionary<string, List<MetadataReference>>(StringComparer.OrdinalIgnoreCase);
@@ -536,6 +537,11 @@ internal static class BridgeHandler
         {
             if (d.Severity is DiagnosticSeverity.Hidden or DiagnosticSeverity.Info) continue;
             if (!d.Location.IsInSource) continue;
+            // The ad-hoc workspace has no full MSBuild restore, so missing-reference
+            // errors (CS0246/CS0234 on using/type names) are almost always false
+            // positives: skip them instead of flagging valid code.
+            if (d.Severity == DiagnosticSeverity.Error &&
+                (d.Id is "CS0246" or "CS0234" or "CS0400" or "CS0518")) continue;
             var span = d.Location.GetLineSpan();
             res.Diagnostics.Add(new BridgeDiagnostic
             {

@@ -8,6 +8,7 @@ export interface GitFileStatus {
   isModified: boolean
   isDeleted: boolean
   isRenamed: boolean
+  isConflict?: boolean
 }
 
 export interface GitStatus {

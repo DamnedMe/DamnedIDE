@@ -108,6 +108,71 @@ a:hover { text-decoration: underline; }
   zoom: var(--icon-zoom, 1);
 }
 
+/* Rendered Markdown preview */
+.md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 {
+  margin: 18px 0 8px;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+.md-view h1 { font-size: calc(24px * var(--ui-text-scale, 1)); border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px; }
+.md-view h2 { font-size: calc(20px * var(--ui-text-scale, 1)); border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; }
+.md-view h3 { font-size: calc(17px * var(--ui-text-scale, 1)); }
+.md-view h4 { font-size: calc(15px * var(--ui-text-scale, 1)); }
+.md-view h5, .md-view h6 { font-size: calc(13px * var(--ui-text-scale, 1)); }
+.md-view p { margin: 8px 0; }
+.md-view a { color: var(--accent-color); text-decoration: none; }
+.md-view a:hover { text-decoration: underline; }
+.md-view strong { color: var(--text-primary); }
+.md-view del { color: var(--text-muted); }
+.md-view code {
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--ui-text-scale, 1));
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+}
+.md-view pre {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  overflow: auto;
+  margin: 10px 0;
+}
+.md-view pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: calc(12px * var(--ui-text-scale, 1));
+  line-height: 1.5;
+}
+.md-view ul, .md-view ol { margin: 8px 0; padding-left: 26px; }
+.md-view li { margin: 3px 0; }
+.md-view blockquote {
+  margin: 10px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--accent-color);
+  background: var(--accent-bg);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--text-secondary);
+}
+.md-view blockquote p { margin: 4px 0; }
+.md-view table {
+  border-collapse: collapse;
+  margin: 10px 0;
+  width: 100%;
+  font-size: calc(12px * var(--ui-text-scale, 1));
+}
+.md-view th, .md-view td {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  text-align: left;
+}
+.md-view th { background: var(--bg-subtle); color: var(--text-secondary); }
+.md-view hr { border: none; border-top: 1px solid var(--border-color); margin: 16px 0; }
+
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

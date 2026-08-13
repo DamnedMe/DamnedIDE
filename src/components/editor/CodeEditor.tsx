@@ -13,6 +13,7 @@ import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnosti
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
 import { FileTypeIcon } from '../../utils/file-icon'
 import { TerminalDock } from '../terminal/TerminalDock'
+import { MarkdownView } from './MarkdownView'
 import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
@@ -22,7 +23,7 @@ import {
   PanelLeftClose, PanelLeftOpen, FolderTree, Search,
   ChevronRight, Asterisk, Regex, CaseSensitive, SeparatorHorizontal,
   Play, Hammer, Square, RotateCw, GitCompare,
-  ArrowLeft, ArrowRight, XCircle, AlertTriangle
+  ArrowLeft, ArrowRight, XCircle, AlertTriangle, Eye
 } from 'lucide-react'
 
 type LeftPanel = 'explorer' | 'search' | 'changes'
@@ -85,6 +86,8 @@ export function CodeEditor() {
   const fontSizeRef = useRef(12.5)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const settings = useSettingsStore(s => s.settings)
+  const [mdPreview, setMdPreview] = useState(false)
+  const isMarkdownActive = !!activeFile?.toLowerCase().endsWith('.md')
   const [quickOutput, setQuickOutput] = useState<string | null>(null)
   const [isRunning, setIsRunning] = useState(false)
   const [runningProcessId, setRunningProcessId] = useState<string | null>(null)
@@ -936,6 +939,22 @@ export function CodeEditor() {
             })}
           </div>
         )}
+        {isMarkdownActive && (
+          <button onClick={() => setMdPreview(p => !p)}
+            title={mdPreview ? 'show source' : 'preview rendered markdown'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '4px', padding: '0 8px',
+              background: mdPreview ? 'var(--accent-bg)' : 'transparent',
+              border: 'none', color: mdPreview ? 'var(--accent-color)' : 'var(--text-muted)',
+              cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
+              fontFamily: 'var(--font-mono)', fontWeight: 600, flexShrink: 0
+            }}
+            onMouseEnter={(e) => { if (!mdPreview) e.currentTarget.style.color = 'var(--text-secondary)' }}
+            onMouseLeave={(e) => { if (!mdPreview) e.currentTarget.style.color = 'var(--text-muted)' }}>
+            <Eye size={11} />
+            {mdPreview ? 'source' : 'preview'}
+          </button>
+        )}
         {rootPath && (
           <div style={{ display: 'flex', gap: '1px', flexShrink: 0, padding: '0 2px' }}>
             <button onClick={() => startQuickCmd('build')} disabled={isRunning} title="build"
@@ -1078,6 +1097,8 @@ export function CodeEditor() {
             filePath={diffView.path}
             onClose={() => setDiffView(null)}
           />
+        ) : activeFile && isMarkdownActive && mdPreview ? (
+          <MarkdownView content={activeContent} />
         ) : activeFile ? (
           <Editor
             height="100%"

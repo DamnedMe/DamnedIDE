@@ -4,7 +4,7 @@ interface Window {
   electronAPI: {
     git: {
       status: (repoPath: string) => Promise<import('./types/git').GitStatus>
-      porcelain: (repoPath: string) => Promise<{ staged: { path: string; changeType: string }[]; unstaged: { path: string; changeType: string }[] }>
+      porcelain: (repoPath: string) => Promise<{ staged: { path: string; changeType: string }[]; unstaged: { path: string; changeType: string }[]; unmerged: { path: string; changeType: string }[] }>
       stage: (repoPath: string, files: string[]) => Promise<void>
       unstage: (repoPath: string, files: string[]) => Promise<void>
       commit: (repoPath: string, message: string) => Promise<void>

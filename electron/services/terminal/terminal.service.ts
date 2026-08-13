@@ -38,7 +38,8 @@ function shellFor(type: TerminalType): { executable: string; args: string[] } {
     case 'npm':
       return { executable: process.env.ComSpec || 'cmd.exe', args: [] }
     default:
-      return { executable: process.env.ComSpec || 'cmd.exe', args: [] }
+      // /Q disables cmd's own command echo (the renderer echoes the typed line locally)
+      return { executable: process.env.ComSpec || 'cmd.exe', args: ['/Q'] }
   }
 }
 

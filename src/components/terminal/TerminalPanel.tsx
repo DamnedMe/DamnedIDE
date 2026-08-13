@@ -101,40 +101,14 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     term.open(termRef.current)
     fit.fit()
 
-    // Forward keyboard input directly to the shell as raw bytes. xterm's own
-    // keypress/input chain is unreliable in Electron, so we bypass it: preventDefault
-    // on keydown stops xterm/IME handling and we write the mapped bytes ourselves.
+    // The shell runs non-interactive (child_process pipe, no PTY): it does not echo
+    // input nor support line editing. We implement a minimal local line editor via
+    // xterm's onData: characters are echoed locally, Backspace erases, and the full
+    // line is sent to the shell on Enter.
+    const cwd = repoPath || ''
+    const prompt = cwd ? `${cwd}> ` : '> '
     const write = (s: string, d: string) => window.electronAPI.terminal.write(s, d)
-    const ta = term.textarea as HTMLTextAreaElement | undefined
-    if (ta) {
-      ta.addEventListener('keydown', (e: KeyboardEvent) => {
-        const sess = sessionRef.current
-        if (!sess) return
-        const key = e.key
-        if ((e.ctrlKey || e.metaKey) && key.length === 1 && /[a-z]/i.test(key) && key.toLowerCase() !== 'v') {
-          // Ctrl+letter → control byte (Ctrl+C = interrupt, etc.); Ctrl+V stays paste
-          e.preventDefault()
-          write(sess, String.fromCharCode(key.toLowerCase().charCodeAt(0) - 96))
-          return
-        }
-        switch (key) {
-          case 'Enter': e.preventDefault(); write(sess, '\r'); return
-          case 'Backspace': e.preventDefault(); write(sess, '\x08'); return
-          case 'Tab': e.preventDefault(); write(sess, '\t'); return
-          case 'ArrowUp': e.preventDefault(); write(sess, '\x1b[A'); return
-          case 'ArrowDown': e.preventDefault(); write(sess, '\x1b[B'); return
-          case 'ArrowRight': e.preventDefault(); write(sess, '\x1b[C'); return
-          case 'ArrowLeft': e.preventDefault(); write(sess, '\x1b[D'); return
-          case 'Delete': e.preventDefault(); write(sess, '\x1b[3~'); return
-          case 'Home': e.preventDefault(); write(sess, '\x1b[H'); return
-          case 'End': e.preventDefault(); write(sess, '\x1b[F'); return
-        }
-        if (key.length === 1 && !e.altKey && !e.ctrlKey && !e.metaKey) {
-          e.preventDefault()
-          write(sess, key)
-        }
-      })
-    }
+    let inputBuffer = ''
 
     xtermRef.current = term
     fitRef.current = fit
@@ -156,7 +130,6 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     })
     unsubRef.current = unsub
 
-    const cwd = repoPath || '' // open the shell in the repo/worktree when available
     const id = await window.electronAPI.terminal.create(cwd, type)
     if (disposedRef.current) {
       window.electronAPI.terminal.destroy(id)
@@ -167,11 +140,40 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
       try { term.write(pendingBuffer) } catch { /* disposed */ }
       pendingBuffer = ''
     }
+    term.write(prompt)
 
+    // Local line editor (echo + backspace) driven by xterm's own input event.
     term.onData((data) => {
-      if (sessionRef.current) {
-        window.electronAPI.terminal.write(sessionRef.current, data)
+      const sess = sessionRef.current
+      if (!sess) return
+      // Backspace (DEL or BS)
+      if (data === '\x7f' || data === '\x08') {
+        if (inputBuffer.length > 0) {
+          inputBuffer = inputBuffer.slice(0, -1)
+          term.write('\b \b')
+        }
+        return
       }
+      // Enter
+      if (data === '\r' || data === '\n') {
+        const line = inputBuffer
+        inputBuffer = ''
+        term.write('\r\n')
+        write(sess, line + '\r\n')
+        return
+      }
+      // Ctrl+C
+      if (data === '\x03') {
+        inputBuffer = ''
+        term.write('^C\r\n' + prompt)
+        write(sess, '\x03')
+        return
+      }
+      // escape sequences (arrows, etc.) — ignored (no history/line editing)
+      if (data.startsWith('\x1b')) return
+      // printable / paste: echo locally and buffer
+      inputBuffer += data
+      term.write(data)
     })
 
     // focus so typing works immediately, like VS
@@ -212,7 +214,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
   useEffect(() => {
     if (defaultTabAddedRef.current) return
     defaultTabAddedRef.current = true
-    addTab('pwsh')
+    addTab('cmd')
   }, [])
 
   // keep the terminal textarea focused so keystrokes reach the shell

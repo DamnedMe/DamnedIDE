@@ -412,12 +412,15 @@ export class AdoService {
     return false
   }
 
+  // Adds the current user as a REQUIRED reviewer AND approves the PR in one call:
+  // ADO arms auto-complete only when the PR has a required reviewer, and the merge
+  // then proceeds once that reviewer has approved.
   private async addRequiredReviewer(project: string, repo: string, prId: number, reviewerId: string): Promise<boolean> {
     const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}/reviewers/${reviewerId}?api-version=7.0`
     const res = await fetch(url, {
       method: 'PUT',
       headers: this.authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ isRequired: true })
+      body: JSON.stringify({ isRequired: true, vote: 10 })
     })
     if (!res.ok) console.error('[ado] addRequiredReviewer: PUT fallita', res.status, await res.text().catch(() => ''))
     return res.ok
@@ -480,7 +483,7 @@ export class AdoService {
         const me = await this.getCurrentUser()
         if (me) {
           const added = await this.addRequiredReviewer(project, repo, prId, me.id)
-          console.error(`[ado] createPr: reviewer richiesto aggiunto=${added} per armare l'auto-complete`)
+          console.error(`[ado] createPr: reviewer richiesto aggiunto e approvato=${added} per armare l'auto-complete`)
           if (added) armed = await this.armAutoComplete(project, repo, prId, opts)
         }
       }

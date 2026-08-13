@@ -42,8 +42,12 @@ export class WorktreeService {
 
   async add(repoPath: string, branch: string, worktreePath: string): Promise<void> {
     const git = this.getGit(repoPath)
-    // Fetch develop, then create the worktree with a new branch starting from origin/develop
-    await git.fetch(['origin', 'develop'])
+    // Fetch develop (no tags — faster) so the new branch starts from the latest.
+    // If the fetch fails (offline), fall back to the local origin/develop ref; the
+    // worktree add then reports a clear error only if that ref is missing too.
+    try {
+      await git.fetch(['--no-tags', 'origin', 'develop'])
+    } catch { /* offline: proceed with the local ref */ }
     await git.raw(['worktree', 'add', '-b', branch, worktreePath, 'origin/develop'])
   }
 

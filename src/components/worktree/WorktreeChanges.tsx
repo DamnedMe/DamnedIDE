@@ -5,7 +5,9 @@ import { DiffViewer } from '../editor/DiffViewer'
 import type { DiffViewerHandle } from '../editor/DiffViewer'
 import { useEditorStore } from '../../store'
 import { ResizableSplitter } from '../layout/ResizableSplitter'
-import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus } from 'lucide-react'
+import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye } from 'lucide-react'
+import { MergeTool } from './MergeTool'
+import { MarkdownView } from '../editor/MarkdownView'
 import Editor from '@monaco-editor/react'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../editor/monaco-theme'
 import { useUIStore, useSettingsStore } from '../../store'
@@ -36,6 +38,8 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   const [files, setFiles] = useState<GitFileStatus[]>([])
   const [stagedFiles, setStagedFiles] = useState<GitFileStatus[]>([])
   const [unstagedFiles, setUnstagedFiles] = useState<GitFileStatus[]>([])
+  const [unmergedFiles, setUnmergedFiles] = useState<GitFileStatus[]>([])
+  const [mergeTarget, setMergeTarget] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [diffFile, setDiffFile] = useState<string | null>(null)
@@ -45,6 +49,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   const [isLoadingDiff, setIsLoadingDiff] = useState(false)
   const [isDiffFullscreen, setIsDiffFullscreen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [mdPreview, setMdPreview] = useState(false)
   const [diffInitialLine, setDiffInitialLine] = useState<number | undefined>(undefined)
   const [editedContent, setEditedContent] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -88,8 +93,15 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
       const sortByPath = (arr: GitFileStatus[]) => arr.sort((a, b) => a.path.localeCompare(b.path))
       sortByPath(staged)
       sortByPath(unstaged)
+      const unmerged = (p.unmerged || []).map(f => ({
+        path: f.path, index: f.changeType, workingDir: f.changeType,
+        staged: false, unstaged: false, isConflict: true,
+        isNew: false, isModified: true, isDeleted: false, isRenamed: false
+      }))
+      sortByPath(unmerged)
       setStagedFiles(staged)
       setUnstagedFiles(unstaged)
+      setUnmergedFiles(unmerged)
       setFiles([...staged, ...unstaged].sort((a, b) => a.path.localeCompare(b.path)))
     } catch (e) {
       setError((e as Error).message)
@@ -371,9 +383,45 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
           }
         }}
       >
+        {unmergedFiles.length > 0 && (
+          <div style={{ flexShrink: 0 }}>
+            <div style={{
+              padding: '4px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700,
+              color: 'var(--error-color)', textTransform: 'uppercase', letterSpacing: '0.5px',
+              fontFamily: 'var(--font-mono)', borderBottom: '1px solid var(--border-subtle)',
+              background: 'var(--error-bg)', display: 'flex', alignItems: 'center', gap: '5px'
+            }}>
+              <GitMerge size={10} />
+              conflicts — {unmergedFiles.length}
+            </div>
+            {unmergedFiles.map((f) => (
+              <div key={`conflict:${f.path}`} onClick={() => setMergeTarget(f.path)}
+                title={`resolve conflicts in ${f.path}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 10px',
+                  borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer',
+                  background: 'var(--bg-card)', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
+                  fontFamily: 'var(--font-mono)', color: 'var(--error-color)'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--error-bg)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-card)' }}>
+                <GitMerge size={11} style={{ flexShrink: 0 }} />
+                <span style={{
+                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  color: 'var(--text-primary)'
+                }}>
+                  {f.path}
+                </span>
+                <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, flexShrink: 0 }}>
+                  resolve
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {renderZone('staged changes', stagedFiles, 'var(--success-color)')}
         {renderZone('changes', unstagedFiles, 'var(--warning-color)')}
-        {files.length === 0 && (
+        {files.length === 0 && unmergedFiles.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             no changes
           </div>
@@ -416,6 +464,22 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diffFile}</span>
               </div>
               <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
+                {diffFile?.toLowerCase().endsWith('.md') && (
+                  <button onClick={() => setMdPreview(p => !p)}
+                    title={mdPreview ? 'show source' : 'preview rendered markdown'}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '20px',
+                      background: mdPreview ? 'var(--accent-bg)' : 'transparent',
+                      border: `1px solid ${mdPreview ? 'var(--accent-color)' : 'var(--border-color)'}`,
+                      borderRadius: 'var(--radius-sm)',
+                      color: mdPreview ? 'var(--accent-color)' : 'var(--text-muted)',
+                      cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
+                      fontFamily: 'var(--font-mono)', fontWeight: 600
+                    }}>
+                    <Eye size={10} />
+                    {mdPreview ? 'source' : 'preview'}
+                  </button>
+                )}
                 <button onClick={handleCancelEdit} title="cancel"
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '20px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer' }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)'; e.currentTarget.style.borderColor = 'var(--error-color)' }}
@@ -432,6 +496,9 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
               </div>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
+              {diffFile?.toLowerCase().endsWith('.md') && mdPreview ? (
+                <MarkdownView content={editedContent} />
+              ) : (
               <Editor
                 height="100%"
                 language={detectLang(diffFile)}
@@ -516,6 +583,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                   scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
                 }}
               />
+              )}
             </div>
           </>
         ) : (
@@ -617,6 +685,15 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
             />
           )}
         </div>
+      )}
+
+      {mergeTarget && (
+        <MergeTool
+          repoPath={worktreePath}
+          filePath={mergeTarget}
+          onClose={() => setMergeTarget(null)}
+          onResolved={loadStatus}
+        />
       )}
     </>
   )

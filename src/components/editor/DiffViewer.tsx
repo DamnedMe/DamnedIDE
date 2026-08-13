@@ -1,10 +1,11 @@
-import { useRef, forwardRef, useImperativeHandle, useEffect } from 'react'
+import { useRef, forwardRef, useImperativeHandle, useEffect, useState } from 'react'
 import { DiffEditor, DiffOnMount } from '@monaco-editor/react'
-import { Columns2, Rows3, X, Maximize2 } from 'lucide-react'
+import { Columns2, Rows3, X, Maximize2, Eye } from 'lucide-react'
 import { ZoomControls } from './CodeEditor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useUIStore, useSettingsStore, useDiffStore } from '../../store'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
+import { MarkdownView } from './MarkdownView'
 
 export interface DiffViewerHandle {
   getVisibleLine: () => number | null
@@ -32,6 +33,8 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null)
   const theme = useUIStore(s => s.theme)
   const themeColors = useSettingsStore(s => s.settings.themeColors)
+  const [mdPreview, setMdPreview] = useState(false)
+  const isMarkdown = !!filePath?.toLowerCase().endsWith('.md')
 
   const applyEditorTheme = (monaco: typeof import('monaco-editor')) => {
     defineThemes(monaco, themeColors)
@@ -196,6 +199,14 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
             title="inline"
             icon={<Rows3 size={12} />}
           />
+          {isMarkdown && (
+            <ToggleButton
+              active={mdPreview}
+              onClick={() => setMdPreview(p => !p)}
+              title={mdPreview ? 'show diff' : 'preview rendered markdown'}
+              icon={<Eye size={12} />}
+            />
+          )}
           {onPopOut && (
             <button
               onClick={onPopOut}
@@ -240,6 +251,9 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
         </div>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
+        {mdPreview ? (
+          <MarkdownView content={modified} />
+        ) : (
         <DiffEditor
           height="100%"
           language={lang}
@@ -273,6 +287,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
             scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
           }}
         />
+        )}
       </div>
     </div>
   )

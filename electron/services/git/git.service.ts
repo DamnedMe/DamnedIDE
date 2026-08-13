@@ -58,6 +58,7 @@ export class GitService {
   async porcelain(repoPath: string): Promise<{
     staged: { path: string; changeType: string }[]
     unstaged: { path: string; changeType: string }[]
+    unmerged: { path: string; changeType: string }[]
   }> {
     const git = this.getGit(repoPath)
     // Default untracked mode (no -uall): git status is far cheaper on large repos
@@ -65,7 +66,9 @@ export class GitService {
     const out = await git.raw(['status', '--porcelain'])
     const staged: { path: string; changeType: string }[] = []
     const unstaged: { path: string; changeType: string }[] = []
+    const unmerged: { path: string; changeType: string }[] = []
     const typeOf = (code: string) => code === 'A' ? 'add' : code === 'D' ? 'delete' : 'edit'
+    const UNMERGED_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'])
     for (const line of out.split('\n')) {
       if (!line || line.length < 3) continue
       const x = line[0]
@@ -76,10 +79,16 @@ export class GitService {
       if (arrow >= 0) path = path.slice(arrow + 4)
       path = path.replace(/^"|"$/g, '').trim()
       if (!path) continue
+      // unmerged (merge conflicts): both columns hold a code and the file is in a
+      // conflict state — keep it out of staged/unstaged and report it separately
+      if (UNMERGED_CODES.has(x + y)) {
+        unmerged.push({ path, changeType: x + y })
+        continue
+      }
       if (x !== ' ' && x !== '?') staged.push({ path, changeType: typeOf(x) })
       if (y !== ' ' || x === '?') unstaged.push({ path, changeType: x === '?' ? 'add' : typeOf(y || 'M') })
     }
-    return { staged, unstaged }
+    return { staged, unstaged, unmerged }
   }
 
   async stage(repoPath: string, files: string[]): Promise<void> {

@@ -164,6 +164,7 @@ const ResultGridRow = memo(function ResultGridRow({
               : fk && onJoinRequest
                 ? (editable ? 'double-click to edit · ' : '') + `click: left join ${fk.referencedTable} on ${fk.referencedColumn}`
                 : editable ? 'double-click to edit' : undefined}
+            data-tip-desc="primary key: click to filter · foreign key: click to join"
             style={{
               padding: '0 8px', height: rowHeight, display: 'flex', alignItems: 'center',
               borderLeft: ci === joinStartIndex ? JOIN_DIVIDER : undefined,
@@ -674,7 +675,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
       }}>
         <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 9.5 }}>
           <span>{execution.results.length} result sets · {execution.totalRowCount} rows total</span>
-          {onClear && <button style={{ ...btnStyle, marginLeft: 'auto' }} title="clear results" onClick={onClear}><X size={10} /></button>}
+          {onClear && <button style={{ ...btnStyle, marginLeft: 'auto' }} title="clear results" data-tip-desc="clear the displayed results" onClick={onClear}><X size={10} /></button>}
         </div>
         {execution.results.map((set, index) => {
           const height = Math.min(500, Math.max(190, 112 + Math.min(set.rowCount, 14) * 25))
@@ -808,14 +809,14 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
           )}
         </div>
         <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
-          <button style={btnStyle} title="zoom out (Ctrl+-)" onClick={() => changeZoom(-1)}
+          <button style={btnStyle} title="zoom out (Ctrl+-)" data-tip-desc="zoom out the results grid (Ctrl+-)" onClick={() => changeZoom(-1)}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
             <ZoomOut size={10} />
           </button>
           <span data-testid="result-grid-zoom-level" aria-label={`result grid zoom ${Math.round(zoomScale * 100)} percent`}
             style={{ minWidth: '32px', textAlign: 'center', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{Math.round(zoomScale * 100)}%</span>
-          <button style={btnStyle} title="zoom in (Ctrl++)" onClick={() => changeZoom(1)}
+          <button style={btnStyle} title="zoom in (Ctrl++)" data-tip-desc="zoom in the results grid (Ctrl++)" onClick={() => changeZoom(1)}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
             <ZoomIn size={10} />
@@ -823,6 +824,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
           <button
             onClick={exportCsv}
             title={selectedRows.size > 0 ? `export ${selectedRows.size} selected rows` : 'export all rows to csv'}
+            data-tip-desc="export the grid as a CSV file"
             style={{
               display: 'flex', alignItems: 'center', gap: '4px',
               padding: '2px 8px', marginLeft: '6px', height: '18px',
@@ -838,6 +840,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
           <button
             onClick={exportSql}
             title={selectedRows.size > 0 ? `export ${selectedRows.size} selected rows as sql insert` : 'export all rows as sql insert'}
+            data-tip-desc="generate SQL INSERT statements from the grid"
             style={{
               display: 'flex', alignItems: 'center', gap: '4px',
               padding: '2px 8px', marginLeft: '4px', height: '18px',
@@ -851,7 +854,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             <FileCode2 size={9} /> sql
           </button>
           {onClear && (
-            <button style={{ ...btnStyle, marginLeft: '4px' }} title="clear results" onClick={onClear}
+            <button style={{ ...btnStyle, marginLeft: '4px' }} title="clear results" data-tip-desc="clear the displayed results" onClick={onClear}
               onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
               onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
               <X size={10} />
@@ -863,8 +866,8 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
       {(filters.length > 0 || sorts.length > 0 || gridQuerySupported?.supported === false) && (
         <div style={{ minHeight: 27, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', fontFamily: 'var(--font-mono)', fontSize: 8.5 }}>
           {gridQuerySupported?.supported === false && <span role="status" style={{ color: 'var(--warning-color)' }}>{gridQuerySupported.reason}</span>}
-          {filters.map(filter => <button key={filter.column} aria-label={`active filter ${filter.column}`} title="remove filter" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, filters: filters.filter(item => item.column !== filter.column) })} style={{ ...tinyGridButton, height: 19, color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}><Filter size={8} /> {filter.column} · {filter.operator} {filter.value} ×</button>)}
-          {sorts.map((sort, index) => <button key={sort.column} aria-label={`active sort ${sort.column}`} title="remove sorting" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, sorts: sorts.filter(item => item.column !== sort.column) })} style={{ ...tinyGridButton, height: 19, display: 'inline-flex', alignItems: 'center' }}>{sort.direction === 'asc' ? '↑' : '↓'} {index + 1} · {sort.column} ×</button>)}
+          {filters.map(filter => <button key={filter.column} aria-label={`active filter ${filter.column}`} title="remove filter" data-tip-desc="remove the filter from this column" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, filters: filters.filter(item => item.column !== filter.column) })} style={{ ...tinyGridButton, height: 19, color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}><Filter size={8} /> {filter.column} · {filter.operator} {filter.value} ×</button>)}
+          {sorts.map((sort, index) => <button key={sort.column} aria-label={`active sort ${sort.column}`} title="remove sorting" data-tip-desc="remove the sorting from this column" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, sorts: sorts.filter(item => item.column !== sort.column) })} style={{ ...tinyGridButton, height: 19, display: 'inline-flex', alignItems: 'center' }}>{sort.direction === 'asc' ? '↑' : '↓'} {index + 1} · {sort.column} ×</button>)}
           {(filters.length > 0 || sorts.length > 0) && <button aria-label="clear all grid filters and sorting" onClick={clearGridQuery} style={{ ...tinyGridButton, height: 19, marginLeft: 'auto' }}>clear all</button>}
         </div>
       )}
@@ -984,6 +987,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                           }
                         }}
                         title={!columnQuerySupported ? 'Joined output aliases cannot be rewritten safely.' : gridQuerySupported?.supported ? 'sort · Shift-click for multi-sort' : gridQuerySupported?.reason}
+                        data-tip-desc="sort the grid by this column"
                         style={{ border: 0, padding: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: 'transparent', color: 'inherit', font: 'inherit', cursor: gridQuerySupported?.supported ? 'pointer' : 'not-allowed', textAlign: 'left' }}
                       >{col}</button>
                       {sort && <span aria-label={`sort priority ${col} ${sortIndex + 1} ${sort.direction === 'asc' ? 'ascending' : 'descending'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'var(--accent-color)', flexShrink: 0 }}>{sort.direction === 'asc' ? <ArrowUp size={8} /> : <ArrowDown size={8} />}{sortIndex + 1}</span>}
@@ -999,13 +1003,14 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                           setFilterEditor({ column: col, x: rect.left, y: rect.bottom + 4 })
                         }}
                         title={!columnQuerySupported ? 'Joined output aliases cannot be rewritten safely.' : gridQuerySupported?.supported ? `filter ${col}` : gridQuerySupported?.reason}
+                        data-tip-desc="filter the grid by this column"
                         style={{ display: 'flex', flexShrink: 0, padding: 2, border: 0, background: filtered ? 'var(--accent-bg)' : 'transparent', color: filtered ? 'var(--accent-color)' : 'var(--text-muted)', cursor: gridQuerySupported?.supported ? 'pointer' : 'not-allowed' }}>
                         <Filter size={9} fill={filtered ? 'currentColor' : 'none'} />
                       </button>
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); togglePin(col) }}
-                      title={isPinned ? 'unpin column' : 'pin column'}
+                      title={isPinned ? 'unpin column' : 'pin column'} data-tip-desc='pin or unpin this column'
                       style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         background: 'none', border: 'none', cursor: 'pointer',
@@ -1019,7 +1024,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                     </button>
                     <div
                       onMouseDown={(e) => startResize(e, col)}
-                      title="drag to resize"
+                      title="drag to resize" data-tip-desc="drag to resize the panel"
                       style={{
                         position: 'absolute', top: -4, right: -8, bottom: -4, width: '6px',
                         cursor: 'col-resize', zIndex: 15

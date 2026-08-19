@@ -12,9 +12,11 @@ import { SqlWorkspaceDocument, SqlWorkspaceService } from './services/sql/sql-wo
 import { RoslynService } from './services/roslyn/roslyn.service'
 import { createTerminal, writeToTerminal, resizeTerminal, destroyTerminal, destroyAllTerminals, TerminalType } from './services/terminal/terminal.service'
 import { startProcess, stopProcess, stopAllProcesses } from './services/process/process.service'
+import { McpService, McpServerConfig } from './services/mcp/mcp.service'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
+let mcpService: McpService | null = null
 
 // IPC wrapper: rejects with a clean one-line Error (no mssql stack trace) so the
 // dev console does not flood with "Error occurred in handler for 'sql:...'".
@@ -105,9 +107,10 @@ app.whenReady().then(() => {
   const adoService = new AdoService()
   const sqlService = new SqlService()
   const sqlWorkspaceService = new SqlWorkspaceService(app.getPath('userData'))
+  mcpService = new McpService()
   roslynService = new RoslynService()
 
-  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService)
+  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService)
   createWindow()
   setupAutoUpdater()
 
@@ -127,9 +130,13 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  // Any quit path (window-all-closed, update restart, app.quit) must tear down
+  // running processes and terminals, otherwise spawned apps keep their ports.
+  stopAllProcesses()
+  destroyAllTerminals()
   roslynService?.stop()
+  mcpService?.disconnectAll()
 })
-
 function registerIpcHandlers(
   git: GitService,
   worktree: WorktreeService,
@@ -137,7 +144,8 @@ function registerIpcHandlers(
   ado: AdoService,
   sql: SqlService,
   sqlWorkspace: SqlWorkspaceService,
-  roslyn: RoslynService
+  roslyn: RoslynService,
+  mcp: McpService
 ): void {
   // ─── Git ───────────────────────────────────────────
   ipcMain.handle('git:status', (_e, repoPath: string) => git.status(repoPath))
@@ -265,6 +273,10 @@ function registerIpcHandlers(
     }
   })
 
+  ipcMain.handle('shell:openExternal', async (_e, url: string) => {
+    await shell.openExternal(url)
+  })
+
   ipcMain.on('clipboard:write', (_e, text: string) => {
     clipboard.writeText(text)
   })
@@ -384,9 +396,12 @@ function registerIpcHandlers(
   ipcMain.handle('git:showRef', (_e, repoPath: string, filePath: string, ref: string) =>
     git.showRef(repoPath, filePath, ref))
   ipcMain.handle('git:stageAll', (_e, repoPath: string) => git.stageAll(repoPath))
+  ipcMain.handle('git:transferChanges', (_e, sourcePath: string, targetPath: string, opts: { copy: boolean; stagedOnly: boolean }) =>
+    git.transferChanges(sourcePath, targetPath, opts))
   ipcMain.handle('git:pushWithUpstream', (_e, repoPath: string) => git.pushWithUpstream(repoPath))
   ipcMain.handle('git:merge', (_e, repoPath: string, branch: string) => git.merge(repoPath, branch))
   ipcMain.handle('git:currentBranch', (_e, repoPath: string) => git.currentBranch(repoPath))
+  ipcMain.handle('git:gitCommonDir', (_e, repoPath: string) => git.gitCommonDir(repoPath))
   ipcMain.handle('git:blame', (_e, repoPath: string, filePath: string) => git.blame(repoPath, filePath))
   ipcMain.handle('git:fileLog', (_e, repoPath: string, filePath: string, count?: number) => git.fileLog(repoPath, filePath, count))
   ipcMain.handle('git:diffFile', (_e, repoPath: string, filePath: string) => git.diffFile(repoPath, filePath))
@@ -479,4 +494,10 @@ function registerIpcHandlers(
   ipcMain.handle('roslyn:references', (_e, file: string, line: number, column: number) => roslyn.references(file, line, column))
   ipcMain.handle('roslyn:diagnostics', (_e, file: string, text?: string) => roslyn.diagnostics(file, text))
   ipcMain.handle('roslyn:hover', (_e, file: string, line: number, column: number, text?: string) => roslyn.hover(file, line, column, text))
+
+  // ─── MCP ─────────
+  ipcMain.handle('mcp:connect', (_e, config: McpServerConfig) => mcp.connect(config, mainWindow))
+  ipcMain.handle('mcp:disconnect', (_e, name: string) => { mcp.disconnect(name) })
+  ipcMain.handle('mcp:listTools', (_e, name: string) => mcp.listTools(name))
+  ipcMain.handle('mcp:callTool', (_e, name: string, tool: string, args: Record<string, unknown>) => mcp.callTool(name, tool, args, mainWindow))
 }

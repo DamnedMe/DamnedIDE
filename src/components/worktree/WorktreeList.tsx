@@ -74,7 +74,7 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
           borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
         }}>
           <button onClick={() => setShowHidden(!showHidden)}
-            title={showHidden ? 'hide hidden' : 'show hidden'}
+            title={showHidden ? 'hide hidden' : 'show hidden'} data-tip-desc="toggle the visibility of hidden worktrees"
             style={{
               display: 'flex', alignItems: 'center', gap: '3px',
               padding: '2px 8px', background: showHidden ? 'var(--bg-active)' : 'var(--bg-card)',

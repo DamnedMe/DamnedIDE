@@ -1,5 +1,6 @@
-import { GitBranch, AlertCircle, CheckCircle2, Sun, Moon, TerminalSquare } from 'lucide-react'
+import { GitBranch, AlertCircle, CheckCircle2, Sun, Moon, TerminalSquare, Bot } from 'lucide-react'
 import logo from '../../assets/logo.png'
+import { useMcpStore } from '../../store'
 
 interface StatusBarProps {
   repoPath: string | null
@@ -9,9 +10,12 @@ interface StatusBarProps {
   onToggleTheme?: () => void
   onToggleTerminal?: () => void
   terminalOpen?: boolean
+  onToggleAi?: () => void
+  aiOpen?: boolean
 }
 
-export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, onToggleTheme, onToggleTerminal, terminalOpen }: StatusBarProps) {
+export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, onToggleTheme, onToggleTerminal, terminalOpen, onToggleAi, aiOpen }: StatusBarProps) {
+  const hasMcp = useMcpStore(s => s.custom.length > 0 || Object.keys(s.connected).length > 0)
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -22,6 +26,23 @@ export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, o
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <img src={logo} alt="logo" style={{ width: '15px', height: '15px', flexShrink: 0, objectFit: 'contain' }} />
+        {onToggleAi && hasMcp && (
+          <button onClick={onToggleAi}
+            title={aiOpen ? 'hide AI chat' : 'open AI chat'}
+            data-tip={aiOpen ? 'hide AI chat' : 'open AI chat'}
+            data-tip-desc="chat with the agent using the configured MCP server"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: aiOpen ? 'var(--accent-bg)' : 'none',
+              border: 'none', color: 'var(--accent-color)', cursor: 'pointer',
+              padding: '2px', borderRadius: '3px'
+            }}
+            onMouseEnter={(e) => { if (!aiOpen) e.currentTarget.style.background = 'var(--bg-hover)' }}
+            onMouseLeave={(e) => { if (!aiOpen) e.currentTarget.style.background = 'none' }}
+          >
+            <Bot size={12} strokeWidth={1.6} />
+          </button>
+        )}
         {onToggleTerminal && (
           <button onClick={onToggleTerminal}
             title={terminalOpen ? 'hide terminal' : 'show terminal'}
@@ -67,7 +88,7 @@ export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, o
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         {onToggleTheme && (
           <button onClick={onToggleTheme}
-            title={`switch to ${theme === 'dark' ? 'light' : 'dark'}`}
+            title={`switch to ${theme === 'dark' ? 'light' : 'dark'}`} data-tip-desc="toggle between the dark and light theme"
             style={{
               display: 'flex', alignItems: 'center', background: 'none',
               border: 'none', color: 'var(--text-muted)', cursor: 'pointer',

@@ -1,8 +1,25 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { SqlConnectionConfig } from './services/sql/sql.service'
 import type { TerminalType } from './services/terminal/terminal.service'
+import type { McpServerConfig, McpTool } from './services/mcp/mcp.service'
 
 const electronAPI = {
+  mcp: {
+    connect: (config: McpServerConfig) => ipcRenderer.invoke('mcp:connect', config),
+    disconnect: (name: string) => ipcRenderer.invoke('mcp:disconnect', name),
+    listTools: (name: string): Promise<McpTool[]> => ipcRenderer.invoke('mcp:listTools', name),
+    callTool: (name: string, tool: string, args: Record<string, unknown>) => ipcRenderer.invoke('mcp:callTool', name, tool, args),
+    onTools: (cb: (payload: { name: string; tools: McpTool[] }) => void) => {
+      const l = (_e: unknown, p: { name: string; tools: McpTool[] }) => cb(p)
+      ipcRenderer.on('mcp:tools', l)
+      return () => ipcRenderer.removeListener('mcp:tools', l)
+    },
+    onLog: (cb: (payload: { name: string; message: string }) => void) => {
+      const l = (_e: unknown, p: { name: string; message: string }) => cb(p)
+      ipcRenderer.on('mcp:log', l)
+      return () => ipcRenderer.removeListener('mcp:log', l)
+    }
+  },
   git: {
     status: (repoPath: string) => ipcRenderer.invoke('git:status', repoPath),
     porcelain: (repoPath: string) => ipcRenderer.invoke('git:porcelain', repoPath),
@@ -17,9 +34,12 @@ const electronAPI = {
     showFile: (repoPath: string, filePath: string) => ipcRenderer.invoke('git:showFile', repoPath, filePath),
     showRef: (repoPath: string, filePath: string, ref: string) => ipcRenderer.invoke('git:showRef', repoPath, filePath, ref),
     stageAll: (repoPath: string) => ipcRenderer.invoke('git:stageAll', repoPath),
+    transferChanges: (sourcePath: string, targetPath: string, opts: { copy: boolean; stagedOnly: boolean }) =>
+      ipcRenderer.invoke('git:transferChanges', sourcePath, targetPath, opts),
     pushWithUpstream: (repoPath: string) => ipcRenderer.invoke('git:pushWithUpstream', repoPath),
     merge: (repoPath: string, branch: string) => ipcRenderer.invoke('git:merge', repoPath, branch),
     currentBranch: (repoPath: string) => ipcRenderer.invoke('git:currentBranch', repoPath),
+    gitCommonDir: (repoPath: string) => ipcRenderer.invoke('git:gitCommonDir', repoPath),
     blame: (repoPath: string, filePath: string) => ipcRenderer.invoke('git:blame', repoPath, filePath),
     fileLog: (repoPath: string, filePath: string, count?: number) => ipcRenderer.invoke('git:fileLog', repoPath, filePath, count),
     diffFile: (repoPath: string, filePath: string) => ipcRenderer.invoke('git:diffFile', repoPath, filePath)
@@ -130,7 +150,8 @@ const electronAPI = {
   },
   shell: {
     exec: (command: string, cwd: string) => ipcRenderer.invoke('shell:exec', command, cwd),
-    openFolder: (path: string) => ipcRenderer.invoke('shell:openFolder', path)
+    openFolder: (path: string) => ipcRenderer.invoke('shell:openFolder', path),
+    openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
   },
   clipboard: {
     write: (text: string) => ipcRenderer.send('clipboard:write', text)

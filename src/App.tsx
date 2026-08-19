@@ -33,14 +33,13 @@ export default function App() {
   const [activePanel, setActivePanel] = useState<PanelId>(() => {
     try {
       const p = localStorage.getItem('damnedide_last_panel')
-      if (p && ['worktree', 'git', 'ado', 'sql', 'editor', 'settings'].includes(p)) return p as PanelId
+      if (p && ['worktree', 'git', 'ado', 'sql', 'editor', 'settings', 'mcp'].includes(p)) return p as PanelId
     } catch { /* ignore */ }
     return 'worktree'
   })
   const [repoPath, setRepoPath] = useState<string | null>(null)
   const [showRecent, setShowRecent] = useState(false)
-  const terminalOpen = useTerminalStore(s => s.open)
-  const { theme, setTheme } = useUIStore()
+    const { theme, setTheme } = useUIStore()
   const settingsTheme = useSettingsStore(s => s.settings.theme)
   const accentColor = useSettingsStore(s => s.settings.accentColor)
   const iconSize = useSettingsStore(s => s.settings.iconSize)
@@ -134,8 +133,17 @@ export default function App() {
     try { localStorage.setItem('damnedide_last_panel', activePanel) } catch { /* ignore */ }
   }, [activePanel])
 
+  const dockMode = useTerminalStore(s => s.mode)
+  const dockOpen = useTerminalStore(s => s.open)
   const handleTerminalToggle = () => {
-    useTerminalStore.getState().setOpen(!useTerminalStore.getState().open)
+    const { open, mode, setOpen, setMode } = useTerminalStore.getState()
+    if (open && mode === 'terminal') setOpen(false)
+    else { setMode('terminal'); setOpen(true) }
+  }
+  const handleAiToggle = () => {
+    const { open, mode, setOpen, setMode } = useTerminalStore.getState()
+    if (open && mode === 'ai') setOpen(false)
+    else { setMode('ai'); setOpen(true) }
   }
 
   // Global icon scale (lucide) and IDE text scale from settings. The font size
@@ -213,7 +221,9 @@ export default function App() {
           theme={theme}
           onToggleTheme={toggleTheme}
           onToggleTerminal={handleTerminalToggle}
-          terminalOpen={terminalOpen}
+          terminalOpen={dockOpen && dockMode === 'terminal'}
+          onToggleAi={handleAiToggle}
+          aiOpen={dockOpen && dockMode === 'ai'}
         />
       }
     >

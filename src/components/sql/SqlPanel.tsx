@@ -547,7 +547,7 @@ export function SqlPanel() {
             <small>Query workspace</small>
           </span>
           <span className={`sql-active-context ${activeConnectionInfo?.isConnected ? 'is-online' : 'is-offline'}`}>
-            <span className="sql-status-light" role="img" aria-label={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} title={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} />
+            <span className="sql-status-light" role="img" aria-label={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} title={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} data-tip-desc="status of the active SQL connection" />
             <span className="sql-active-context__item">
               <small>Active connection</small>
               <strong>{activeConnectionInfo?.server || 'No connection'}</strong>
@@ -563,7 +563,7 @@ export function SqlPanel() {
       actions={
         <div className="sql-page-actions">
           <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            title={sidebarCollapsed ? 'show connections' : 'collapse connections'}
+            title={sidebarCollapsed ? 'show connections' : 'collapse connections'} data-tip-desc="expand or collapse the connections sidebar"
             className="sql-icon-button"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -577,7 +577,7 @@ export function SqlPanel() {
           </button>
           <button
             onClick={(e) => setPlusMenu({ x: e.currentTarget.getBoundingClientRect().right + 4, y: e.currentTarget.getBoundingClientRect().bottom + 4 })}
-            title="connection: new or recent"
+            title="connection: new or recent" data-tip-desc="choose a new or recent connection"
             aria-label="Connection"
             className="sql-primary-button"
             style={{

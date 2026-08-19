@@ -163,6 +163,50 @@ export class GitService {
     await this.getGit(repoPath).add(['-A'])
   }
 
+  /**
+   * Transfers pending changes from one worktree to another (same repository)
+   * via a shared stash: stash on the source, apply on the target, then either
+   * drop the stash (move) or restore it onto the source too (copy).
+   * With stagedOnly the stash keeps only the staged changes; the unstaged ones
+   * stay in the source working tree.
+   */
+  async transferChanges(
+    sourcePath: string,
+    targetPath: string,
+    opts: { copy: boolean; stagedOnly: boolean }
+  ): Promise<{ ok: boolean; message: string }> {
+    const source = this.getGit(sourcePath)
+    const target = this.getGit(targetPath)
+    const pushArgs = ['stash', 'push', '-m', 'damned-ide transfer']
+    pushArgs.push(opts.stagedOnly ? '--staged' : '-u')
+    try {
+      await source.raw(pushArgs)
+    } catch (e) {
+      return { ok: false, message: (e as Error).message }
+    }
+    try {
+      await target.raw(['stash', 'apply'])
+    } catch (e) {
+      // the target apply failed: put the changes back on the source, keep the
+      // flow atomic — unless the restore itself fails (stash preserved)
+      try {
+        await source.raw(['stash', 'apply'])
+        await source.raw(['stash', 'drop'])
+      } catch { /* stash kept for manual recovery */ }
+      return { ok: false, message: (e as Error).message }
+    }
+    if (opts.copy) {
+      try {
+        await source.raw(['stash', 'apply'])
+      } catch (e) {
+        // target already holds the changes; keep the stash for recovery
+        return { ok: false, message: `source restore failed: ${(e as Error).message}` }
+      }
+    }
+    await source.raw(['stash', 'drop'])
+    return { ok: true, message: 'ok' }
+  }
+
   async pushWithUpstream(repoPath: string): Promise<void> {
     const git = this.getGit(repoPath)
     const current = (await git.branch()).current
@@ -187,6 +231,16 @@ export class GitService {
 
   async currentBranch(repoPath: string): Promise<string> {
     return (await this.getGit(repoPath).branch()).current
+  }
+
+  /**
+   * Absolute path of the common git directory, shared by every worktree of the
+   * repository. Used to store per-repository settings (e.g. the run startup
+   * project) that must survive across linked worktrees.
+   */
+  async gitCommonDir(repoPath: string): Promise<string> {
+    const out = await this.getGit(repoPath).raw(['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    return out.trim()
   }
 
   async blame(repoPath: string, filePath: string): Promise<{ hash: string; author: string; date: string; line: string }[]> {

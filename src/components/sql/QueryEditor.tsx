@@ -286,7 +286,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
       }}>
         <nav className="sql-query-tabs" aria-label="Query tabs" style={{ display: 'flex', flex: 1, overflowX: 'auto', minWidth: 0 }}>
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => activateTab(tab.id)} title={tab.title}
+            <button key={tab.id} onClick={() => activateTab(tab.id)} title={tab.title} data-tip-desc="switch to this query tab"
               className="sql-query-tab"
               data-active={tab.id === activeTabId}
               onContextMenu={(event) => {
@@ -317,13 +317,13 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
             </button>
           ))}
         </nav>
-        <button onClick={() => addTab()} title="new query tab" aria-label="new query tab"
+        <button onClick={() => addTab()} title="new query tab" data-tip-desc="open a new query editor tab" aria-label="new query tab"
           className="sql-query-action"
           style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
           <Plus size={11} />
         </button>
         {onOpenWorkspace && (
-          <button onClick={onOpenWorkspace} title="workspace, history and favorites" aria-label="open SQL workspace"
+          <button onClick={onOpenWorkspace} title="workspace, history and favorites" data-tip-desc="saved queries, history and favorites" aria-label="open SQL workspace"
             className="sql-query-action"
             style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
             <History size={11} />
@@ -331,7 +331,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
         )}
         <div className="sql-query-editor__actions" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px' }}>
           {shownDatabase && connectionId && (
-            <span className="sql-context-chip" title={`${connectionLabel || connectionId} / ${shownDatabase}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
+            <span className="sql-context-chip" title={`${connectionLabel || connectionId} / ${shownDatabase}`} data-tip-desc="active connection and database" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
               <Server size={10} />
               <span className="sql-context-chip__server">{connectionLabel || connectionId}</span>
               <ChevronRight size={9} aria-hidden="true" />

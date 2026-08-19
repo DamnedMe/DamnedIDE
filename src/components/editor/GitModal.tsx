@@ -25,7 +25,7 @@ export function GitModal({ title, text, blame, history, onClose }: GitModalProps
           padding: '8px 14px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
         }}>
           <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
-          <button onClick={onClose} title="close"
+          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '20px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -53,7 +53,7 @@ export function GitModal({ title, text, blame, history, onClose }: GitModalProps
                 display: 'flex', gap: '8px', padding: '2px 14px',
                 borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)'
               }}>
-                <span style={{ color: 'var(--text-muted)', width: '70px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.hash}>{b.hash.slice(0, 7)}</span>
+                <span style={{ color: 'var(--text-muted)', width: '70px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.hash} data-tip-desc="full commit hash">{b.hash.slice(0, 7)}</span>
                 <span style={{ color: 'var(--accent-color)', width: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.author}</span>
                 <span style={{ color: 'var(--text-muted)', width: '70px', flexShrink: 0 }}>{b.date}</span>
                 <span style={{ flex: 1 }}>{b.line}</span>

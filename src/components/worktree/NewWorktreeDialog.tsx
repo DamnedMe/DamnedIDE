@@ -75,7 +75,7 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
             <FolderGit2 size={15} style={{ color: 'var(--accent-color)' }} />
             {t('new worktree')}
           </h3>
-          <button onClick={onClose} title={t('cancel')}
+          <button onClick={onClose} title={t('cancel')} data-tip-desc="close the dialog"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',

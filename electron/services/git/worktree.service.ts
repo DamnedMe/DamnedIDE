@@ -49,6 +49,13 @@ export class WorktreeService {
       await git.fetch(['--no-tags', 'origin', 'develop'])
     } catch { /* offline: proceed with the local ref */ }
     await git.raw(['worktree', 'add', '-b', branch, worktreePath, 'origin/develop'])
+    // `git worktree add -b <branch> ... origin/develop` auto-tracks the start
+    // point, so the new branch would track origin/develop. Point the upstream at
+    // the matching remote branch (origin/feature/x or origin/bugfix/x) instead,
+    // so status/push/pull operate on the branch's own remote counterpart even
+    // before it has been pushed (push then creates it).
+    await git.raw(['config', `branch.${branch}.remote`, 'origin'])
+    await git.raw(['config', `branch.${branch}.merge`, `refs/heads/${branch}`])
   }
 
   async remove(repoPath: string, worktreePath: string): Promise<void> {

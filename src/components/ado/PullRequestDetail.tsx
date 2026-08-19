@@ -199,11 +199,11 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
           </div>
         </div>
         <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-          <ActionBtn label="approve" color="var(--success-color)" icon={<Check size={10} />} busy={isAction === 'approve'} onClick={() => runAction('approve')} />
-          <ActionBtn label="reject" color="var(--error-color)" icon={<ThumbsDown size={10} />} busy={isAction === 'reject'} onClick={() => runAction('reject')} />
-          <ActionBtn label="complete" color="var(--accent-color)" icon={<Merge size={10} />} busy={isAction === 'complete'} onClick={() => runAction('complete')} />
+          <ActionBtn label="approve" data-tip-desc="approve this pull request" color="var(--success-color)" icon={<Check size={10} />} busy={isAction === 'approve'} onClick={() => runAction('approve')} />
+          <ActionBtn label="reject" data-tip-desc="reject this pull request" color="var(--error-color)" icon={<ThumbsDown size={10} />} busy={isAction === 'reject'} onClick={() => runAction('reject')} />
+          <ActionBtn label="complete" data-tip-desc="complete and merge this pull request" color="var(--accent-color)" icon={<Merge size={10} />} busy={isAction === 'complete'} onClick={() => runAction('complete')} />
         </div>
-        <button onClick={onClose} title="close"
+        <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '22px', height: '20px', background: 'transparent',
@@ -234,15 +234,10 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
   )
 }
 
-function ActionBtn({ label, color, icon, busy, onClick }: {
-  label: string
-  color: string
-  icon: React.ReactNode
-  busy: boolean
-  onClick: () => void
-}) {
+function ActionBtn(props: { label: string; color: string; icon: React.ReactNode; busy: boolean; onClick: () => void; 'data-tip-desc'?: string }) {
+  const { label, color, icon, busy, onClick, 'data-tip-desc': tipDesc } = props
   return (
-    <button onClick={onClick} disabled={busy} title={label}
+    <button onClick={onClick} disabled={busy} title={label} data-tip-desc={tipDesc}
       style={{
         display: 'flex', alignItems: 'center', gap: '4px',
         padding: '2px 8px', height: '20px',

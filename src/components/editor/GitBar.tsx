@@ -90,6 +90,17 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
 
   const btn = (id: string, title: string, icon: React.ReactNode, onClick: () => void, disabled = false) => (
     <button onClick={onClick} disabled={disabled || busy === id} title={title}
+      data-tip-desc={{
+        'stage file': 'stage the active file',
+        'unstage file': 'unstage the active file',
+        'diff file': 'open the diff of the active file',
+        'git blame': 'show who changed each line of the active file',
+        'git history': 'show the commit history of the active file',
+        'merge diff': 'show the diff between the current branch and the target branch',
+        'pull': 'pull the latest changes from the remote',
+        'push': 'push the local commits to the remote',
+        'fetch': 'fetch the latest changes from the remote'
+      }[title] || ''}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         width: '22px', height: '18px', padding: 0, background: 'transparent',
@@ -141,7 +152,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
           color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box'
         }}
       />
-      <button onClick={commit} disabled={!commitMsg.trim() || busy === 'commit'} title="commit"
+      <button onClick={commit} disabled={!commitMsg.trim() || busy === 'commit'} title="commit" data-tip-desc="commit the staged changes"
         style={{
           display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 10px', height: '18px',
           background: commitMsg.trim() && busy !== 'commit' ? 'var(--accent-color)' : 'var(--bg-disabled)',
@@ -154,7 +165,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
         commit
       </button>
 
-      <input value={branchB} onChange={(e) => setBranchB(e.target.value)} title="target branch for merge diff"
+      <input value={branchB} onChange={(e) => setBranchB(e.target.value)} title="target branch for merge diff" data-tip-desc="compare the branches for the merge"
         spellCheck={false}
         style={{
           width: '80px', padding: '2px 6px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',

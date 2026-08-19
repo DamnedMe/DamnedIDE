@@ -137,7 +137,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               database engine · damnedide
             </div>
           </div>
-          <button onClick={onClose} aria-label="close"
+          <button onClick={onClose} aria-label="close" title="close" data-tip-desc="close this panel or dialog"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '28px', height: '28px', background: 'var(--bg-card)',
@@ -188,7 +188,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                 />
                 <button
                   onClick={() => setShowHistory(v => !v)}
-                  title="recent connections"
+                  title="recent connections" data-tip-desc="recently used SQL connections"
                   style={iconBtnStyle}
                 >
                   <History size={13} />
@@ -323,7 +323,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                       .finally(() => setLoadingDbs(false))
                   }}
                   disabled={loadingDbs}
-                  title="load databases"
+                  title="load databases" data-tip-desc="load the databases of this connection"
                   style={{ ...iconBtnStyle, width: 'auto', padding: '0 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', gap: '4px' }}
                 >
                   {loadingDbs ? <Loader2 size={12} style={{ animation: 'spin 0.9s linear infinite' }} /> : <Database size={12} />}

@@ -325,10 +325,10 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
         display: 'flex', gap: '1px', padding: '2px 6px',
         borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
       }}>
-        <ToolbarBtn onClick={handleCollapseAll} title="collapse all" disabled={!!filteredTree}>
+        <ToolbarBtn onClick={handleCollapseAll} title="collapse all" data-tip-desc="collapse every folder in the tree" disabled={!!filteredTree}>
           <ChevronsUpDown size={11} />
         </ToolbarBtn>
-        <ToolbarBtn onClick={handleExpandAll} title="expand all" disabled={!!filteredTree}>
+        <ToolbarBtn onClick={handleExpandAll} title="expand all" data-tip-desc="expand every folder in the tree" disabled={!!filteredTree}>
           <ChevronsDownUp size={11} />
         </ToolbarBtn>
       </div>
@@ -423,9 +423,10 @@ function sortTree(node: TreeNode) {
   for (const child of node.children) if (child.isDirectory) sortTree(child)
 }
 
-function ToolbarBtn({ children, onClick, title, disabled }: { children: React.ReactNode; onClick: () => void; title: string; disabled?: boolean }) {
+function ToolbarBtn(props: { children: React.ReactNode; onClick: () => void; title: string; disabled?: boolean; 'data-tip-desc'?: string }) {
+  const { children, onClick, title, disabled, 'data-tip-desc': tipDesc } = props
   return (
-    <button onClick={onClick} title={title} disabled={disabled} style={{
+    <button onClick={onClick} title={title} disabled={disabled} data-tip-desc={tipDesc} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       width: '22px', height: '20px', background: 'transparent', border: 'none',
       color: disabled ? 'var(--text-disabled)' : 'var(--text-muted)',

@@ -101,6 +101,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
           {query && (
             <button
               onClick={() => handleChange('')}
+              title="clear search" data-tip-desc="clear the search query"
               style={{
                 display: 'flex', background: 'none', border: 'none',
                 color: 'var(--text-muted)', cursor: 'pointer', padding: 0
@@ -140,7 +141,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
               <span style={{
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 direction: 'rtl', textAlign: 'left', flex: 1
-              }} title={file}>
+              }} title={file} data-tip-desc="open this file at the matched position">
                 {file.split(/[/\\]/).slice(-3).join('/')}
               </span>
               <span style={{ color: 'var(--text-muted)', fontWeight: 400, flexShrink: 0 }}>

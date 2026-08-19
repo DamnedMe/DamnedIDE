@@ -206,7 +206,7 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
               </span>
             )}
           </div>
-          <button onClick={onClose} title="close"
+          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '26px', height: '26px', background: 'transparent',
@@ -226,12 +226,12 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
           flexShrink: 0, flexWrap: 'wrap'
         }}>
           <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>all conflicts:</span>
-          <ToolBtn label="take ours" title="resolve every conflict with the current side (HEAD)" onClick={() => applyToAll('ours')} color="var(--accent-color)" />
-          <ToolBtn label="take theirs" title="resolve every conflict with the incoming side" onClick={() => applyToAll('theirs')} color="var(--warning-color)" />
-          <ToolBtn label="take both" title="keep both sides in order (current then incoming)" onClick={() => applyToAll('both')} color="var(--success-color)" />
+          <ToolBtn label="take ours" title="resolve every conflict with the current side (HEAD)" data-tip-desc="accept the current (HEAD) version for every conflict" onClick={() => applyToAll('ours')} color="var(--accent-color)" />
+          <ToolBtn label="take theirs" title="resolve every conflict with the incoming side" data-tip-desc="accept the incoming version for every conflict" onClick={() => applyToAll('theirs')} color="var(--warning-color)" />
+          <ToolBtn label="take both" title="keep both sides in order (current then incoming)" data-tip-desc="keep both versions in order for every conflict" onClick={() => applyToAll('both')} color="var(--success-color)" />
           <div style={{ flex: 1 }} />
           <button onClick={handleSave} disabled={saving || loading}
-            title="write the result and mark the conflict resolved"
+            title="write the result and mark the conflict resolved" data-tip-desc="save the resolved file and stage it"
             style={{
               display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 14px', height: '26px',
               background: conflicts.length > 0 ? 'var(--accent-color)' : 'var(--success-color)',
@@ -270,11 +270,11 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
             background: 'var(--error-bg)', borderBottom: '1px solid var(--error-color)',
             flexShrink: 0, flexWrap: 'wrap'
           }}>
-            <button onClick={() => revealConflict(Math.max(0, active - 1))} title="previous conflict"
+            <button onClick={() => revealConflict(Math.max(0, active - 1))} title="previous conflict" data-tip-desc="go to the previous conflict"
               style={navBtnStyle}>
               <ChevronUp size={11} />
             </button>
-            <button onClick={() => revealConflict(Math.min(conflicts.length - 1, active + 1))} title="next conflict"
+            <button onClick={() => revealConflict(Math.min(conflicts.length - 1, active + 1))} title="next conflict" data-tip-desc="go to the next conflict"
               style={navBtnStyle}>
               <ChevronDown size={11} />
             </button>
@@ -287,22 +287,22 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
                 cursor: 'pointer'
               }}
                 onClick={() => revealConflict(c.index)}
-                title={`conflict #${c.index + 1} — lines ${c.startLine}-${c.endLine}`}>
+                title={`conflict #${c.index + 1} — lines ${c.startLine}-${c.endLine}`} data-tip-desc="go to this conflict block">
                 <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--error-color)', fontWeight: 700 }}>
                   #{c.index + 1}
                 </span>
                 <button onClick={(e) => { e.stopPropagation(); applyToBlock(c.index, 'ours') }}
-                  title="use the current side for this conflict"
+                  title="use the current side for this conflict" data-tip-desc="accept the current (HEAD) version for this conflict"
                   style={{ ...chipBtn, color: 'var(--accent-color)', border: '1px solid var(--accent-color)' }}>
                   O
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); applyToBlock(c.index, 'theirs') }}
-                  title="use the incoming side for this conflict"
+                  title="use the incoming side for this conflict" data-tip-desc="accept the incoming version for this conflict"
                   style={{ ...chipBtn, color: 'var(--warning-color)', border: '1px solid var(--warning-color)' }}>
                   T
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); applyToBlock(c.index, 'both') }}
-                  title="keep both sides for this conflict"
+                  title="keep both sides for this conflict" data-tip-desc="keep both versions in order for this conflict"
                   style={{ ...chipBtn, color: 'var(--success-color)', border: '1px solid var(--success-color)' }}>
                   B
                 </button>
@@ -364,14 +364,10 @@ const chipBtn: React.CSSProperties = {
   borderRadius: '3px', cursor: 'pointer', fontSize: '9px', fontWeight: 700
 }
 
-function ToolBtn({ label, title, onClick, color }: {
-  label: string
-  title: string
-  onClick: () => void
-  color: string
-}) {
+function ToolBtn(props: { label: string; title: string; onClick: () => void; color: string; 'data-tip-desc'?: string }) {
+  const { label, title, onClick, color, 'data-tip-desc': tipDesc } = props
   return (
-    <button onClick={onClick} title={title} style={{
+    <button onClick={onClick} title={title} data-tip-desc={tipDesc} style={{
       display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', height: '22px',
       background: 'var(--bg-card)', border: `1px solid ${color}`,
       borderRadius: 'var(--radius-sm)', color, cursor: 'pointer',

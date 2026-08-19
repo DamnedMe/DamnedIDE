@@ -521,7 +521,7 @@ export function DatabaseExplorer({
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
             onClick={toggleCompact}
-            title={compact ? 'show all database objects' : 'show only tables, diagram and programmability'}
+            title={compact ? 'show all database objects' : 'show only tables, diagram and programmability'} data-tip-desc="toggle the compact explorer mode"
             aria-label="toggle essentials mode"
             data-testid="sql-essentials-toggle"
             aria-pressed={compact}
@@ -538,7 +538,7 @@ export function DatabaseExplorer({
             <ListFilter size={11} />
             <span>{compact ? 'essentials' : 'all'}</span>
           </button>
-          <button className="sql-icon-button sql-icon-button--small" onClick={refreshAll} title="refresh all connected databases"
+          <button className="sql-icon-button sql-icon-button--small" onClick={refreshAll} title="refresh all connected databases" data-tip-desc="refresh the metadata of every connected database"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'transparent', border: 'none',
@@ -573,7 +573,7 @@ export function DatabaseExplorer({
           }}
         />
         {search && (
-          <button aria-label="clear object explorer search" onClick={() => setSearch('')} style={{
+          <button aria-label="clear object explorer search" title="clear search" data-tip-desc="clear the object explorer search" onClick={() => setSearch('')} style={{
             position: 'absolute', right: '13px', display: 'grid', placeItems: 'center', width: '20px', height: '20px',
             padding: 0, border: 0, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer'
           }}><X size={11} /></button>
@@ -678,7 +678,7 @@ export function DatabaseExplorer({
                   className={`sql-status-light sql-status-light--explorer ${conn.isConnected ? 'is-online' : 'is-offline'}`}
                   role="img"
                   aria-label={`${conn.label} ${conn.isConnected ? 'online' : 'offline'}`}
-                  title={conn.isConnected ? 'Connected' : 'Disconnected'}
+                  title={conn.isConnected ? 'Connected' : 'Disconnected'} data-tip-desc="connection status of this server"
                 />
               </div>
 
@@ -738,7 +738,7 @@ export function DatabaseExplorer({
                                 e.preventDefault(); e.stopPropagation()
                                 setMenu({ x: e.clientX, y: e.clientY, kind: 'database', conn, database: db })
                               }}
-                              title="open the database diagram"
+                              title="open the database diagram" data-tip-desc="open the entity relationship diagram"
                               style={{ ...rowStyle, ...indent(2), color: 'var(--text-secondary)' }}
                             >
                               {icon(<Workflow size={11} />, 'var(--accent-color)')}

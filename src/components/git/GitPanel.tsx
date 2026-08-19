@@ -95,7 +95,7 @@ export function GitPanel({ repoPath }: GitPanelProps) {
   return (
     <PanelContainer
       actions={
-        <ActionBtn onClick={loadStatus} title="refresh">
+        <ActionBtn onClick={loadStatus} title="refresh" data-tip-desc="reload the current data from the repository">
           <RefreshCw size={13} />
         </ActionBtn>
       }
@@ -133,15 +133,13 @@ export function GitPanel({ repoPath }: GitPanelProps) {
   )
 }
 
-function ActionBtn({ children, onClick, title }: {
-  children: React.ReactNode
-  onClick: () => void
-  title: string
-}) {
+function ActionBtn(props: { children: React.ReactNode; onClick: () => void; title: string; 'data-tip-desc'?: string }) {
+  const { children, onClick, title, 'data-tip-desc': tipDesc } = props
   return (
     <button
       onClick={onClick}
       title={title}
+      data-tip-desc={tipDesc}
       style={{
         display: 'flex',
         alignItems: 'center',

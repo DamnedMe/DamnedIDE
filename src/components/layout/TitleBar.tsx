@@ -22,9 +22,8 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
       {onSettings && (
         <button
           onClick={onSettings}
-          title="settings"
+          title="settings" data-tip-desc="open the IDE settings panel"
           data-tip="settings"
-          data-tip-desc="open the IDE settings panel"
           style={{
             ...noDragRegion, display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '22px', height: '22px', border: 'none', borderRadius: 'var(--radius-sm)',
@@ -48,13 +47,13 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
         {title}
       </span>
       <div style={{ display: 'flex', marginLeft: 'auto', ...noDragRegion }}>
-        <WinBtn onClick={() => window.electronAPI.window.minimize()} isClose={false}>
+        <WinBtn onClick={() => window.electronAPI.window.minimize()} title="minimize" tipDesc="minimize the window to the taskbar">
           <Minus size={13} strokeWidth={1.5} />
         </WinBtn>
-        <WinBtn onClick={() => window.electronAPI.window.maximize()} isClose={false}>
+        <WinBtn onClick={() => window.electronAPI.window.maximize()} title="maximize" tipDesc="maximize or restore the window size">
           <Square size={11} strokeWidth={1.5} />
         </WinBtn>
-        <WinBtn onClick={() => window.electronAPI.window.close()} isClose>
+        <WinBtn onClick={() => window.electronAPI.window.close()} isClose title="close" tipDesc="close the window and quit the app">
           <X size={13} strokeWidth={1.5} />
         </WinBtn>
       </div>
@@ -62,13 +61,15 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
   )
 }
 
-function WinBtn({ children, onClick, isClose }: {
+function WinBtn({ children, onClick, isClose, title, tipDesc }: {
   children: React.ReactNode
   onClick: () => void
-  isClose: boolean
+  isClose?: boolean
+  title?: string
+  tipDesc?: string
 }) {
   return (
-    <button onClick={onClick} style={{
+    <button onClick={onClick} title={title} data-tip-desc={tipDesc} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       width: '44px', height: '32px', border: 'none',
       background: 'transparent', color: 'var(--text-muted)',

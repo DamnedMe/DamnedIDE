@@ -474,8 +474,10 @@ export const useEditorStore = create<EditorState>((set) => ({
 interface TerminalState {
   open: boolean
   height: number
+  mode: 'terminal' | 'ai'
   setOpen: (open: boolean) => void
   setHeight: (h: number) => void
+  setMode: (m: 'terminal' | 'ai') => void
 }
 
 function defaultTerminalHeight(): number {
@@ -489,8 +491,150 @@ function defaultTerminalHeight(): number {
 export const useTerminalStore = create<TerminalState>((set) => ({
   open: false,
   height: defaultTerminalHeight(),
+  mode: 'terminal',
   setOpen: (open) => set({ open }),
-  setHeight: (height) => set({ height })
+  setHeight: (height) => set({ height }),
+  setMode: (mode) => set({ mode })
+}))
+
+// ─── MCP servers (config + connection state, persisted) ───────────────────────
+export interface McpServerConfig {
+  name: string
+  command: string
+  args: string[]
+  env?: Record<string, string>
+}
+
+export const MCP_PRESETS: { label: string; config: McpServerConfig }[] = [
+  { label: 'Claude Code', config: { name: 'claude-code', command: 'claude', args: ['mcp', 'serve'] } },
+  { label: 'Claude Subscription', config: { name: 'claude-subscription', command: 'claude', args: ['mcp', 'serve'] } },
+  { label: 'opencode', config: { name: 'opencode', command: 'opencode', args: ['mcp', 'start'] } },
+  { label: 'Cursor', config: { name: 'cursor', command: 'cursor', args: ['mcp', 'serve'] } },
+  { label: 'Codex', config: { name: 'codex', command: 'codex', args: ['mcp', 'server'] } }
+]
+
+const MCP_CUSTOM_KEY = 'damnedide_mcp_servers'
+const MCP_CONNECTED_KEY = 'damnedide_mcp_connected'
+const MCP_CHATSEL_KEY = 'damnedide_mcp_chatsel'
+
+export interface McpChatSelection {
+  mode?: string
+  model?: string
+  effort?: string
+}
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw) return JSON.parse(raw) as T
+  } catch { /* ignore */ }
+  return fallback
+}
+function saveJson(key: string, v: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(v)) } catch { /* ignore */ }
+}
+
+interface McpState {
+  custom: McpServerConfig[]
+  connected: Record<string, boolean>
+  status: Record<string, 'idle' | 'connecting' | 'connected' | 'error'>
+  errors: Record<string, string>
+  tools: Record<string, McpTool[]>
+  addServer: (c: McpServerConfig) => void
+  removeServer: (name: string) => void
+  setConnected: (name: string, v: boolean) => void
+  setStatus: (name: string, s: 'idle' | 'connecting' | 'connected' | 'error') => void
+  setError: (name: string, e?: string) => void
+  setTools: (name: string, tools: McpTool[]) => void
+  chatSel: Record<string, McpChatSelection>
+  setChatSel: (name: string, sel: McpChatSelection) => void
+}
+
+export const useMcpStore = create<McpState>((set) => ({
+  custom: loadJson<McpServerConfig[]>(MCP_CUSTOM_KEY, []),
+  connected: loadJson<Record<string, boolean>>(MCP_CONNECTED_KEY, {}),
+  status: {},
+  errors: {},
+  tools: {},
+  chatSel: loadJson<Record<string, McpChatSelection>>(MCP_CHATSEL_KEY, {}),
+  addServer: (c) => set((s) => {
+    const custom = [...s.custom, c]
+    saveJson(MCP_CUSTOM_KEY, custom)
+    return { custom }
+  }),
+  removeServer: (name) => set((s) => {
+    const custom = s.custom.filter(c => c.name !== name)
+    saveJson(MCP_CUSTOM_KEY, custom)
+    const connected = { ...s.connected }
+    delete connected[name]
+    saveJson(MCP_CONNECTED_KEY, connected)
+    return { custom, connected }
+  }),
+  setConnected: (name, v) => set((s) => {
+    const connected = { ...s.connected, [name]: v }
+    saveJson(MCP_CONNECTED_KEY, connected)
+    return { connected }
+  }),
+  setStatus: (name, status) => set((s) => ({ status: { ...s.status, [name]: status } })),
+  setError: (name, e) => set((s) => {
+    const errors = { ...s.errors }
+    if (e) errors[name] = e
+    else delete errors[name]
+    return { errors }
+  }),
+  setTools: (name, tools) => set((s) => ({ tools: { ...s.tools, [name]: tools } })),
+  setChatSel: (name, sel) => set((s) => {
+    const chatSel = { ...s.chatSel, [name]: sel }
+    saveJson(MCP_CHATSEL_KEY, chatSel)
+    return { chatSel }
+  })
+}))
+
+// ─── AI chat: IDE-level generic rules (any agent) + per-worktree conversations ─
+export interface AiChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+const AI_RULES_KEY = 'damnedide_ai_rules'
+const AI_CHATS_KEY = 'damnedide_ai_chats'
+
+// {worktree} is replaced at send time with the currently selected worktree path.
+const DEFAULT_AI_RULES = ["L'area di lavoro da considerare è il worktree: {worktree}"]
+
+interface AiChatState {
+  rules: string[]
+  chats: Record<string, AiChatMessage[]>
+  addRule: (r: string) => void
+  removeRule: (index: number) => void
+  setMessages: (key: string, msgs: AiChatMessage[]) => void
+  clearChat: (key: string) => void
+}
+
+export const useAiChatStore = create<AiChatState>((set) => ({
+  rules: loadJson<string[]>(AI_RULES_KEY, DEFAULT_AI_RULES),
+  chats: loadJson<Record<string, AiChatMessage[]>>(AI_CHATS_KEY, {}),
+  addRule: (r) => set((s) => {
+    const rules = [...s.rules, r]
+    saveJson(AI_RULES_KEY, rules)
+    return { rules }
+  }),
+  removeRule: (index) => set((s) => {
+    const rules = s.rules.filter((_, i) => i !== index)
+    saveJson(AI_RULES_KEY, rules)
+    return { rules }
+  }),
+  setMessages: (key, msgs) => set((s) => {
+    const chats = { ...s.chats, [key]: msgs }
+    saveJson(AI_CHATS_KEY, chats)
+    return { chats }
+  }),
+  clearChat: (key) => set((s) => {
+    const chats = { ...s.chats }
+    delete chats[key]
+    saveJson(AI_CHATS_KEY, chats)
+    return { chats }
+  })
 }))
 
 const RECENT_REPOS_KEY = 'damnedide_recent_repos'

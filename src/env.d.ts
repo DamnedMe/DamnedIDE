@@ -1,7 +1,21 @@
 /// <reference types="vite/client" />
 
+interface McpTool {
+  name: string
+  description: string
+  inputSchema?: unknown
+}
+
 interface Window {
   electronAPI: {
+    mcp: {
+      connect: (config: { name: string; command: string; args: string[]; env?: Record<string, string> }) => Promise<{ ok: boolean; error?: string; tools: McpTool[] }>
+      disconnect: (name: string) => Promise<void>
+      listTools: (name: string) => Promise<McpTool[]>
+      callTool: (name: string, tool: string, args: Record<string, unknown>) => Promise<string>
+      onTools: (cb: (payload: { name: string; tools: McpTool[] }) => void) => () => void
+      onLog: (cb: (payload: { name: string; message: string }) => void) => () => void
+    }
     git: {
       status: (repoPath: string) => Promise<import('./types/git').GitStatus>
       porcelain: (repoPath: string) => Promise<{ staged: { path: string; changeType: string }[]; unstaged: { path: string; changeType: string }[]; unmerged: { path: string; changeType: string }[] }>
@@ -16,9 +30,11 @@ interface Window {
       showFile: (repoPath: string, filePath: string) => Promise<string>
       showRef: (repoPath: string, filePath: string, ref: string) => Promise<string>
       stageAll: (repoPath: string) => Promise<void>
+      transferChanges: (sourcePath: string, targetPath: string, opts: { copy: boolean; stagedOnly: boolean }) => Promise<{ ok: boolean; message: string }>
       pushWithUpstream: (repoPath: string) => Promise<void>
       merge: (repoPath: string, branch: string) => Promise<{ ok: boolean; message: string; conflicts: string[] }>
       currentBranch: (repoPath: string) => Promise<string>
+      gitCommonDir: (repoPath: string) => Promise<string>
       blame: (repoPath: string, filePath: string) => Promise<{ hash: string; author: string; date: string; line: string }[]>
       fileLog: (repoPath: string, filePath: string, count?: number) => Promise<import('./types/git').CommitInfo[]>
       diffFile: (repoPath: string, filePath: string) => Promise<string>
@@ -114,6 +130,7 @@ interface Window {
     shell: {
       exec: (command: string, cwd: string) => Promise<string>
       openFolder: (path: string) => Promise<void>
+      openExternal: (url: string) => Promise<void>
     }
     clipboard: {
       write: (text: string) => void

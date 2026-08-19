@@ -1,18 +1,17 @@
-name: Build platform installers
+name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
   workflow_dispatch:
     inputs:
-      tag:
-        description: Release tag to update
-        required: true
-        default: v0.0.1
+      release_tag:
+        description: Existing tag to rebuild, or leave empty to create a patch release
+        required: false
         type: string
-      ref:
-        description: Git ref to build
+      source_ref:
+        description: Ref to build for a manual release
         required: true
         default: main
         type: string
@@ -20,18 +19,63 @@ on:
 permissions:
   contents: write
 
-env:
-  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-  SOURCE_REF: ${{ inputs.ref || github.ref }}
-
 jobs:
-  build-linux:
+  prepare-release:
+    if: "${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore: release ') }}"
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      source_ref: ${{ steps.release.outputs.source_ref }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.SOURCE_REF }}
+          ref: ${{ inputs.source_ref || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Prepare release tag
+        id: release
+        env:
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          SOURCE_REF_INPUT: ${{ inputs.source_ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$RELEASE_TAG_INPUT" ]; then
+            echo "tag=$RELEASE_TAG_INPUT" >> "$GITHUB_OUTPUT"
+            echo "source_ref=${SOURCE_REF_INPUT:-main}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          npm version patch --no-git-tag-version
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json package-lock.json
+          git commit -m "chore: release $tag"
+          git push origin HEAD:main
+          git tag "$tag"
+          git push origin "$tag"
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$tag" >> "$GITHUB_OUTPUT"
+
+  build-linux:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.source_ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -50,13 +94,13 @@ jobs:
           npx electron-builder --config electron-builder.yml --linux AppImage deb --publish always
 
   build-macos:
-    needs: build-linux
+    needs: [prepare-release, build-linux]
     runs-on: macos-latest
     steps:
-      - name: Checkout source
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.SOURCE_REF }}
+          ref: ${{ needs.prepare-release.outputs.source_ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -67,22 +111,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and publish macOS package
+      - name: Build and publish macOS packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npx electron-builder --config electron-builder.yml --mac dmg --publish always
+          npx electron-builder --config electron-builder.yml --mac dmg zip --publish always
 
   build-windows:
-    if: github.event_name == 'push'
-    needs: build-macos
+    needs: [prepare-release, build-macos]
     runs-on: windows-latest
     steps:
-      - name: Checkout source
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.SOURCE_REF }}
+          ref: ${{ needs.prepare-release.outputs.source_ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -103,10 +146,12 @@ jobs:
   publish-release:
     if: >-
       always() &&
+      needs.prepare-release.result == 'success' &&
       needs.build-linux.result == 'success' &&
       needs.build-macos.result == 'success' &&
-      (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped')
+      needs.build-windows.result == 'success'
     needs:
+      - prepare-release
       - build-linux
       - build-macos
       - build-windows
@@ -115,4 +160,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=false
+        run: gh release edit "${{ needs.prepare-release.outputs.tag }}" --draft=false --prerelease=false

@@ -35,4 +35,5 @@ linux:
 mac:
   target:
     - dmg
+    - zip
   icon: resources/icon.png

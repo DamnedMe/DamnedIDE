@@ -7,7 +7,6 @@ files:
   - out/**/*
   - resources/icon.ico
   - resources/icon.png
-  - "!node_modules/**/*"
 publish:
   provider: github
   owner: DamnedMe
@@ -20,6 +19,9 @@ asarUnpack:
   - "**/node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*"
   - "**/*.node"
   - "**/*.dll"
+# node-pty has no prebuilt for electron ABI 119 and source builds fail on Windows;
+# dev and packaged run the same Electron 28, so reuse the compiled binaries as-is
+npmRebuild: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

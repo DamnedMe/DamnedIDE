@@ -1,4 +1,4 @@
-import { spawn, exec, ChildProcess } from 'child_process'
+import { spawn, execFile, ChildProcess } from 'child_process'
 import { BrowserWindow } from 'electron'
 
 interface RunningProcess {
@@ -9,6 +9,18 @@ interface RunningProcess {
 
 const processes = new Map<string, RunningProcess>()
 let nextId = 1
+
+/**
+ * Force-kills a process and its whole descendant tree on Windows. `taskkill /T`
+ * terminates the root AND every child in one pass, which is what keeps
+ * `dotnet run` (and the app exe it launches) from surviving a stop.
+ */
+export function killProcessTree(rootPid: number): void {
+  if (!rootPid) return
+  try {
+    execFile('taskkill', ['/PID', String(rootPid), '/T', '/F'], { windowsHide: true }, () => { /* best effort */ })
+  } catch { /* ignore */ }
+}
 
 function sendToWindow(targetWindow: BrowserWindow | null, channel: string, ...args: unknown[]) {
   const targets = targetWindow ? [targetWindow] : BrowserWindow.getAllWindows()
@@ -48,14 +60,12 @@ export function stopProcess(id: string): void {
   const session = processes.get(id)
   if (!session) return
   processes.delete(id)
-  try {
-    if (process.platform === 'win32' && session.proc.pid) {
-      // Kill the whole process tree (dotnet run spawns the app as a child)
-      exec(`taskkill /PID ${session.proc.pid} /T /F`, () => {})
-    } else {
-      session.proc.kill('SIGTERM')
-    }
-  } catch { /* ignore */ }
+  if (process.platform === 'win32' && session.proc.pid) {
+    // Kill the whole process tree (dotnet run spawns the app as a child)
+    killProcessTree(session.proc.pid)
+  } else if (session.proc.pid) {
+    try { session.proc.kill('SIGTERM') } catch { /* ignore */ }
+  }
 }
 
 export function stopAllProcesses(): void {

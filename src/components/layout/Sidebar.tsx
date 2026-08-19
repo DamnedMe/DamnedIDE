@@ -39,7 +39,7 @@ export function Sidebar({ tabs, activeTab, onTabChange, onOpenFolder }: SidebarP
       }}>
         <button
           onClick={() => setCollapsed(false)}
-          title="expand sidebar"
+          title="expand sidebar" data-tip-desc="expand the sidebar"
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '20px', height: '20px', background: 'none', border: 'none',
@@ -68,7 +68,7 @@ export function Sidebar({ tabs, activeTab, onTabChange, onOpenFolder }: SidebarP
     }}>
       <button
         onClick={() => setCollapsed(true)}
-        title="collapse sidebar"
+        title="collapse sidebar" data-tip-desc="collapse the sidebar to icons only"
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           width: '36px', height: '24px', marginBottom: '6px',
@@ -121,7 +121,7 @@ export function Sidebar({ tabs, activeTab, onTabChange, onOpenFolder }: SidebarP
           <div style={{ width: '28px', height: '1px', background: 'var(--border-subtle)', margin: '6px 0' }} />
           <button
             onClick={onOpenFolder}
-            title="change main folder"
+            title="change main folder" data-tip-desc="open a different repository folder"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '36px', height: '36px', border: 'none',

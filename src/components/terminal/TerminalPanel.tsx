@@ -101,14 +101,10 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     term.open(termRef.current)
     fit.fit()
 
-    // The shell runs non-interactive (child_process pipe, no PTY): it does not echo
-    // input nor support line editing. We implement a minimal local line editor via
-    // xterm's onData: characters are echoed locally, Backspace erases, and the full
-    // line is sent to the shell on Enter.
+    // Real PTY (ConPTY): the shell echoes, handles backspace/arrows and renders TUI
+    // apps natively, so input is passed straight through to the pty and output is
+    // written straight from the pty.
     const cwd = repoPath || ''
-    const prompt = cwd ? `${cwd}> ` : '> '
-    const write = (s: string, d: string) => window.electronAPI.terminal.write(s, d)
-    let inputBuffer = ''
 
     xtermRef.current = term
     fitRef.current = fit
@@ -140,40 +136,12 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
       try { term.write(pendingBuffer) } catch { /* disposed */ }
       pendingBuffer = ''
     }
-    term.write(prompt)
 
-    // Local line editor (echo + backspace) driven by xterm's own input event.
+    // xterm's native input event → forward the bytes to the pty (the pty echoes)
     term.onData((data) => {
-      const sess = sessionRef.current
-      if (!sess) return
-      // Backspace (DEL or BS)
-      if (data === '\x7f' || data === '\x08') {
-        if (inputBuffer.length > 0) {
-          inputBuffer = inputBuffer.slice(0, -1)
-          term.write('\b \b')
-        }
-        return
+      if (sessionRef.current) {
+        window.electronAPI.terminal.write(sessionRef.current, data)
       }
-      // Enter
-      if (data === '\r' || data === '\n') {
-        const line = inputBuffer
-        inputBuffer = ''
-        term.write('\r\n')
-        write(sess, line + '\r\n')
-        return
-      }
-      // Ctrl+C
-      if (data === '\x03') {
-        inputBuffer = ''
-        term.write('^C\r\n' + prompt)
-        write(sess, '\x03')
-        return
-      }
-      // escape sequences (arrows, etc.) — ignored (no history/line editing)
-      if (data.startsWith('\x1b')) return
-      // printable / paste: echo locally and buffer
-      inputBuffer += data
-      term.write(data)
     })
 
     // focus so typing works immediately, like VS
@@ -278,7 +246,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
                 >
                   <Monitor size={9} />
                   {t.title}
-                  <button onClick={(e) => { e.stopPropagation(); removeTab(t.id) }}
+                  <button onClick={(e) => { e.stopPropagation(); removeTab(t.id) }} title="close tab" data-tip-desc="close this terminal session"
                     style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>
                     <X size={9} />
                   </button>
@@ -291,7 +259,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowTypeMenu(!showTypeMenu)}
-                title="new terminal"
+                title="new terminal" data-tip-desc="open a new terminal tab and pick the shell"
                 style={{
                   display: 'flex', alignItems: 'center', gap: '2px',
                   padding: '3px 6px', background: 'var(--bg-card)',
@@ -328,7 +296,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
             </div>
             <button
               onClick={() => window.electronAPI.window.openDetached('terminal')}
-              title="open in new window"
+              title="open in new window" data-tip-desc="open this panel in a separate window"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '24px', height: '22px', background: 'none',

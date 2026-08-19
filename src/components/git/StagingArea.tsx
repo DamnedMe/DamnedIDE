@@ -13,7 +13,7 @@ export function StagingArea({ modifiedFiles, stagedFiles, onStage, onUnstage, on
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <FileSection
-        title={`modified (${modifiedFiles.length})`}
+        title={`modified (${modifiedFiles.length})`} data-tip-desc="files modified but not staged"
         files={modifiedFiles}
         actionIcon={<Plus size={12} />}
         onAction={onStage}
@@ -21,7 +21,7 @@ export function StagingArea({ modifiedFiles, stagedFiles, onStage, onUnstage, on
         accentBg="var(--warning-bg)"
       />
       <FileSection
-        title={`staged (${stagedFiles.length})`}
+        title={`staged (${stagedFiles.length})`} data-tip-desc="files staged for the next commit"
         files={stagedFiles}
         actionIcon={<Minus size={12} />}
         onAction={onUnstage}

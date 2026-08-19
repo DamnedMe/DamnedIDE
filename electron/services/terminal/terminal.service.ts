@@ -1,11 +1,13 @@
-import { spawn, ChildProcess, execSync } from 'child_process'
+import { spawn as ptySpawn, IPty } from '@homebridge/node-pty-prebuilt-multiarch'
 import { BrowserWindow } from 'electron'
+import { execSync } from 'child_process'
+import { killProcessTree } from '../process/process.service'
 
 export type TerminalType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
 
 interface TerminalSession {
   id: string
-  process: ChildProcess
+  pty: IPty
   windowId: number | null
 }
 
@@ -38,24 +40,15 @@ function shellFor(type: TerminalType): { executable: string; args: string[] } {
     case 'npm':
       return { executable: process.env.ComSpec || 'cmd.exe', args: [] }
     default:
-      // /Q disables cmd's own command echo (the renderer echoes the typed line locally)
-      return { executable: process.env.ComSpec || 'cmd.exe', args: ['/Q'] }
+      return { executable: process.env.ComSpec || 'cmd.exe', args: [] }
   }
 }
 
+// Real pseudo-terminal (ConPTY on Windows) via node-pty: interactive shells and
+// TUI programs (opencode, vim, …) work natively, with echo, backspace and colors.
 export function createTerminal(cwd: string, type: TerminalType, targetWindow: BrowserWindow | null): string {
   const id = `term_${nextId++}`
   const { executable, args } = shellFor(type)
-
-  const proc = spawn(executable, args, {
-    cwd: cwd || process.cwd(),
-    env: { ...process.env, TERM: 'xterm-256color' },
-    stdio: 'pipe',
-    windowsHide: true
-  })
-
-  const session: TerminalSession = { id, process: proc, windowId: targetWindow?.id ?? null }
-  sessions.set(id, session)
 
   const send = (data: string) => {
     const targets = targetWindow
@@ -66,19 +59,27 @@ export function createTerminal(cwd: string, type: TerminalType, targetWindow: Br
     }
   }
 
-  proc.on('error', (err) => {
-    send(`\r\n\x1b[31m[errore avvio shell: ${err.message}]\x1b[0m\r\n`)
-    sessions.delete(id)
-  })
+  let pty: IPty
+  try {
+    pty = ptySpawn(executable, args, {
+      cwd: cwd || process.cwd(),
+      env: { ...process.env, TERM: 'xterm-256color' },
+      name: 'xterm-256color',
+      cols: 100,
+      rows: 30
+    })
+  } catch (err) {
+    send(`\r\n\x1b[31m[errore avvio shell: ${(err as Error).message}]\x1b[0m\r\n`)
+    return id
+  }
 
-  if (proc.stdout) {
-    proc.stdout.on('data', (chunk: Buffer) => send(chunk.toString()))
-  }
-  if (proc.stderr) {
-    proc.stderr.on('data', (chunk: Buffer) => send(chunk.toString()))
-  }
-  proc.on('exit', () => {
-    send('\r\n\x1b[33m[process exited]\x1b[0m\r\n')
+  const session: TerminalSession = { id, pty, windowId: targetWindow?.id ?? null }
+  sessions.set(id, session)
+
+  pty.onData((data: string) => send(data))
+
+  pty.onExit(({ exitCode }) => {
+    send(`\r\n\x1b[33m[process exited (${exitCode})]\x1b[0m\r\n`)
     sessions.delete(id)
   })
 
@@ -87,19 +88,26 @@ export function createTerminal(cwd: string, type: TerminalType, targetWindow: Br
 
 export function writeToTerminal(id: string, data: string): void {
   const session = sessions.get(id)
-  if (session && session.process.stdin && !session.process.stdin.destroyed) {
-    session.process.stdin.write(data)
+  if (session) {
+    try { session.pty.write(data) } catch { /* closed */ }
   }
 }
 
-export function resizeTerminal(_id: string, _cols: number, _rows: number): void {
-  // not supported with child_process
+export function resizeTerminal(id: string, cols: number, rows: number): void {
+  const session = sessions.get(id)
+  if (session) {
+    try { session.pty.resize(cols, rows) } catch { /* ignore */ }
+  }
 }
 
 export function destroyTerminal(id: string): void {
   const session = sessions.get(id)
   if (session) {
-    try { session.process.kill() } catch { /* ignore */ }
+    try { session.pty.kill() } catch { /* ignore */ }
+    // pty.kill() terminates the shell only: `dotnet run` launched inside the
+    // terminal (and the app exe it spawns) would survive as orphans and keep
+    // their ports bound. Kill the whole shell tree too.
+    try { killProcessTree(session.pty.pid) } catch { /* ignore */ }
     sessions.delete(id)
   }
 }

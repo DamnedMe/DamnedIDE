@@ -152,7 +152,7 @@ export function AdoPanel() {
           paddingTop: '6px', gap: '4px'
         }}>
           <button onClick={() => setLeftCollapsed(!leftCollapsed)}
-            title={leftCollapsed ? 'show left panel' : 'collapse left panel'}
+            title={leftCollapsed ? 'show left panel' : 'collapse left panel'} data-tip-desc="collapse or expand the left panel"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'none', border: 'none',
@@ -162,7 +162,7 @@ export function AdoPanel() {
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
             {leftCollapsed ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
           </button>
-          <button onClick={() => setShowCreatePr(true)} title="new pull request"
+          <button onClick={() => setShowCreatePr(true)} title="new pull request" data-tip-desc="create a pull request for this branch"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'none', border: 'none',

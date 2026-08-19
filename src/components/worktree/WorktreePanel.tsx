@@ -120,8 +120,8 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     if (repoPath) loadWorktrees()
   }, [repoPath])
 
-  const stripBtn = (onClick: () => void, title: string, children: React.ReactNode) => (
-    <button onClick={onClick} title={title}
+  const stripBtn = (onClick: () => void, title: string, children: React.ReactNode, tipDesc?: string) => (
+    <button onClick={onClick} title={title} data-tip-desc={tipDesc}
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0, borderRadius: 'var(--radius-sm)' }}
       onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
       onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
@@ -138,8 +138,8 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     }}>
       {/* top buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)', paddingBottom: '4px', marginBottom: '2px', width: '100%' }}>
-        {stripBtn(() => setListCollapsed(!listCollapsed), listCollapsed ? 'show panel' : 'collapse panel', listCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />)}
-        {stripBtn(loadWorktrees, 'refresh', <RefreshCw size={11} />)}
+        {stripBtn(() => setListCollapsed(!listCollapsed), listCollapsed ? 'show panel' : 'collapse panel', listCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />, 'collapse or expand the list panel')}
+        {stripBtn(loadWorktrees, 'refresh', <RefreshCw size={11} />, 'reload the worktree list')}
       </div>
       {/* worktree tabs */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', overflow: 'auto', padding: '0 2px', width: '100%' }}>
@@ -152,7 +152,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
             <div key={entry.path}
               onClick={() => selectWorktree(isSelected ? null : entry.path)}
               onContextMenu={(e) => { e.preventDefault(); setStripMenu({ x: e.clientX, y: e.clientY, entry }) }}
-              title={entry.branch || entry.head.substring(0, 7)}
+              title={entry.branch || entry.head.substring(0, 7)} data-tip-desc="select this worktree"
               style={{
                 width: '30px', height: '22px', borderRadius: '4px', flexShrink: 0,
                 background: isSelected ? 'var(--bg-active)' : 'transparent',
@@ -174,14 +174,14 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
             </div>
           )
         })}
-        {stripBtn(() => setShowNewWorktree(true), 'new worktree', <Plus size={13} />)}
+        {stripBtn(() => setShowNewWorktree(true), 'new worktree', <Plus size={13} />, 'create a feature or bugfix worktree')}
       </div>
       {/* bottom: change main folder */}
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--border-subtle)', paddingTop: '4px', width: '100%', display: 'flex', justifyContent: 'center' }}>
         {stripBtn(async () => {
           const p = await window.electronAPI.dialog.openFolder()
           if (p) onRepoSelected(p)
-        }, 'change main folder', <FolderOpen size={13} />)}
+        }, 'change main folder', <FolderOpen size={13} />, 'open a different repository folder as the main root')}
       </div>
     </div>
   )
@@ -234,7 +234,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                     </div>
                     <button
                       onClick={() => setWorktreesCollapsed(!worktreesCollapsed)}
-                      title={worktreesCollapsed ? 'expand' : 'collapse'}
+                      title={worktreesCollapsed ? 'expand' : 'collapse'} data-tip-desc="expand or collapse the worktrees section"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
                       onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -264,7 +264,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                     </div>
                     <button
                       onClick={() => setFilesCollapsed(!filesCollapsed)}
-                      title={filesCollapsed ? 'expand' : 'collapse'}
+                      title={filesCollapsed ? 'expand' : 'collapse'} data-tip-desc="expand or collapse the files section"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
                       onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -286,7 +286,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                 </div>
                 <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                   <div style={{ flex: 1, minHeight: 0 }}>
-                    <WorktreeChanges worktreePath={selectedWorktree} checkMarks={checkMarks[selectedWorktree] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedWorktree, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef} />
+                    <WorktreeChanges worktreePath={selectedWorktree} repoPath={repoPath} checkMarks={checkMarks[selectedWorktree] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedWorktree, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef} />
                   </div>
                   <TerminalDock repoPath={selectedWorktree} />
                 </div>

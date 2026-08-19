@@ -25,7 +25,7 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
             <History size={15} style={{ color: 'var(--accent-color)' }} />
             open repository
           </h3>
-          <button onClick={onSkip} title="skip"
+          <button onClick={onSkip} title="skip" data-tip-desc="skip this step"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -64,7 +64,7 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-          <button onClick={onClear} title="clear recent repos"
+          <button onClick={onClear} title="clear recent repos" data-tip-desc="remove all recently opened repositories"
             style={{
               display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 12px',
               background: 'var(--bg-card)', border: '1px solid var(--border-color)',

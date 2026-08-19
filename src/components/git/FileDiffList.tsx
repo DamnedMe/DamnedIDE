@@ -63,7 +63,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
                 <>
                   <button
                     onClick={(e) => { e.stopPropagation(); onToggleCheck(f.path, checkMarks?.[f.path] === 'ok' ? null : 'ok') }}
-                    title="mark ok"
+                    title="mark ok" data-tip-desc="mark this file as checked (ok)"
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       width: '18px', height: '18px',
@@ -78,7 +78,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); onToggleCheck(f.path, checkMarks?.[f.path] === 'ko' ? null : 'ko') }}
-                    title="mark ko"
+                    title="mark ko" data-tip-desc="mark this file as not ok (ko)"
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       width: '18px', height: '18px',
@@ -95,19 +95,19 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
               )}
               {onViewDiff && (
                 <IconBtn onClick={(e) => { e.stopPropagation(); onViewDiff(f.path) }}
-                  title="view diff" bg="var(--bg-tag)" color="var(--accent-color)">
+                  title="view diff" data-tip-desc="open the diff for this file" bg="var(--bg-tag)" color="var(--accent-color)">
                   <Eye size={9} />
                 </IconBtn>
               )}
               {onStage && !f.staged && (
                 <IconBtn onClick={(e) => { e.stopPropagation(); onStage(f.path) }}
-                  title="stage" bg="var(--warning-bg)" color="var(--warning-color)">
+                  title="stage" data-tip-desc="stage this file" bg="var(--warning-bg)" color="var(--warning-color)">
                   <Plus size={10} />
                 </IconBtn>
               )}
               {onUnstage && f.staged && (
                 <IconBtn onClick={(e) => { e.stopPropagation(); onUnstage(f.path) }}
-                  title="unstage" bg="var(--success-bg)" color="var(--success-color)">
+                  title="unstage" data-tip-desc="unstage this file" bg="var(--success-bg)" color="var(--success-color)">
                   <Minus size={10} />
                 </IconBtn>
               )}
@@ -119,15 +119,10 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
   )
 }
 
-function IconBtn({ children, onClick, title, bg, color }: {
-  children: React.ReactNode
-  onClick: (e: React.MouseEvent) => void
-  title: string
-  bg: string
-  color: string
-}) {
+function IconBtn(props: { children: React.ReactNode; onClick: (e: React.MouseEvent) => void; title: string; bg: string; color: string; 'data-tip-desc'?: string }) {
+  const { children, onClick, title, bg, color, 'data-tip-desc': tipDesc } = props
   return (
-    <button onClick={onClick} title={title} style={{
+    <button onClick={onClick} title={title} data-tip-desc={tipDesc} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       width: '18px', height: '18px', background: bg, border: 'none',
       borderRadius: 'var(--radius-sm)', color, cursor: 'pointer'

@@ -129,13 +129,13 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
           changes ({staged.length + unstaged.length})
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
-          <button onClick={handleStageAll} title="stage all changes"
+          <button onClick={handleStageAll} title="stage all changes" data-tip-desc="stage every modified file at once"
             style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--success-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
             <ListPlus size={11} />
           </button>
-          <button onClick={() => load()} title="refresh"
+          <button onClick={() => load()} title="refresh" data-tip-desc="reload the current data from the repository"
             style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>

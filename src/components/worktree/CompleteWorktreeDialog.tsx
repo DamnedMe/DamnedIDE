@@ -204,7 +204,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
             <GitPullRequest size={15} style={{ color: 'var(--accent-color)' }} />
             completa worktree
           </h3>
-          <button onClick={onClose} title="close"
+          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',

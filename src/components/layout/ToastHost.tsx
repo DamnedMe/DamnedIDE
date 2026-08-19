@@ -24,7 +24,7 @@ export function ToastHost() {
           }}>
             <Icon size={14} style={{ color, flexShrink: 0, marginTop: '1px' }} />
             <span style={{ flex: 1, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', lineHeight: 1.4 }}>{t.message}</span>
-            <button onClick={() => removeToast(t.id)} title="dismiss"
+            <button onClick={() => removeToast(t.id)} title="dismiss" data-tip-desc="dismiss this notification"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: 'none', border: 'none', color: 'var(--text-muted)',

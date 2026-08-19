@@ -53,7 +53,7 @@ export function ReferencesModal({ symbol, hits, title = 'references', rootPath, 
               {title} — <span style={{ color: 'var(--accent-color)' }}>{symbol}</span>
             </span>
           </h3>
-          <button onClick={onClose} title="close"
+          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -74,7 +74,7 @@ export function ReferencesModal({ symbol, hits, title = 'references', rootPath, 
           {hits.map((h, i) => (
             <div key={i}
               onClick={() => onNavigate(h.file, h.line)}
-              title={h.file}
+              title={h.file} data-tip-desc="open this file at the reference"
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
                 padding: '6px 10px', borderRadius: 'var(--radius-sm)',

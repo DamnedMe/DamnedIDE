@@ -3,7 +3,9 @@ import { useSettingsStore, useToastStore, AppSettings, ThemeColorConfig, DEFAULT
 import { PanelContainer } from '../layout/PanelContainer'
 import { relativeLuminance } from '../../utils/color'
 import { useI18n } from '../../i18n'
-import { Settings, Sun, Moon, Type, LayoutGrid, WrapText, Indent, Save, RotateCcw, AlignLeft, TextQuote, Palette, X, ChevronLeft, Languages, Images, SlidersHorizontal, PenLine, Globe } from 'lucide-react'
+import { Settings, Sun, Moon, Type, LayoutGrid, WrapText, Indent, Save, RotateCcw, AlignLeft, TextQuote, Palette, X, ChevronLeft, Languages, Images, SlidersHorizontal, PenLine, Globe, PlugZap, Bot, Plus, Trash2 } from 'lucide-react'
+import { McpPanel } from '../mcp/McpPanel'
+import { useAiChatStore } from '../../store'
 
 function SettingRow({ icon, label, children }: {
   icon: React.ReactNode
@@ -113,6 +115,11 @@ export function SettingsPanel() {
   const showToast = useToastStore(s => s.showToast)
   const s = settings
   const [showColors, setShowColors] = useState(false)
+  const [showMcp, setShowMcp] = useState(false)
+  const aiRules = useAiChatStore(s => s.rules)
+  const addAiRule = useAiChatStore(s => s.addRule)
+  const removeAiRule = useAiChatStore(s => s.removeRule)
+  const [newRule, setNewRule] = useState('')
   const t = useI18n()
 
   // Primary color is independent of the theme, but black/near-black is blocked on the
@@ -166,9 +173,22 @@ export function SettingsPanel() {
           padding: '4px 8px 10px', borderBottom: '1px solid var(--border-subtle)',
           flexShrink: 0
         }}>
-          {showColors ? (
+          {showMcp ? (
             <>
-              <button onClick={() => setShowColors(false)} title="back"
+              <button onClick={() => setShowMcp(false)} title="back" data-tip-desc="go back to the previous view"
+                style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
+                <ChevronLeft size={13} />
+              </button>
+              <PlugZap size={14} style={{ color: 'var(--accent-color)' }} />
+              <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                MCP servers
+              </span>
+            </>
+          ) : showColors ? (
+            <>
+              <button onClick={() => setShowColors(false)} title="back" data-tip-desc="go back to the previous view"
                 style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -189,7 +209,9 @@ export function SettingsPanel() {
           )}
         </div>
 
-        {showColors ? (
+        {showMcp ? (
+          <McpPanel />
+        ) : showColors ? (
           <>
             {colorEntries.map(entry => (
               <div key={entry.key} style={{
@@ -229,7 +251,7 @@ export function SettingsPanel() {
           </>
         ) : (
           <>
-            <Section title="appearance" icon={<SlidersHorizontal size={11} />}>
+            <Section title="appearance" data-tip-desc="interface appearance options" icon={<SlidersHorizontal size={11} />}>
               <SettingRow icon={<Sun size={13} />} label={t('theme')}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <ThemeBtn icon={<Moon size={11} />} label={t('dark')} active={s.theme === 'dark'} onClick={() => updateSettings({ theme: 'dark' })} />
@@ -240,7 +262,7 @@ export function SettingsPanel() {
               <SettingRow icon={<Palette size={13} />} label={t('primary color')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <input type="color" value={s.accentColor} onChange={(e) => handleAccentChange(e.target.value)}
-                    title="primary color (indipendente dal tema)"
+                    title="primary color (indipendente dal tema)" data-tip-desc="accent color used across the IDE (independent of the theme)"
                     style={{ width: '28px', height: '22px', padding: 0, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer' }}
                   />
                   <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', minWidth: '62px', textAlign: 'right' }}>
@@ -251,7 +273,7 @@ export function SettingsPanel() {
 
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 <button onClick={() => { setThemeDefaults(); showToast('tema corrente salvato come standard') }}
-                  title="salva colore primario e colori editor correnti come standard"
+                  title="salva colore primario e colori editor correnti come standard" data-tip-desc="save the current accent color and editor colors as the standard theme"
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
                     background: 'var(--bg-card)', border: '1px solid var(--border-color)',
@@ -263,7 +285,7 @@ export function SettingsPanel() {
                   <Save size={11} /> {t('set current as standard theme')}
                 </button>
                 <button onClick={() => { resetThemeToDefaults(); showToast('tema ripristinato allo standard') }}
-                  title="ripristina colore primario e colori editor allo standard salvato"
+                  title="ripristina colore primario e colori editor allo standard salvato" data-tip-desc="restore the accent color and editor colors to the saved standard"
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
                     background: 'var(--bg-card)', border: '1px solid var(--border-color)',
@@ -289,7 +311,7 @@ export function SettingsPanel() {
               </SettingRow>
             </Section>
 
-            <Section title="editor" icon={<PenLine size={11} />}>
+            <Section title="editor" data-tip-desc="code editor panel" icon={<PenLine size={11} />}>
               <SettingRow icon={<Type size={13} />} label={t('font size')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <input type="range" min="8" max="24" step="0.5" value={s.fontSize}
@@ -353,9 +375,21 @@ export function SettingsPanel() {
                 <Palette size={12} />
                 {t('editor colors')}
               </button>
+              <button onClick={() => setShowMcp(true)} style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '8px 14px', height: '32px',
+                background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)',
+                cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--accent-color)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
+                <PlugZap size={12} />
+                MCP servers
+              </button>
             </Section>
 
-            <Section title="general" icon={<Globe size={11} />}>
+            <Section title="general" data-tip-desc="general IDE options" icon={<Globe size={11} />}>
               <SettingRow icon={<Languages size={13} />} label={t('language')}>
                 <SelectInput value={s.language} onChange={(v) => updateSettings({ language: v as 'en' | 'it' })} options={[
                   { value: 'en', label: 'English' },

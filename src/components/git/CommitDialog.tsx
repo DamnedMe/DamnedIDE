@@ -27,7 +27,7 @@ export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
           <h3 style={{ margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
             commit
           </h3>
-          <button onClick={onClose} style={{
+          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog" style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '26px', height: '26px', background: 'var(--bg-card)',
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',

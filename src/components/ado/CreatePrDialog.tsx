@@ -75,7 +75,7 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
             <GitPullRequest size={15} style={{ color: 'var(--success-color)' }} />
             new pull request
           </h3>
-          <button onClick={onClose} title="close"
+          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '24px', height: '24px', background: 'transparent',
@@ -111,7 +111,7 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
               {fieldLabel('description')}
-              <button onClick={fillFromCommits} disabled={!source || !target || isLoadingCommits} title="fill from commits"
+              <button onClick={fillFromCommits} disabled={!source || !target || isLoadingCommits} title="fill from commits" data-tip-desc="fill the PR title and description from the commit messages"
                 style={{
                   display: 'flex', alignItems: 'center', gap: '4px', background: 'none',
                   border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',

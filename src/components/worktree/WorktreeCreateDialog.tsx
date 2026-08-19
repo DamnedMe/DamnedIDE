@@ -55,7 +55,7 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
           marginBottom: '20px'
         }}>
           <h3 style={{ margin: 0, fontSize: 'calc(15px * var(--ui-text-scale, 1))' }}>Nuovo Worktree</h3>
-          <button onClick={onClose} style={{
+          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog" style={{
             background: 'transparent',
             border: 'none',
             color: 'var(--text-secondary)',

@@ -5,12 +5,12 @@ import { DiffViewer } from '../editor/DiffViewer'
 import type { DiffViewerHandle } from '../editor/DiffViewer'
 import { useEditorStore } from '../../store'
 import { ResizableSplitter } from '../layout/ResizableSplitter'
-import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye } from 'lucide-react'
+import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye, GitCommitHorizontal, Download, Upload, Check, ArrowRightLeft } from 'lucide-react'
 import { MergeTool } from './MergeTool'
 import { MarkdownView } from '../editor/MarkdownView'
 import Editor from '@monaco-editor/react'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../editor/monaco-theme'
-import { useUIStore, useSettingsStore } from '../../store'
+import { useUIStore, useSettingsStore, useToastStore } from '../../store'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
 
@@ -24,6 +24,7 @@ function applyEditorTheme(monaco: typeof import('monaco-editor')) {
 
 interface WorktreeChangesProps {
   worktreePath: string
+  repoPath?: string
   checkMarks: Record<string, 'ok' | 'ko'>
   onToggleCheck: (filePath: string, state: 'ok' | 'ko' | null) => void
   onFileSelected?: (filePath: string | null) => void
@@ -34,7 +35,7 @@ export interface WorktreeChangesHandle {
   openFile: (absPath: string) => void
 }
 
-export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFileSelected, handleRef }: WorktreeChangesProps) {
+export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCheck, onFileSelected, handleRef }: WorktreeChangesProps) {
   const [files, setFiles] = useState<GitFileStatus[]>([])
   const [stagedFiles, setStagedFiles] = useState<GitFileStatus[]>([])
   const [unstagedFiles, setUnstagedFiles] = useState<GitFileStatus[]>([])
@@ -61,6 +62,16 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
   const scrollLinesRef = useRef<Record<string, number>>({})
   const editEditorRef = useRef<any>(null)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
+  const showToast = useToastStore(s => s.showToast)
+  const [isCommitOpen, setIsCommitOpen] = useState(false)
+  const [commitMsg, setCommitMsg] = useState('')
+  const [commitAndPush, setCommitAndPush] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [isMoveOpen, setIsMoveOpen] = useState(false)
+  const [moveTargets, setMoveTargets] = useState<{ path: string; branch: string; head: string }[]>([])
+  const [moveTarget, setMoveTarget] = useState('')
+  const [moveIsMove, setMoveIsMove] = useState(true)
+  const [moveStagedOnly, setMoveStagedOnly] = useState(false)
 
   const updateEditorNav = (line: number | null) => {
     if (!diffFile || line == null) return
@@ -127,6 +138,62 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
 
   const handleStageAll = async () => {
     await window.electronAPI.git.stageAll(worktreePath)
+    loadStatus()
+  }
+
+  const runGit = async (id: string, fn: () => Promise<void>, okMsg: string) => {
+    if (busy) return
+    setBusy(id)
+    try {
+      await fn()
+      showToast(okMsg)
+    } catch (e) {
+      showToast((e as Error).message || 'operazione fallita', 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const handleCommit = async () => {
+    if (!commitMsg.trim()) return
+    await runGit('commit', async () => {
+      await window.electronAPI.git.commit(worktreePath, commitMsg.trim())
+      if (commitAndPush) await window.electronAPI.git.push(worktreePath)
+    }, commitAndPush ? 'committed & pushed' : 'committed')
+    setIsCommitOpen(false)
+    setCommitMsg('')
+    setCommitAndPush(false)
+    loadStatus()
+  }
+
+  const handleFetch = () => runGit('fetch', () => window.electronAPI.git.fetch(worktreePath), 'fetched')
+  const handlePull = () => runGit('pull', () => window.electronAPI.git.pull(worktreePath), 'pulled')
+  const handlePush = () => runGit('push', () => window.electronAPI.git.push(worktreePath), 'pushed')
+
+  const toggleTransfer = async () => {
+    if (isMoveOpen) {
+      setIsMoveOpen(false)
+      return
+    }
+    setIsCommitOpen(false)
+    try {
+      const list = await window.electronAPI.worktree.list(repoPath || worktreePath)
+      const targets = list.filter(e => e.path !== worktreePath)
+      setMoveTargets(targets)
+      setMoveTarget(prev => prev && targets.some(t => t.path === prev) ? prev : (targets[0]?.path ?? ''))
+      setIsMoveOpen(true)
+    } catch (e) {
+      showToast((e as Error).message || 'failed to load worktrees', 'error')
+    }
+  }
+
+  const handleTransfer = async () => {
+    if (!moveTarget) return
+    await runGit('transfer', async () => {
+      const res = await window.electronAPI.git.transferChanges(worktreePath, moveTarget, { copy: !moveIsMove, stagedOnly: moveStagedOnly })
+      if (!res.ok) throw new Error(res.message)
+    }, moveIsMove ? 'changes moved' : 'changes copied')
+    setIsMoveOpen(false)
     loadStatus()
   }
 
@@ -320,6 +387,24 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
     )
   }
 
+  const gitBtn = (id: string, title: string, icon: React.ReactNode, onClick: () => void, tipDesc?: string) => (
+    <button
+      onClick={onClick}
+      disabled={busy !== null}
+      title={title}
+      data-tip-desc={tipDesc}
+      style={{
+        display: 'flex', background: 'none', border: 'none',
+        color: 'var(--text-muted)', cursor: busy !== null ? 'not-allowed' : 'pointer',
+        padding: '2px', opacity: busy !== null ? 0.4 : 1
+      }}
+      onMouseEnter={(e) => { if (!busy) e.currentTarget.style.color = 'var(--accent-color)' }}
+      onMouseLeave={(e) => { if (!busy) e.currentTarget.style.color = 'var(--text-muted)' }}
+    >
+      {busy === id ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : icon}
+    </button>
+  )
+
   const fileListPane = (
     <div style={{
       height: '100%', display: 'flex', flexDirection: 'column',
@@ -338,10 +423,10 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
           display: 'inline-block'
         }} />
         changes — {files.length}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', alignItems: 'center' }}>
           <button
             onClick={handleStageAll}
-            title="stage all changes"
+            title="stage all changes" data-tip-desc="stage every modified file at once"
             style={{
               display: 'flex', background: 'none', border: 'none',
               color: 'var(--text-muted)', cursor: 'pointer', padding: '2px'
@@ -352,8 +437,38 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
             <ListPlus size={11} />
           </button>
           <button
+            onClick={() => setIsCommitOpen(o => !o)}
+            title="commit" data-tip-desc="commit the staged changes of this worktree; tick commit &amp; push to also push"
+            style={{
+              display: 'flex', background: 'none', border: 'none',
+              color: isCommitOpen ? 'var(--accent-color)' : 'var(--text-muted)',
+              cursor: 'pointer', padding: '2px'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
+            onMouseLeave={(e) => { if (!isCommitOpen) e.currentTarget.style.color = 'var(--text-muted)' }}
+          >
+            <GitCommitHorizontal size={11} />
+          </button>
+          <button
+            onClick={toggleTransfer}
+            title="transfer changes" data-tip-desc="move or copy the pending changes to another worktree via a shared stash (optionally only the staged ones)"
+            style={{
+              display: 'flex', background: 'none', border: 'none',
+              color: isMoveOpen ? 'var(--accent-color)' : 'var(--text-muted)',
+              cursor: 'pointer', padding: '2px'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
+            onMouseLeave={(e) => { if (!isMoveOpen) e.currentTarget.style.color = 'var(--text-muted)' }}
+          >
+            <ArrowRightLeft size={11} />
+          </button>
+          <span style={{ width: '1px', height: '10px', background: 'var(--border-subtle)', flexShrink: 0 }} />
+          {gitBtn('fetch', 'fetch', <RefreshCw size={10} />, handleFetch, 'fetch the latest changes from the remote into this worktree')}
+          {gitBtn('pull', 'pull', <Download size={10} />, handlePull, 'pull the latest changes from the remote into this worktree')}
+          {gitBtn('push', 'push', <Upload size={10} />, handlePush, 'push the local commits of this worktree to the remote')}
+          <button
             onClick={loadStatus}
-            title="refresh"
+            title="refresh" data-tip-desc="reload the current data from the repository"
             style={{
               display: 'flex', background: 'none', border: 'none',
               color: 'var(--text-muted)', cursor: 'pointer', padding: '2px'
@@ -365,6 +480,140 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
           </button>
         </div>
       </div>
+      {isCommitOpen && (
+        <div style={{
+          padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-subtle)', display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0
+        }}>
+          <input
+            value={commitMsg}
+            onChange={(e) => setCommitMsg(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCommit() }}
+            placeholder="commit message"
+            spellCheck={false}
+            autoFocus
+            style={{
+              width: '100%', padding: '3px 6px', boxSizing: 'border-box',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
+              background: 'var(--bg-input)', border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', outline: 'none'
+            }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer',
+              fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
+              color: 'var(--text-secondary)', flexShrink: 0
+            }}>
+              <input type="checkbox" checked={commitAndPush} onChange={(e) => setCommitAndPush(e.target.checked)} />
+              commit &amp; push
+            </label>
+            <button
+              onClick={handleCommit}
+              disabled={!commitMsg.trim() || busy === 'commit'}
+              title="commit" data-tip-desc={commitAndPush ? 'commit and push the staged changes' : 'commit the staged changes'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 10px', height: '20px',
+                background: commitMsg.trim() && busy !== 'commit' ? 'var(--accent-color)' : 'var(--bg-disabled)',
+                border: 'none', borderRadius: 'var(--radius-sm)',
+                color: commitMsg.trim() && busy !== 'commit' ? 'var(--text-inverse)' : 'var(--text-muted)',
+                cursor: commitMsg.trim() && busy !== 'commit' ? 'pointer' : 'not-allowed',
+                fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+              }}
+            >
+              {busy === 'commit' ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={10} />}
+              {commitAndPush ? 'commit & push' : 'commit'}
+            </button>
+            <button
+              onClick={() => { setIsCommitOpen(false); setCommitMsg(''); setCommitAndPush(false) }}
+              title="cancel" data-tip-desc="close the commit form"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: '22px', height: '20px', background: 'transparent',
+                border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-muted)', cursor: 'pointer', marginLeft: 'auto'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)'; e.currentTarget.style.borderColor = 'var(--error-color)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}
+            >
+              <X size={11} />
+            </button>
+          </div>
+        </div>
+      )}
+      {isMoveOpen && (
+        <div style={{
+          padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-subtle)', display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0
+        }}>
+          <select
+            value={moveTarget}
+            onChange={(e) => setMoveTarget(e.target.value)}
+            title="target worktree" data-tip-desc="the worktree that receives the changes"
+            style={{
+              width: '100%', padding: '3px 6px', boxSizing: 'border-box',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
+              background: 'var(--bg-input)', border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', outline: 'none'
+            }}
+          >
+            {moveTargets.length === 0 && <option value="">no other worktrees</option>}
+            {moveTargets.map(w => (
+              <option key={w.path} value={w.path}>
+                {w.branch || w.head.slice(0, 7)} — {w.path}
+              </option>
+            ))}
+          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer',
+              fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
+              color: 'var(--text-secondary)', flexShrink: 0
+            }}>
+              <input type="checkbox" checked={moveIsMove} onChange={(e) => setMoveIsMove(e.target.checked)} />
+              move (remove from this worktree)
+            </label>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer',
+              fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
+              color: 'var(--text-secondary)', flexShrink: 0
+            }}>
+              <input type="checkbox" checked={moveStagedOnly} onChange={(e) => setMoveStagedOnly(e.target.checked)} />
+              only staged (keep unstaged here)
+            </label>
+            <button
+              onClick={handleTransfer}
+              disabled={!moveTarget || busy === 'transfer'}
+              title="transfer" data-tip-desc={moveIsMove ? 'move the changes to the selected worktree' : 'copy the changes to the selected worktree'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 10px', height: '20px',
+                background: moveTarget && busy !== 'transfer' ? 'var(--accent-color)' : 'var(--bg-disabled)',
+                border: 'none', borderRadius: 'var(--radius-sm)',
+                color: moveTarget && busy !== 'transfer' ? 'var(--text-inverse)' : 'var(--text-muted)',
+                cursor: moveTarget && busy !== 'transfer' ? 'pointer' : 'not-allowed',
+                fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+              }}
+            >
+              {busy === 'transfer' ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowRightLeft size={10} />}
+              {moveIsMove ? 'move' : 'copy'}
+            </button>
+            <button
+              onClick={() => { setIsMoveOpen(false); setMoveTarget('') }}
+              title="cancel" data-tip-desc="close the transfer form"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: '22px', height: '20px', background: 'transparent',
+                border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-muted)', cursor: 'pointer', marginLeft: 'auto'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)'; e.currentTarget.style.borderColor = 'var(--error-color)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}
+            >
+              <X size={11} />
+            </button>
+          </div>
+        </div>
+      )}
       <div
         style={{ flex: 1, overflow: 'auto', minHeight: 0, outline: 'none' }}
         tabIndex={0}
@@ -396,7 +645,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
             </div>
             {unmergedFiles.map((f) => (
               <div key={`conflict:${f.path}`} onClick={() => setMergeTarget(f.path)}
-                title={`resolve conflicts in ${f.path}`}
+                title={`resolve conflicts in ${f.path}`} data-tip-desc="open the merge tool for this file"
                 style={{
                   display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 10px',
                   borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer',
@@ -466,7 +715,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
               <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
                 {diffFile?.toLowerCase().endsWith('.md') && (
                   <button onClick={() => setMdPreview(p => !p)}
-                    title={mdPreview ? 'show source' : 'preview rendered markdown'}
+                    title={mdPreview ? 'show source' : 'preview rendered markdown'} data-tip-desc={mdPreview ? 'show the markdown source code' : 'render the markdown preview'}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '20px',
                       background: mdPreview ? 'var(--accent-bg)' : 'transparent',
@@ -480,13 +729,13 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                     {mdPreview ? 'source' : 'preview'}
                   </button>
                 )}
-                <button onClick={handleCancelEdit} title="cancel"
+                <button onClick={handleCancelEdit} title="cancel" data-tip-desc="cancel and close"
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '20px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer' }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)'; e.currentTarget.style.borderColor = 'var(--error-color)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}>
                   <X size={11} />
                 </button>
-                <button onClick={handleSave} disabled={isSaving} title="save"
+                <button onClick={handleSave} disabled={isSaving} title="save" data-tip-desc="save the changes"
                   style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '20px', background: 'var(--accent-color)', border: 'none', borderRadius: 'var(--radius-sm)', color: 'var(--text-inverse)', cursor: isSaving ? 'not-allowed' : 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600 }}
                   onMouseEnter={(e) => { if (!isSaving) e.currentTarget.style.opacity = '0.9' }}
                   onMouseLeave={(e) => { if (!isSaving) e.currentTarget.style.opacity = '1' }}>
@@ -600,7 +849,7 @@ export function WorktreeChanges({ worktreePath, checkMarks, onToggleCheck, onFil
                 <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diffFile}</span>
               </div>
               <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
-                <button onClick={handleStartEdit} title="edit file"
+                <button onClick={handleStartEdit} title="edit file" data-tip-desc="open the file in edit mode"
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '20px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer' }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.borderColor = 'var(--accent-color)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}>

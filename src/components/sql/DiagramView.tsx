@@ -403,20 +403,20 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
         </label>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', alignItems: 'center' }}>
-          <button style={toolbarButton} title="zoom out" onClick={() => zoomAt(zoom / 1.2)}><ZoomOut size={12} /></button>
+          <button style={toolbarButton} title="zoom out" data-tip-desc="zoom out the diagram" onClick={() => zoomAt(zoom / 1.2)}><ZoomOut size={12} /></button>
           <span data-testid="diagram-zoom-level" aria-label={`diagram zoom ${Math.round(zoom * 100)} percent`}
             style={{ minWidth: '38px', textAlign: 'center', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
             {Math.round(zoom * 100)}%
           </span>
-          <button style={toolbarButton} title="zoom in" onClick={() => zoomAt(zoom * 1.2)}><ZoomIn size={12} /></button>
-          <button style={toolbarButton} title="fit all tables" onClick={fit}><Maximize2 size={12} /></button>
-          <button style={toolbarButton} title="reset automatic layout" onClick={regenerateLayout}><RefreshCw size={12} /></button>
-          <button style={toolbarButton} title="reload database metadata" onClick={() => void load(true)} disabled={loading}>
+          <button style={toolbarButton} title="zoom in" data-tip-desc="zoom in the diagram" onClick={() => zoomAt(zoom * 1.2)}><ZoomIn size={12} /></button>
+          <button style={toolbarButton} title="fit all tables" data-tip-desc="fit every table into the view" onClick={fit}><Maximize2 size={12} /></button>
+          <button style={toolbarButton} title="reset automatic layout" data-tip-desc="reset the automatic layout of the diagram" onClick={regenerateLayout}><RefreshCw size={12} /></button>
+          <button style={toolbarButton} title="reload database metadata" data-tip-desc="reload the database metadata from the server" onClick={() => void load(true)} disabled={loading}>
             <Loader2 size={12} style={loading ? { animation: 'spin 0.9s linear infinite' } : undefined} />
           </button>
-          <button style={toolbarButton} title="export current view as SVG" onClick={() => exportCurrent('svg')}><Download size={12} /></button>
-          <button style={toolbarButton} title="export current view as PNG" onClick={() => exportCurrent('png')}><Image size={12} /></button>
-          <button style={{ ...toolbarButton, marginLeft: '3px' }} title="close diagram" onClick={onClose}><X size={12} /></button>
+          <button style={toolbarButton} title="export current view as SVG" data-tip-desc="export the diagram as an SVG image" onClick={() => exportCurrent('svg')}><Download size={12} /></button>
+          <button style={toolbarButton} title="export current view as PNG" data-tip-desc="export the diagram as a PNG image" onClick={() => exportCurrent('png')}><Image size={12} /></button>
+          <button style={{ ...toolbarButton, marginLeft: '3px' }} title="close diagram" data-tip-desc="close the diagram view" onClick={onClose}><X size={12} /></button>
         </div>
       </header>
 
@@ -573,7 +573,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                 <strong style={{ display: 'block', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', overflowWrap: 'anywhere' }}>{selected.name}</strong>
                 <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selected.columns.length} columns</span>
               </div>
-              <button style={toolbarButton} title="close table details" onClick={() => setSelectedTable(null)}><PanelRightClose size={12} /></button>
+              <button style={toolbarButton} title="close table details" data-tip-desc="close the details of this table" onClick={() => setSelectedTable(null)}><PanelRightClose size={12} /></button>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '6px 0' }}>
               {selected.columns.map(column => (

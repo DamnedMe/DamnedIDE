@@ -190,13 +190,13 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
           <ToggleButton
             active={sideBySide}
             onClick={() => setSideBySide(true)}
-            title="side by side"
+            title="side by side" data-tip-desc="show the diff side by side"
             icon={<Columns2 size={12} />}
           />
           <ToggleButton
             active={!sideBySide}
             onClick={() => setSideBySide(false)}
-            title="inline"
+            title="inline" data-tip-desc="show the diff inline"
             icon={<Rows3 size={12} />}
           />
           {isMarkdown && (
@@ -204,13 +204,14 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
               active={mdPreview}
               onClick={() => setMdPreview(p => !p)}
               title={mdPreview ? 'show diff' : 'preview rendered markdown'}
+              data-tip-desc={mdPreview ? 'show the diff view' : 'render the markdown preview'}
               icon={<Eye size={12} />}
             />
           )}
           {onPopOut && (
             <button
               onClick={onPopOut}
-              title="open in full screen"
+              title="open in full screen" data-tip-desc="open the viewer in full screen"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '24px', height: '20px', marginLeft: '2px',
@@ -243,7 +244,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
                 e.currentTarget.style.color = 'var(--text-muted)'
                 e.currentTarget.style.borderColor = 'var(--border-color)'
               }}
-              title="close"
+              title="close" data-tip-desc="close this panel or dialog"
             >
               <X size={11} />
             </button>
@@ -293,16 +294,13 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   )
 })
 
-function ToggleButton({ active, onClick, title, icon }: {
-  active: boolean
-  onClick: () => void
-  title: string
-  icon: React.ReactNode
-}) {
+function ToggleButton(props: { active: boolean; onClick: () => void; title: string; icon: React.ReactNode; 'data-tip-desc'?: string }) {
+  const { active, onClick, title, icon, 'data-tip-desc': tipDesc } = props
   return (
     <button
       onClick={onClick}
       title={title}
+      data-tip-desc={tipDesc}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         width: '24px', height: '20px',

@@ -23,7 +23,7 @@ import {
   PanelLeftClose, PanelLeftOpen, FolderTree, Search,
   ChevronRight, Asterisk, Regex, CaseSensitive, SeparatorHorizontal,
   Play, Hammer, Square, RotateCw, GitCompare,
-  ArrowLeft, ArrowRight, XCircle, AlertTriangle, Eye
+  ArrowLeft, ArrowRight, XCircle, AlertTriangle, Eye, Copy
 } from 'lucide-react'
 
 type LeftPanel = 'explorer' | 'search' | 'changes'
@@ -61,6 +61,67 @@ interface NavEntry {
   line: number
 }
 
+interface SolutionProject {
+  name: string
+  csprojPath: string
+  projectDir: string
+  relative: string
+}
+
+interface RunConfig {
+  startupProject?: string
+  launchProfile?: string
+}
+
+interface LaunchProfileInfo {
+  profiles: string[]
+  launchUrls: Record<string, string>
+}
+
+type OutputLevel = 'info' | 'trace' | 'warn' | 'error'
+
+interface OutputEntry {
+  level: OutputLevel
+  text: string
+}
+
+const OUTPUT_LEVEL_COLORS: Record<OutputLevel, string> = {
+  info: 'var(--accent-color)',
+  trace: 'var(--text-primary)',
+  warn: 'var(--warning-color)',
+  error: 'var(--error-color)'
+}
+
+// dotnet build/run output is piped (no TTY), so it is plain text; classify each
+// line by its content to let the user filter warnings/errors from the noise.
+const classifyOutputLine = (line: string): OutputLevel => {
+  const l = line.toLowerCase()
+  if (/\berror\b|errore|exception|failed|fallito|impossibile|cannot|unable|non è riuscit/.test(l)) return 'error'
+  if (/warning|avviso/.test(l)) return 'warn'
+  return 'trace'
+}
+
+const readLaunchProfiles = async (projectDir: string): Promise<LaunchProfileInfo> => {
+  const empty: LaunchProfileInfo = { profiles: [], launchUrls: {} }
+  try {
+    // existence check first: readFile on a missing file logs ENOENT in the main process
+    const entries = await window.electronAPI.fs.readDir(`${projectDir}\\Properties`).catch(() => [])
+    if (!entries.some(e => e.isFile && e.name.toLowerCase() === 'launchsettings.json')) return empty
+    const raw = await window.electronAPI.fs.readFile(`${projectDir}\\Properties\\launchSettings.json`)
+    const data = JSON.parse(raw) as { profiles?: Record<string, { launchUrl?: string }> }
+    if (!data.profiles || typeof data.profiles !== 'object') return empty
+    const profiles = Object.keys(data.profiles)
+    const launchUrls: Record<string, string> = {}
+    for (const name of profiles) {
+      const url = data.profiles[name]?.launchUrl
+      if (url) launchUrls[name] = url
+    }
+    return { profiles, launchUrls }
+  } catch {
+    return empty
+  }
+}
+
 export function CodeEditor() {
   const [rootPath, setRootPath] = useState<string | null>(null)
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
@@ -88,9 +149,15 @@ export function CodeEditor() {
   const settings = useSettingsStore(s => s.settings)
   const [mdPreview, setMdPreview] = useState(false)
   const isMarkdownActive = !!activeFile?.toLowerCase().endsWith('.md')
-  const [quickOutput, setQuickOutput] = useState<string | null>(null)
+  const [quickOutput, setQuickOutput] = useState<OutputEntry[] | null>(null)
+  const [outputFilter, setOutputFilter] = useState<Record<OutputLevel, boolean>>({ info: true, trace: true, warn: true, error: true })
   const [isRunning, setIsRunning] = useState(false)
   const [runningProcessId, setRunningProcessId] = useState<string | null>(null)
+  const outputBufferRef = useRef('')
+  const outputAreaRef = useRef<HTMLPreElement | null>(null)
+  const runningKindRef = useRef<'build' | 'run' | null>(null)
+  const launchUrlRef = useRef<string | null>(null)
+  const browserOpenedRef = useRef(false)
   const [gitModal, setGitModal] = useState<{ title: string; text?: string; blame?: { hash: string; author: string; date: string; line: string }[]; history?: { hash: string; date: string; message: string; authorName: string }[] } | null>(null)
   const openFileRef = useRef<(f: string, l?: number, fromNavigation?: boolean) => void>(() => {})
   const rootPathRef = useRef<string | null>(null)
@@ -672,73 +739,185 @@ export function CodeEditor() {
 
   const [projectKind, setProjectKind] = useState<'dotnet' | 'node' | null>(null)
   const [dotnetProject, setDotnetProject] = useState<string | null>(null)
+  const [solutionProjects, setSolutionProjects] = useState<SolutionProject[]>([])
+  const [startupProject, setStartupProject] = useState<SolutionProject | null>(null)
+  const [launchProfiles, setLaunchProfiles] = useState<string[]>([])
+  const [launchProfile, setLaunchProfile] = useState<string | null>(null)
+  const [runConfigDir, setRunConfigDir] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!rootPath) { setProjectKind(null); setDotnetProject(null); return }
+    if (!rootPath) {
+      setProjectKind(null); setDotnetProject(null)
+      setSolutionProjects([]); setStartupProject(null)
+      setLaunchProfiles([]); setLaunchProfile(null); setRunConfigDir(null)
+      return
+    }
     window.electronAPI.fs.readDir(rootPath)
       .then(async entries => {
-        const csproj = entries.find(e => e.isFile && e.name.endsWith('.csproj'))
-        const hasSln = entries.some(e => e.isFile && e.name.endsWith('.sln'))
+        const rootCsproj = entries.find(e => e.isFile && e.name.toLowerCase().endsWith('.csproj'))
+        const sln = entries.find(e => e.isFile && e.name.toLowerCase().endsWith('.sln'))
         const hasPackage = entries.some(e => e.isFile && e.name === 'package.json')
-        if (csproj) {
-          setProjectKind('dotnet')
-          setDotnetProject(`${rootPath}\\${csproj.name}`)
+
+        // shared run-config dir: the git common dir is the same for every worktree,
+        // so the startup project/profile follow the solution, not the worktree
+        let cfgDir: string | null = null
+        try { cfgDir = await window.electronAPI.git.gitCommonDir(rootPath) } catch { /* not a git repo */ }
+        setRunConfigDir(cfgDir)
+
+        if (hasPackage && !rootCsproj && !sln) {
+          setProjectKind('node'); setDotnetProject(null)
+          setSolutionProjects([]); setStartupProject(null); setLaunchProfiles([]); setLaunchProfile(null)
           return
         }
-        if (hasPackage) {
-          setProjectKind('node')
-          setDotnetProject(null)
+
+        const projects: SolutionProject[] = []
+        const push = (rel: string) => {
+          const norm = rel.split('/').join('\\')
+          const abs = `${rootPath}\\${norm}`
+          projects.push({
+            name: norm.slice(norm.lastIndexOf('\\') + 1).replace(/\.csproj$/i, ''),
+            csprojPath: abs,
+            projectDir: abs.slice(0, abs.lastIndexOf('\\')),
+            relative: norm
+          })
+        }
+        if (rootCsproj) push(rootCsproj.name)
+        if (sln) {
+          try {
+            const content = await window.electronAPI.fs.readFile(`${rootPath}\\${sln.name}`)
+            const re = /Project\(".*?"\)\s*=\s*".*?",\s*"(.*?\.csproj)"/gi
+            let m: RegExpExecArray | null
+            while ((m = re.exec(content))) push(m[1])
+          } catch { /* ignore */ }
+        }
+        const seen = new Set<string>()
+        const uniq = projects.filter(p => { const k = p.csprojPath.toLowerCase(); return seen.has(k) ? false : (seen.add(k), true) })
+        if (uniq.length === 0) {
+          setProjectKind(null); setDotnetProject(null)
+          setSolutionProjects([]); setStartupProject(null); setLaunchProfiles([]); setLaunchProfile(null)
           return
         }
-        if (hasSln) {
-          // No csproj at root: search one level deep for a project
-          const dirs = entries.filter(e => e.isDirectory)
-          for (const d of dirs) {
-            try {
-              const sub = await window.electronAPI.fs.readDir(`${rootPath}\\${d.name}`)
-              const subCs = sub.find(e => e.isFile && e.name.endsWith('.csproj'))
-              if (subCs) {
-                setProjectKind('dotnet')
-                setDotnetProject(`${rootPath}\\${d.name}\\${subCs.name}`)
-                return
-              }
-            } catch { /* ignore */ }
-          }
-          setProjectKind('dotnet')
-          setDotnetProject(null)
-          return
+        setProjectKind('dotnet')
+        setSolutionProjects(uniq)
+
+        let saved: RunConfig | null = null
+        if (cfgDir) {
+          try { saved = JSON.parse(await window.electronAPI.fs.readFile(`${cfgDir}\\damnedide\\run.json`)) as RunConfig } catch { /* none yet */ }
         }
-        setProjectKind(null)
-        setDotnetProject(null)
+
+        // profiles per project: used both to pick the default startup and to fill the selector
+        const profileMap: Record<string, LaunchProfileInfo> = {}
+        for (const p of uniq) profileMap[p.relative] = await readLaunchProfiles(p.projectDir)
+
+        const savedRel = saved?.startupProject
+        const chosen = savedRel
+          ? uniq.find(p => p.relative.toLowerCase() === savedRel.toLowerCase())
+          : undefined
+        const chosenProject = chosen
+          ?? uniq.find(p => profileMap[p.relative].profiles.length > 0)
+          ?? (rootCsproj ? uniq.find(p => p.relative.toLowerCase() === rootCsproj.name.toLowerCase()) : undefined)
+          ?? uniq[0]
+
+        setStartupProject(chosenProject)
+        setDotnetProject(chosenProject.csprojPath)
+        const info = profileMap[chosenProject.relative] ?? { profiles: [], launchUrls: {} }
+        setLaunchProfiles(info.profiles)
+        const savedProfile = saved?.launchProfile && info.profiles.includes(saved.launchProfile) ? saved.launchProfile : null
+        const selectedProfile = info.profiles.length > 0 ? (savedProfile ?? info.profiles[0]) : null
+        setLaunchProfile(selectedProfile)
+        launchUrlRef.current = selectedProfile ? (info.launchUrls[selectedProfile] ?? null) : null
       })
-      .catch(() => { setProjectKind(null); setDotnetProject(null) })
+      .catch(() => {
+        setProjectKind(null); setDotnetProject(null)
+        setSolutionProjects([]); setStartupProject(null); setLaunchProfiles([]); setLaunchProfile(null)
+      })
   }, [rootPath])
+
+  const saveRunConfig = async (cfg: RunConfig) => {
+    if (!runConfigDir) return
+    try {
+      await window.electronAPI.fs.mkdir(`${runConfigDir}\\damnedide`).catch(() => {})
+      await window.electronAPI.fs.writeFile(`${runConfigDir}\\damnedide\\run.json`, JSON.stringify(cfg, null, 2))
+    } catch { /* not critical */ }
+  }
+
+  const handleStartupProjectChange = async (relative: string) => {
+    const p = solutionProjects.find(x => x.relative === relative)
+    if (!p) return
+    setStartupProject(p)
+    setDotnetProject(p.csprojPath)
+    const info = await readLaunchProfiles(p.projectDir)
+    setLaunchProfiles(info.profiles)
+    const selected = info.profiles.length > 0 ? info.profiles[0] : null
+    setLaunchProfile(selected)
+    launchUrlRef.current = selected ? (info.launchUrls[selected] ?? null) : null
+    saveRunConfig({ startupProject: p.relative, launchProfile: selected ?? undefined })
+  }
+
+  const handleLaunchProfileChange = (name: string) => {
+    setLaunchProfile(name)
+    saveRunConfig({ startupProject: startupProject?.relative, launchProfile: name })
+  }
 
   const commandsFor = (): { build: { c: string; a: string[] }; run: { c: string; a: string[] } } | null => {
     if (!rootPath || !projectKind) return null
     if (projectKind === 'dotnet') {
-      return { build: { c: 'dotnet', a: ['build'] }, run: { c: 'dotnet', a: ['run'] } }
+      const proj = dotnetProject ? ['--project', dotnetProject] : []
+      const run = { c: 'dotnet', a: ['run', ...proj] }
+      if (launchProfile) run.a.push('--launch-profile', launchProfile)
+      return { build: { c: 'dotnet', a: ['build', ...proj] }, run }
     }
     return { build: { c: 'npm', a: ['run', 'build'] }, run: { c: 'npm', a: ['run', 'dev'] } }
+  }
+
+  const pushOutput = (entries: OutputEntry[]) => {
+    setQuickOutput(prev => {
+      const cur = prev ?? []
+      return cur.length > 2000 ? cur.slice(-2000).concat(entries) : cur.concat(entries)
+    })
+  }
+
+  const pushOutputLine = (level: OutputLevel, text: string) => pushOutput([{ level, text }])
+
+  const appendOutput = (data: string) => {
+    const buf = outputBufferRef.current + data
+    const parts = buf.split('\n')
+    outputBufferRef.current = parts.pop() ?? ''
+    const entries = parts
+      .map(p => p.replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, ''))
+      .filter(p => p.length > 0)
+      .map(p => ({ level: classifyOutputLine(p), text: p }))
+    if (entries.length > 0) pushOutput(entries)
+  }
+
+  const clearOutput = () => {
+    outputBufferRef.current = ''
+    setQuickOutput(null)
+  }
+
+  const copyOutput = () => {
+    const text = (quickOutput ?? []).map(e => e.text).join('\n')
+    if (text) window.electronAPI.clipboard.write(text)
   }
 
   const startQuickCmd = async (kind: 'build' | 'run') => {
     const cmds = commandsFor()
     if (!rootPath || !cmds || isRunning) return
     const { c, a } = cmds[kind]
-    setQuickOutput(`\x1b[36m> ${c} ${a.join(' ')}\x1b[0m\r\n`)
+    runningKindRef.current = kind
+    browserOpenedRef.current = false
+    setQuickOutput([{ level: 'info', text: `> ${c} ${a.join(' ')}` }])
     setIsRunning(true)
     setRunningProcessId(null)
     try {
-      // Run dotnet in the project's directory so it finds the .csproj automatically
-      const cwd = projectKind === 'dotnet' && dotnetProject
-        ? dotnetProject.replace(/[\\/][^\\/]*$/, '')
-        : rootPath
-      const id = await window.electronAPI.process.start(cwd, c, a)
+      // `dotnet ... --project` targets the selected project from anywhere,
+      // so the process always runs from the opened folder
+      const id = await window.electronAPI.process.start(rootPath, c, a)
       setRunningProcessId(id)
     } catch (e) {
-      setQuickOutput(prev => (prev || '') + `\r\n\x1b[31m${(e as Error).message}\x1b[0m\r\n`)
+      pushOutputLine('error', (e as Error).message)
       setIsRunning(false)
+      runningKindRef.current = null
     }
   }
 
@@ -748,26 +927,35 @@ export function CodeEditor() {
     }
     setRunningProcessId(null)
     setIsRunning(false)
-    setQuickOutput(prev => (prev || '') + `\r\n\x1b[33m[stopped]\x1b[0m\r\n`)
+    runningKindRef.current = null
+    pushOutputLine('info', '[stopped]')
   }
 
   const restartQuickCmd = async () => {
     await stopQuickCmd()
-    setQuickOutput(null)
+    clearOutput()
     await startQuickCmd('run')
   }
 
   useEffect(() => {
     const unsubOutput = window.electronAPI.process.onOutput((id, data) => {
-      setQuickOutput(prev => {
-        if (!prev) return data
-        return prev.length > 200000 ? prev.slice(-200000) + data : prev + data
-      })
+      appendOutput(data)
+      // once Kestrel is up, open the default browser on the launch page
+      if (runningKindRef.current === 'run' && !browserOpenedRef.current) {
+        const m = data.match(/Now listening on:\s*(\S+)/)
+        if (m && m[1]) {
+          browserOpenedRef.current = true
+          const base = m[1].replace(/\/+$/, '')
+          const launchUrl = launchUrlRef.current
+          window.electronAPI.shell.openExternal(launchUrl ? `${base}/${launchUrl.replace(/^\//, '')}` : base).catch(() => {})
+        }
+      }
     })
     const unsubExit = window.electronAPI.process.onExit((id, code) => {
-      setQuickOutput(prev => (prev || '') + `\r\n\x1b[33m[exited ${code ?? '?'}]\x1b[0m\r\n`)
+      pushOutputLine('info', `[exited ${code ?? '?'}]`)
       setIsRunning(false)
       setRunningProcessId(null)
+      runningKindRef.current = null
     })
     return () => { unsubOutput(); unsubExit() }
   }, [])
@@ -819,18 +1007,18 @@ export function CodeEditor() {
         display: 'flex', alignItems: 'center', gap: '2px',
         borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
       }}>
-        <LeftTab active={leftPanel === 'explorer'} onClick={() => setLeftPanel('explorer')} title="explorer">
+        <LeftTab active={leftPanel === 'explorer'} onClick={() => setLeftPanel('explorer')} title="explorer" data-tip-desc="show the file explorer">
           <FolderTree size={11} />
         </LeftTab>
-        <LeftTab active={leftPanel === 'search'} onClick={() => setLeftPanel('search')} title="search (ctrl+shift+f)">
+        <LeftTab active={leftPanel === 'search'} onClick={() => setLeftPanel('search')} title="search (ctrl+shift+f)" data-tip-desc="search across the workspace (Ctrl+Shift+F)">
           <Search size={11} />
         </LeftTab>
-        <LeftTab active={leftPanel === 'changes'} onClick={() => setLeftPanel('changes')} title="changes">
+        <LeftTab active={leftPanel === 'changes'} onClick={() => setLeftPanel('changes')} title="changes" data-tip-desc="show the changed files of this worktree">
           <GitCompare size={11} />
         </LeftTab>
         <button
           onClick={() => setExplorerVisible(false)}
-          title="collapse panel"
+          title="collapse panel" data-tip-desc="collapse this side panel to save space"
           style={{
             marginLeft: 'auto', display: 'flex', alignItems: 'center',
             background: 'none', border: 'none', color: 'var(--text-muted)',
@@ -876,7 +1064,7 @@ export function CodeEditor() {
         }}>
           <button
             onClick={() => setExplorerVisible(true)}
-            title="show explorer"
+            title="show explorer" data-tip-desc="show the file explorer panel"
             style={{
               display: 'flex', alignItems: 'center', background: 'none',
               border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px'
@@ -906,6 +1094,7 @@ export function CodeEditor() {
                   key={f.path}
                   onClick={() => { setActiveFile(f.path); setDiffView(null) }}
                   title={f.path}
+                  data-tip-desc="open this file in the editor"
                   style={{
                     display: 'flex', alignItems: 'center', gap: '6px',
                     padding: '5px 8px 5px 12px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
@@ -924,6 +1113,7 @@ export function CodeEditor() {
                   {f.dirty && <Circle size={6} fill="var(--accent-color)" style={{ color: 'var(--accent-color)' }} />}
                   <button
                     onClick={(e) => closeFile(f.path, e)}
+                    title="close file" data-tip-desc="close this tab without saving"
                     style={{
                       display: 'flex', background: 'none', border: 'none',
                       color: 'var(--text-muted)', cursor: 'pointer', padding: '1px',
@@ -941,7 +1131,7 @@ export function CodeEditor() {
         )}
         {isMarkdownActive && (
           <button onClick={() => setMdPreview(p => !p)}
-            title={mdPreview ? 'show source' : 'preview rendered markdown'}
+            title={mdPreview ? 'show source' : 'preview rendered markdown'} data-tip-desc={mdPreview ? 'show the markdown source code' : 'render the markdown preview'}
             style={{
               display: 'flex', alignItems: 'center', gap: '4px', padding: '0 8px',
               background: mdPreview ? 'var(--accent-bg)' : 'transparent',
@@ -956,8 +1146,42 @@ export function CodeEditor() {
           </button>
         )}
         {rootPath && (
-          <div style={{ display: 'flex', gap: '1px', flexShrink: 0, padding: '0 2px' }}>
-            <button onClick={() => startQuickCmd('build')} disabled={isRunning} title="build"
+          <div style={{ display: 'flex', gap: '1px', flexShrink: 0, padding: '0 2px', alignItems: 'center' }}>
+            {projectKind === 'dotnet' && solutionProjects.length > 1 && (
+              <select
+                value={startupProject?.relative ?? ''}
+                onChange={(e) => handleStartupProjectChange(e.target.value)}
+                title="startup project" data-tip-desc="the .NET project used by run and build (saved per solution)"
+                style={{
+                  maxWidth: '140px', padding: '1px 4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
+                  fontFamily: 'var(--font-mono)', background: 'var(--bg-input)',
+                  border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-secondary)', outline: 'none', boxSizing: 'border-box'
+                }}
+              >
+                {solutionProjects.map(p => (
+                  <option key={p.relative} value={p.relative} title={p.relative}>{p.name}</option>
+                ))}
+              </select>
+            )}
+            {projectKind === 'dotnet' && launchProfiles.length > 0 && (
+              <select
+                value={launchProfile ?? ''}
+                onChange={(e) => handleLaunchProfileChange(e.target.value)}
+                title="launch profile" data-tip-desc="the launchSettings.json profile used by run (saved per solution)"
+                style={{
+                  maxWidth: '140px', padding: '1px 4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
+                  fontFamily: 'var(--font-mono)', background: 'var(--bg-input)',
+                  border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-secondary)', outline: 'none', boxSizing: 'border-box'
+                }}
+              >
+                {launchProfiles.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={() => startQuickCmd('build')} disabled={isRunning} title="build" data-tip-desc="build the project (dotnet build)"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -971,7 +1195,7 @@ export function CodeEditor() {
             >
               <Hammer size={11} />
             </button>
-            <button onClick={() => startQuickCmd('run')} disabled={isRunning} title="run"
+            <button onClick={() => startQuickCmd('run')} disabled={isRunning} title="run" data-tip-desc="run the startup project with the selected launch profile"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -985,7 +1209,7 @@ export function CodeEditor() {
             >
               <Play size={11} />
             </button>
-            <button onClick={stopQuickCmd} disabled={!isRunning} title="stop"
+            <button onClick={stopQuickCmd} disabled={!isRunning} title="stop" data-tip-desc="stop the running process"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -999,7 +1223,7 @@ export function CodeEditor() {
             >
               <Square size={10} fill="currentColor" />
             </button>
-            <button onClick={restartQuickCmd} disabled={!isRunning} title="restart"
+            <button onClick={restartQuickCmd} disabled={!isRunning} title="restart" data-tip-desc="restart the running process"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -1021,7 +1245,7 @@ export function CodeEditor() {
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0,
             color: roslynStatus === 'ready' ? 'var(--success-color)' : 'var(--warning-color)',
             borderRight: '1px solid var(--border-subtle)'
-          }} title={roslynStatus === 'ready' ? 'C# semantic navigation (Roslyn) attivo' : 'indicizzazione C# in corso…'}>
+          }} title={roslynStatus === 'ready' ? 'C# semantic navigation (Roslyn) attivo' : 'indicizzazione C# in corso…'} data-tip-desc='C# semantic analysis status'>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
             {roslynStatus === 'ready' ? 'roslyn' : 'indexing'}
           </div>
@@ -1033,19 +1257,19 @@ export function CodeEditor() {
             borderRight: '1px solid var(--border-subtle)'
           }}>
             {csErrorCount.errors > 0 && (
-              <span style={{ color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '3px' }} title={`${csErrorCount.errors} errori`}>
+              <span style={{ color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '3px' }} title={`${csErrorCount.errors} errori`} data-tip-desc="compiler errors in the active file">
                 <XCircle size={10} /> {csErrorCount.errors}
               </span>
             )}
             {csErrorCount.warnings > 0 && (
-              <span style={{ color: 'var(--warning-color)', display: 'flex', alignItems: 'center', gap: '3px' }} title={`${csErrorCount.warnings} warning`}>
+              <span style={{ color: 'var(--warning-color)', display: 'flex', alignItems: 'center', gap: '3px' }} title={`${csErrorCount.warnings} warning`} data-tip-desc="compiler warnings in the active file">
                 <AlertTriangle size={10} /> {csErrorCount.warnings}
               </span>
             )}
           </div>
         )}
         <div style={{ display: 'flex', gap: '1px', flexShrink: 0, padding: '0 2px', borderRight: '1px solid var(--border-subtle)' }}>
-          <button onClick={goBack} disabled={navBackRef.current.length === 0} title="back (Ctrl+-)"
+          <button onClick={goBack} disabled={navBackRef.current.length === 0} title="back (Ctrl+-)" data-tip-desc="navigate to the previous location (Ctrl+-)"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '18px', padding: 0,
@@ -1059,7 +1283,7 @@ export function CodeEditor() {
           >
             <ArrowLeft size={11} />
           </button>
-          <button onClick={goForward} disabled={navForwardRef.current.length === 0} title="forward (Ctrl+Shift+-)"
+          <button onClick={goForward} disabled={navForwardRef.current.length === 0} title="forward (Ctrl+Shift+-)" data-tip-desc="navigate to the next location (Ctrl+Shift+-)"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '18px', padding: 0,
@@ -1165,26 +1389,71 @@ export function CodeEditor() {
           display: 'flex', flexDirection: 'column'
         }}>
           <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            display: 'flex', alignItems: 'center', gap: '6px',
             padding: '3px 8px', background: 'var(--bg-primary)',
             borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
           }}>
-            <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontWeight: 600 }}>
+            <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
               {isRunning ? 'running...' : 'output'}
             </span>
-            <button onClick={() => setQuickOutput(null)}
-              style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '1px' }}
+            <div style={{ display: 'flex', gap: '3px', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+              {(['info', 'trace', 'warn', 'error'] as OutputLevel[]).map(level => {
+                const active = outputFilter[level]
+                const count = quickOutput.filter(e => e.level === level).length
+                return (
+                  <button
+                    key={level}
+                    onClick={() => setOutputFilter(f => ({ ...f, [level]: !f[level] }))}
+                    title={`${active ? 'hide' : 'show'} ${level} messages`}
+                    data-tip-desc={`${active ? 'hide' : 'show'} the ${level} messages in the output`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 6px', height: '16px',
+                      background: active ? 'var(--bg-tag)' : 'transparent',
+                      border: `1px solid ${active ? OUTPUT_LEVEL_COLORS[level] : 'var(--border-color)'}`,
+                      borderRadius: 'var(--radius-sm)', color: active ? OUTPUT_LEVEL_COLORS[level] : 'var(--text-muted)',
+                      cursor: 'pointer', fontSize: 'calc(8px * var(--ui-text-scale, 1))',
+                      fontFamily: 'var(--font-mono)', fontWeight: 600, flexShrink: 0
+                    }}
+                  >
+                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: OUTPUT_LEVEL_COLORS[level], display: 'inline-block' }} />
+                    {level} {count}
+                  </button>
+                )
+              })}
+            </div>
+            <button onClick={copyOutput} title="copy output" data-tip-desc="copy all the output text to the clipboard (Ctrl+C)"
+              style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
+              <Copy size={10} />
+            </button>
+            <button onClick={() => setQuickOutput(null)} title="close output" data-tip-desc="close the command output panel"
+              style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '1px', flexShrink: 0 }}
               onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
               onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
               <X size={10} />
             </button>
           </div>
-          <pre style={{
-            flex: 1, overflow: 'auto', margin: 0, padding: '6px 10px',
-            fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: "'JetBrains Mono', monospace",
-            color: 'var(--text-primary)', background: 'var(--bg-card)',
-            whiteSpace: 'pre-wrap', wordBreak: 'break-all'
-          }}>{renderAnsi(quickOutput)}</pre>
+          <pre
+            ref={outputAreaRef}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                e.preventDefault()
+                copyOutput()
+              }
+            }}
+            style={{
+              flex: 1, overflow: 'auto', margin: 0, padding: '6px 10px', outline: 'none',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: "'JetBrains Mono', monospace",
+              color: 'var(--text-primary)', background: 'var(--bg-card)',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-all'
+            }}
+          >
+            {quickOutput.filter(e => outputFilter[e.level]).map((e, i) => (
+              <div key={i} style={{ color: OUTPUT_LEVEL_COLORS[e.level] }}>{e.text}</div>
+            ))}
+          </pre>
         </div>
       )}
         </div>
@@ -1238,7 +1507,7 @@ export function CodeEditor() {
         <ReferencesModal
           symbol={implPicker.symbol}
           hits={implPicker.hits}
-          title="implementation"
+          title="implementation" data-tip-desc="go to the implementation of the symbol"
           rootPath={rootPath}
           onClose={() => setImplPicker(null)}
           onNavigate={(file, line) => { setImplPicker(null); openFileRef.current(file, line) }}
@@ -1252,27 +1521,6 @@ export function CodeEditor() {
 }
 
 // ANSI SGR → colored spans using theme variables (used for build/run output)
-function renderAnsi(text: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = []
-  const re = /\x1b\[([0-9;]*)m/g
-  let last = 0
-  let color: string | undefined
-  let key = 0
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text))) {
-    if (m.index > last) nodes.push(<span key={key++} style={{ color }}>{text.slice(last, m.index)}</span>)
-    const codes = m[1].split(';')
-    if (codes.includes('0')) color = undefined
-    else if (codes.includes('31')) color = 'var(--error-color)'
-    else if (codes.includes('32')) color = 'var(--success-color)'
-    else if (codes.includes('33')) color = 'var(--warning-color)'
-    else if (codes.includes('36')) color = 'var(--accent-color)'
-    last = re.lastIndex
-  }
-  if (last < text.length) nodes.push(<span key={key++} style={{ color }}>{text.slice(last)}</span>)
-  return nodes
-}
-
 function MenuItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {  return (
     <div
       style={{
@@ -1363,16 +1611,13 @@ function EditorContextMenu({ x, y, lineNumber, symbol, onGoDefinition, onGoImple
   )
 }
 
-function LeftTab({ active, onClick, title, children }: {
-  active: boolean
-  onClick: () => void
-  title: string
-  children: React.ReactNode
-}) {
+function LeftTab(props: { active: boolean; onClick: () => void; title: string; children: React.ReactNode; 'data-tip-desc'?: string }) {
+  const { active, onClick, title, children, 'data-tip-desc': tipDesc } = props
   return (
     <button
       onClick={onClick}
       title={title}
+      data-tip-desc={tipDesc}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '7px 12px', background: 'transparent', border: 'none',
@@ -1413,21 +1658,20 @@ export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensiti
         }}
       />
       <div style={{ display: 'flex', gap: '2px', marginTop: '3px' }}>
-        <FToggle active={mode === 'startsWith'} onClick={() => onModeChange('startsWith')} title="starts with" icon={<ChevronRight size={10} />} />
-        <FToggle active={mode === 'like'} onClick={() => onModeChange('like')} title="contains" icon={<Asterisk size={10} />} />
-        <FToggle active={mode === 'regex'} onClick={() => onModeChange('regex')} title="regex" icon={<Regex size={10} />} />
-        <FToggle active={caseSensitive} onClick={onCaseToggle} title="case sensitive" icon={<CaseSensitive size={10} />} />
-        <FToggle active={spaceSensitive} onClick={onSpaceToggle} title="match spaces" icon={<SeparatorHorizontal size={10} />} />
+        <FToggle active={mode === 'startsWith'} onClick={() => onModeChange('startsWith')} title="starts with" data-tip-desc="filter mode: starts with" icon={<ChevronRight size={10} />} />
+        <FToggle active={mode === 'like'} onClick={() => onModeChange('like')} title="contains" data-tip-desc="filter mode: contains" icon={<Asterisk size={10} />} />
+        <FToggle active={mode === 'regex'} onClick={() => onModeChange('regex')} title="regex" data-tip-desc="filter mode: regular expression" icon={<Regex size={10} />} />
+        <FToggle active={caseSensitive} onClick={onCaseToggle} title="case sensitive" data-tip-desc="match the exact case" icon={<CaseSensitive size={10} />} />
+        <FToggle active={spaceSensitive} onClick={onSpaceToggle} title="match spaces" data-tip-desc="keep spaces significant in the filter" icon={<SeparatorHorizontal size={10} />} />
       </div>
     </div>
   )
 }
 
-function FToggle({ active, onClick, title, icon }: {
-  active: boolean; onClick: () => void; title: string; icon: React.ReactNode
-}) {
+function FToggle(props: { active: boolean; onClick: () => void; title: string; icon: React.ReactNode; 'data-tip-desc'?: string }) {
+  const { active, onClick, title, icon, 'data-tip-desc': tipDesc } = props
   return (
-    <button onClick={onClick} title={title} style={{
+    <button onClick={onClick} title={title} data-tip-desc={tipDesc} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       width: '22px', height: '18px', padding: 0,
       background: active ? 'var(--bg-active)' : 'transparent',
@@ -1462,15 +1706,15 @@ export function ZoomControls({ fontSize, onZoomIn, onZoomOut, onReset }: {
       display: 'flex', alignItems: 'center', gap: '1px',
       padding: '3px 6px', flexShrink: 0
     }}>
-      <button style={btnStyle} onClick={onZoomOut} title="zoom out (ctrl+-)"
+      <button style={btnStyle} onClick={onZoomOut} title="zoom out (ctrl+-)" data-tip-desc="decrease the font size (Ctrl+-)"
         onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
         onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>−</button>
-      <span onClick={onReset} title="reset zoom (ctrl+0)" style={{
+      <span onClick={onReset} title="reset zoom (ctrl+0)" data-tip-desc="reset the font size to default (Ctrl+0)" style={{
         fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
         color: 'var(--text-muted)', cursor: 'pointer',
         minWidth: '28px', textAlign: 'center', userSelect: 'none'
       }}>{Math.round(fontSize)}px</span>
-      <button style={btnStyle} onClick={onZoomIn} title="zoom in (ctrl++)"
+      <button style={btnStyle} onClick={onZoomIn} title="zoom in (ctrl++)" data-tip-desc="increase the font size (Ctrl++)"
         onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
         onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>+</button>
     </div>

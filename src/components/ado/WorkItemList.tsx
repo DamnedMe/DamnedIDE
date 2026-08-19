@@ -54,7 +54,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0
       }}>
         <span>Work Items ({workItems.length})</span>
-        <button onClick={() => setSortAsc(!sortAsc)} title="sort by id"
+        <button onClick={() => setSortAsc(!sortAsc)} title="sort by id" data-tip-desc="sort the list by work item id"
           style={{
             display: 'flex', alignItems: 'center', gap: '3px', background: 'none',
             border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
@@ -126,7 +126,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '5px 10px', borderTop: '1px solid var(--border-subtle)', flexShrink: 0
         }}>
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0}
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0} title="previous page" data-tip-desc="go to the previous page of work items"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '20px', background: 'var(--bg-card)',
@@ -139,7 +139,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
           <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
             {safePage + 1} / {pageCount}
           </span>
-          <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1}
+          <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} title="next page" data-tip-desc="go to the next page of work items"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '20px', background: 'var(--bg-card)',

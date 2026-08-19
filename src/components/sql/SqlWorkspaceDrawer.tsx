@@ -67,7 +67,7 @@ export function SqlWorkspaceDrawer({
       <header className="sql-workspace-drawer__header" style={{ height: 42, display: 'flex', alignItems: 'center', padding: '0 10px', borderBottom: '1px solid var(--border-subtle)', gap: 7 }}>
         <Clock3 size={13} color="var(--accent-color)" />
         <strong style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>SQL workspace</strong>
-        <button aria-label="close SQL workspace" onClick={onClose} style={tinyButton()}><X size={11} /></button>
+        <button aria-label="close SQL workspace" title="close" data-tip-desc="close the SQL workspace drawer" onClick={onClose} style={tinyButton()}><X size={11} /></button>
       </header>
 
       <nav className="sql-workspace-drawer__tabs" aria-label="SQL workspace sections" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', padding: '7px 8px 0', gap: 4 }}>
@@ -103,7 +103,7 @@ export function SqlWorkspaceDrawer({
           <select aria-label="history period" value={period} onChange={event => setPeriod(event.target.value as typeof period)} style={{ ...tinyButton(), flex: 1 }}>
             <option value="all">all time</option><option value="day">24 hours</option><option value="week">7 days</option><option value="month">30 days</option>
           </select>
-          {workspace.history.length > 0 && <button aria-label="clear query history" onClick={onClearHistory} style={tinyButton()}><Trash2 size={10} /></button>}
+          {workspace.history.length > 0 && <button aria-label="clear query history" title="clear history" data-tip-desc="delete the entire query history" onClick={onClearHistory} style={tinyButton()}><Trash2 size={10} /></button>}
         </div>
       )}
 
@@ -121,7 +121,7 @@ export function SqlWorkspaceDrawer({
                   border: 0, padding: 0, flex: 1, textAlign: 'left', background: 'transparent', color: 'var(--text-primary)',
                   cursor: 'pointer', fontSize: 10, fontWeight: 600
                 }}>{tab.title}</button>
-                <button aria-label={`rename ${tab.title}`} title="rename query" onClick={() => { setDraftTitle(tab.title); setEditingTab(tab.id) }} style={tinyButton()}><Pencil size={9} /></button>
+                <button aria-label={`rename ${tab.title}`} title="rename query" data-tip-desc="rename the current query" onClick={() => { setDraftTitle(tab.title); setEditingTab(tab.id) }} style={tinyButton()}><Pencil size={9} /></button>
               </div>
             )}
             <div style={{ color: 'var(--text-muted)', fontSize: 8.5, marginTop: 4 }}>{tab.context?.database || 'no database'} · {queryTitle(tab.query)}</div>
@@ -139,8 +139,8 @@ export function SqlWorkspaceDrawer({
               <span>{entry.database || 'server'}</span><span>{entry.source}</span><span>{entry.durationMs} ms</span><span>{entry.rowCount} rows</span>
               {entry.runCount > 1 && <span>×{entry.runCount}</span>}
               <span style={{ flex: 1 }} />
-              <button aria-label="add query to favorites" title="add to favorites" onClick={() => onFavoriteHistory(entry)} style={tinyButton()}><Heart size={9} /></button>
-              <button aria-label="delete history entry" title="delete" onClick={() => onDeleteHistory(entry.id)} style={tinyButton()}><Trash2 size={9} /></button>
+              <button aria-label="add query to favorites" title="add to favorites" data-tip-desc="save this query to the favorites" onClick={() => onFavoriteHistory(entry)} style={tinyButton()}><Heart size={9} /></button>
+              <button aria-label="delete history entry" title="delete" data-tip-desc="delete this item" onClick={() => onDeleteHistory(entry.id)} style={tinyButton()}><Trash2 size={9} /></button>
             </div>
           </article>
         ))}
@@ -158,7 +158,7 @@ export function SqlWorkspaceDrawer({
             <div style={{ fontSize: 8.5, color: 'var(--text-muted)', margin: '4px 0 7px' }}>{queryTitle(favorite.query)}</div>
             <div style={{ display: 'flex', gap: 5 }}>
               <button aria-label={`open ${favorite.title}`} onClick={() => onOpenQuery(favorite.query, { connectionId: favorite.connectionId, database: favorite.database }, 'favorite')} style={tinyButton(true)}><FileText size={9} /> open</button>
-              <button aria-label={`remove ${favorite.title} from favorites`} onClick={() => onRemoveFavorite(favorite.id)} style={tinyButton()}><HeartOff size={9} /></button>
+              <button aria-label={`remove ${favorite.title} from favorites`} title="remove favorite" data-tip-desc="remove this query from the favorites" onClick={() => onRemoveFavorite(favorite.id)} style={tinyButton()}><HeartOff size={9} /></button>
             </div>
           </article>
         ))}

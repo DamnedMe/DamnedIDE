@@ -160,4 +160,11 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ needs.prepare-release.outputs.tag }}" --draft=false --prerelease=false
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: |
+          release_id="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .id")"
+          test -n "$release_id"
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/$release_id" \
+            -F draft=false \
+            -F prerelease=false

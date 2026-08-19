@@ -865,7 +865,8 @@ export function CodeEditor() {
       const proj = dotnetProject ? ['--project', dotnetProject] : []
       const run = { c: 'dotnet', a: ['run', ...proj] }
       if (launchProfile) run.a.push('--launch-profile', launchProfile)
-      return { build: { c: 'dotnet', a: ['build', ...proj] }, run }
+      const build = { c: 'dotnet', a: ['build', ...(dotnetProject ? [dotnetProject] : [])] }
+      return { build, run }
     }
     return { build: { c: 'npm', a: ['run', 'build'] }, run: { c: 'npm', a: ['run', 'dev'] } }
   }
@@ -910,8 +911,8 @@ export function CodeEditor() {
     setIsRunning(true)
     setRunningProcessId(null)
     try {
-      // `dotnet ... --project` targets the selected project from anywhere,
-      // so the process always runs from the opened folder
+      // The selected project is passed explicitly so the process can run from
+      // the opened folder, including when the project belongs to a solution.
       const id = await window.electronAPI.process.start(rootPath, c, a)
       setRunningProcessId(id)
     } catch (e) {

@@ -155,6 +155,15 @@ npm run package
 
 > Requisiti: **Node.js** ≥ 18, **.NET SDK** 8+ (per la navigazione C# e i progetti .NET).
 
+### Sviluppo e aggiornamenti
+
+- `develop` e' il ramo di lavoro quotidiano.
+- Le modifiche arrivano in `main` tramite Pull Request da `develop`.
+- Ogni aggiornamento di `main` incrementa automaticamente la versione patch, crea il tag GitHub e pubblica gli installer Windows, Linux e macOS.
+- L'applicazione installata controlla gli aggiornamenti all'avvio e periodicamente, scarica la nuova versione in background e propone il riavvio per installarla.
+
+Gli aggiornamenti OTA richiedono una versione installata tramite un installer prodotto da una GitHub Release. Il pacchetto macOS viene pubblicato anche in formato `zip`, usato da `electron-updater` per l'aggiornamento automatico.
+
 ---
 
 ## ⌨️ Scorciatoie

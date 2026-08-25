@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronRight, Folder, FolderOpen, Loader2, ChevronsUpDown, ChevronsDownUp, Trash2, FolderPlus, FilePlus, ExternalLink } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, Loader2, ChevronsUpDown, ChevronsDownUp, Trash2, FolderPlus, FilePlus, ExternalLink, Copy } from 'lucide-react'
 import { FileTypeIcon } from '../../utils/file-icon'
 
 interface TreeNode {
@@ -474,6 +474,7 @@ function FileContextMenu({ x, y, node, onClose, onDelete, onNewFile, onNewFolder
       }}>
         {node.isDirectory && menuItem('New file', <FilePlus size={12} />, () => onNewFile(node))}
         {node.isDirectory && menuItem('New folder', <FolderPlus size={12} />, () => onNewFolder(node))}
+        {menuItem('Copy path', <Copy size={12} />, () => window.electronAPI.clipboard.write(node.path))}
         {menuItem('Delete', <Trash2 size={12} />, () => onDelete(node), true)}
         {menuItem('Open folder', <ExternalLink size={12} />, () => onOpenFolder(node))}
       </div>

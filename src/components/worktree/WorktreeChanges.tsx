@@ -136,6 +136,11 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     loadStatus()
   }
 
+  const handleCopyPath = (filePath: string) => {
+    const root = worktreePath.replace(/[\\/]+$/, '')
+    window.electronAPI.clipboard.write(`${root}\\${filePath.replace(/\//g, '\\')}`)
+  }
+
   const handleStageAll = async () => {
     await window.electronAPI.git.stageAll(worktreePath)
     loadStatus()
@@ -379,10 +384,11 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           onStage={handleStage}
           onUnstage={handleUnstage}
           onViewDiff={handleViewDiff}
-          activeDiffFile={diffFile}
-          checkMarks={checkMarks}
-          onToggleCheck={onToggleCheck}
-        />
+           activeDiffFile={diffFile}
+           checkMarks={checkMarks}
+           onToggleCheck={onToggleCheck}
+           onCopyPath={handleCopyPath}
+         />
       </div>
     )
   }

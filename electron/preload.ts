@@ -2,8 +2,27 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { SqlConnectionConfig } from './services/sql/sql.service'
 import type { TerminalType } from './services/terminal/terminal.service'
 import type { McpServerConfig, McpTool } from './services/mcp/mcp.service'
+import type { ClaudeSendRequest, ClaudeResult, ClaudeAuthStatus } from './services/ai/claude.service'
 
 const electronAPI = {
+  ai: {
+    status: (): Promise<ClaudeAuthStatus> => ipcRenderer.invoke('ai:status'),
+    test: (backend: 'subscription' | 'api'): Promise<ClaudeResult> => ipcRenderer.invoke('ai:test', backend),
+    send: (req: ClaudeSendRequest): Promise<ClaudeResult> => ipcRenderer.invoke('ai:send', req),
+    cancel: (chatKey: string): Promise<void> => ipcRenderer.invoke('ai:cancel', chatKey),
+    setApiKey: (key: string | null): Promise<boolean> => ipcRenderer.invoke('ai:setApiKey', key),
+    hasApiKey: (): Promise<boolean> => ipcRenderer.invoke('ai:hasApiKey'),
+    onChunk: (cb: (p: { chatKey: string; text: string }) => void) => {
+      const l = (_e: unknown, p: { chatKey: string; text: string }) => cb(p)
+      ipcRenderer.on('ai:chunk', l)
+      return () => ipcRenderer.removeListener('ai:chunk', l)
+    },
+    onTool: (cb: (p: { chatKey: string; name: string }) => void) => {
+      const l = (_e: unknown, p: { chatKey: string; name: string }) => cb(p)
+      ipcRenderer.on('ai:tool', l)
+      return () => ipcRenderer.removeListener('ai:tool', l)
+    }
+  },
   mcp: {
     connect: (config: McpServerConfig) => ipcRenderer.invoke('mcp:connect', config),
     disconnect: (name: string) => ipcRenderer.invoke('mcp:disconnect', name),

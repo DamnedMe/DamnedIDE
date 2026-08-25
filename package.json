@@ -3,7 +3,10 @@
   "version": "0.0.2",
   "description": "IDE leggero per backend .NET con gestione worktree Git, Azure DevOps e SQL Server",
   "main": "./out/main/index.js",
-  "author": "Damian Tateo <damian.tateo@revoltech.ai>",
+  "author": {
+    "name": "Damian Tateo",
+    "email": "damian.tateo@revoltech.ai"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -15,6 +18,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test:ai": "node --experimental-strip-types scripts/ai-stream-json.check.ts",
     "test:sql-ui": "node --experimental-strip-types scripts/sql-ui-regression.mjs",
     "test:sql-playwright": "playwright test --config playwright.config.ts",
     "test:sql": "npm run test:sql-ui && npm run test:sql-playwright",
@@ -22,6 +26,7 @@
     "lint": "eslint . --ext .ts,.tsx"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "@azure/identity": "^4.13.1",
     "@homebridge/node-pty-prebuilt-multiarch": "^0.14.1",
     "@monaco-editor/react": "^4.6.0",

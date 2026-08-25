@@ -1,5 +1,6 @@
 import { GitFileStatus } from '../../types/git'
-import { Plus, Minus, Eye, Check, X } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Minus, Eye, Check, X, Copy } from 'lucide-react'
 import { FileTypeIcon } from '../../utils/file-icon'
 
 interface FileDiffListProps {
@@ -10,9 +11,12 @@ interface FileDiffListProps {
   activeDiffFile?: string | null
   checkMarks?: Record<string, 'ok' | 'ko'>
   onToggleCheck?: (filePath: string, state: 'ok' | 'ko' | null) => void
+  onCopyPath?: (filePath: string) => void
 }
 
-export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiffFile, checkMarks, onToggleCheck }: FileDiffListProps) {
+export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiffFile, checkMarks, onToggleCheck, onCopyPath }: FileDiffListProps) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filePath: string } | null>(null)
+
   if (files.length === 0) {
     return (
       <div style={{
@@ -30,8 +34,12 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
       {files.map((f) => {
         const isActive = activeDiffFile === f.path
         return (
-          <div key={`${f.staged ? 's' : 'u'}:${f.path}`} onClick={() => onViewDiff?.(f.path)}
-            style={{
+            <div key={`${f.staged ? 's' : 'u'}:${f.path}`} onClick={() => onViewDiff?.(f.path)}
+              onContextMenu={onCopyPath ? (e) => {
+                e.preventDefault()
+                setContextMenu({ x: e.clientX, y: e.clientY, filePath: f.path })
+              } : undefined}
+              style={{
               display: 'flex', alignItems: 'center', padding: '4px 10px',
               borderBottom: '1px solid var(--border-subtle)',
               fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
@@ -115,6 +123,31 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
           </div>
         )
       })}
+      {contextMenu && onCopyPath && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setContextMenu(null)} />
+          <div style={{
+            position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 1000,
+            background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+            padding: '4px 0', minWidth: '150px', animation: 'fadeIn 0.1s ease'
+          }}>
+            <div
+              onClick={() => { onCopyPath(contextMenu.filePath); setContextMenu(null) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px',
+                fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
+                cursor: 'pointer', color: 'var(--text-primary)', transition: 'background 0.1s ease'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Copy size={12} />
+              Copy path
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -1,12 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Bot, User, Loader2, Trash2, ChevronDown } from 'lucide-react'
-import { useMcpStore, MCP_PRESETS, useAiChatStore, useWorktreeStore, useTerminalStore, type AiChatMessage } from '../../store'
+import { Send, Bot, User, Loader2, Trash2, ChevronDown, Square, Sparkles } from 'lucide-react'
+import {
+  useMcpStore, MCP_PRESETS, useAiChatStore, useWorktreeStore, useTerminalStore, useClaudeStore,
+  CLAUDE_MODELS, CLAUDE_EFFORTS, CLAUDE_PERMISSION_MODES, type AiChatMessage
+} from '../../store'
 import { discoverChatOptions, buildChatArgs, type ChatOptions, type ChatOptionField } from '../../utils/mcp-chat'
 
 const CHAT_TOOL_RE = /agent|chat|message|prompt|session|conversation/i
 
+// Claude is a first-class provider, not an MCP server: it talks to the local
+// `claude` CLI (subscription login) or to the Anthropic API directly.
+const CLAUDE = '__claude__'
+
 function findChatTool(tools: McpTool[]): McpTool | null {
   return tools.find(t => CHAT_TOOL_RE.test(t.name)) || null
+}
+
+function formatMeta(r: ClaudeResult): string {
+  const u = r.usage
+  const bits: string[] = []
+  if (u?.inputTokens != null) bits.push(`${u.inputTokens} in`)
+  if (u?.outputTokens != null) bits.push(`${u.outputTokens} out`)
+  if (u?.cacheReadTokens) bits.push(`${u.cacheReadTokens} da cache`)
+  if (r.costUsd) bits.push(`$${r.costUsd.toFixed(4)}`)
+  return bits.join(' · ')
 }
 
 export function AiChatPanel() {
@@ -19,30 +36,48 @@ export function AiChatPanel() {
   const worktree = useWorktreeStore(s => s.selectedWorktree)
   const chatKey = worktree || '__default__'
 
-  const [server, setServer] = useState<string | null>(null)
+  const claude = useClaudeStore()
+
+  const [server, setServer] = useState<string>(CLAUDE)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [chatOpts, setChatOpts] = useState<ChatOptions | null>(null)
   const [sel, setSel] = useState({ mode: '', model: '', effort: '' })
+  const [streaming, setStreaming] = useState('')
+  const [activity, setActivity] = useState('')
+  const [meta, setMeta] = useState('')
+  const [auth, setAuth] = useState<ClaudeAuthStatus | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const messages = chats[chatKey] || []
+  const isClaude = server === CLAUDE
 
   const connectedServers = (Object.entries(connected) as [string, boolean][])
     .filter(([, v]) => v)
     .map(([name]) => name)
 
   useEffect(() => {
-    if (!server && connectedServers.length > 0) setServer(connectedServers[0])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    window.electronAPI.ai.status().then(setAuth).catch(() => setAuth(null))
   }, [])
 
+  // tokens arrive as they are generated: render them into a live bubble instead
+  // of leaving the panel blank for the whole turn
   useEffect(() => {
-    if (server && !connected[server]) setServer(null)
+    const offChunk = window.electronAPI.ai.onChunk(p => {
+      if (p.chatKey === chatKey) setStreaming(s => s + p.text)
+    })
+    const offTool = window.electronAPI.ai.onTool(p => {
+      if (p.chatKey === chatKey) setActivity(p.name)
+    })
+    return () => { offChunk(); offTool() }
+  }, [chatKey])
+
+  useEffect(() => {
+    if (server !== CLAUDE && !connected[server]) setServer(CLAUDE)
   }, [connected, server])
 
   useEffect(() => {
-    if (!server) { setChatOpts(null); return }
+    if (!server || server === CLAUDE) { setChatOpts(null); return }
     const tool = findChatTool(tools[server] || [])
     const opts = discoverChatOptions(tool, server)
     setChatOpts(opts)
@@ -62,7 +97,7 @@ export function AiChatPanel() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
-  }, [messages])
+  }, [messages, streaming])
 
   const persistSel = (patch: Partial<typeof sel>) => {
     const next = { ...sel, ...patch }
@@ -77,12 +112,50 @@ export function AiChatPanel() {
       .filter(Boolean)
       .join('\n')
 
+  // Claude nativo: la subscription riprende la sessione lato CLI (solo il nuovo
+  // turno viaggia), le API rimandano la storia con prompt caching sul prefisso.
+  const sendClaude = async (text: string, next: AiChatMessage[]) => {
+    setBusy(true); setStreaming(''); setActivity(''); setMeta('')
+    try {
+      const res = await window.electronAPI.ai.send({
+        chatKey,
+        prompt: text,
+        backend: claude.backend,
+        model: claude.model,
+        effort: claude.effort,
+        permissionMode: claude.permissionMode,
+        system: applyRules() || undefined,
+        cwd: worktree || undefined,
+        resume: claude.backend === 'subscription' ? claude.sessions[chatKey] : undefined,
+        history: claude.backend === 'api' ? next.slice(0, -1).map(m => ({ role: m.role, text: m.text })) : undefined
+      })
+      if (res.ok) {
+        if (res.sessionId) claude.setSession(chatKey, res.sessionId)
+        setMessages(chatKey, [...next, { role: 'assistant', text: res.text?.trim() || '(nessuna risposta)' }])
+        setMeta(formatMeta(res))
+      } else {
+        setMessages(chatKey, [...next, { role: 'assistant', text: `Errore: ${res.error}` }])
+      }
+    } finally {
+      setBusy(false); setStreaming(''); setActivity('')
+    }
+  }
+
   const send = async () => {
     const text = input.trim()
-    const target = server || connectedServers[0]
-    if (!text || !target || busy) return
-    const tool = findChatTool(tools[target] || [])
+    if (!text || busy) return
     const next: AiChatMessage[] = [...messages, { role: 'user', text }]
+
+    if (isClaude) {
+      setMessages(chatKey, next)
+      setInput('')
+      await sendClaude(text, next)
+      return
+    }
+
+    const target = server || connectedServers[0]
+    if (!target) return
+    const tool = findChatTool(tools[target] || [])
     setMessages(chatKey, next)
     setInput('')
     if (!tool) {
@@ -110,6 +183,23 @@ export function AiChatPanel() {
     color: 'var(--text-primary)', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
     fontFamily: 'var(--font-mono)', padding: '2px 6px', cursor: 'pointer', outline: 'none'
   }
+
+  const canSend = !!input.trim() && !busy && (isClaude || connectedServers.length > 0)
+  const claudeReady = claude.backend === 'api' ? !!auth?.hasApiKey : !!auth?.loggedIn
+  const claudeAuthTip = claude.backend === 'api'
+    ? (auth?.hasApiKey ? 'API key Anthropic configurata' : 'nessuna API key: configurala nelle impostazioni MCP')
+    : !auth?.cli ? "CLI 'claude' non trovata nel PATH"
+      : auth.loggedIn ? `subscription ${auth.subscriptionType || ''} — ${auth.email || auth.authMethod || ''}`.trim()
+        : "non autenticato: esegui 'claude auth login' in un terminale"
+
+  const miniSelect = (label: string, value: string, options: [string, string][], onChange: (v: string) => void) => (
+    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+      {label}
+      <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...selectStyle, maxWidth: '130px' }}>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </label>
+  )
 
   // Renders a chat option field: a select when the values are a closed set
   // (schema enum or agent effort levels), otherwise a free-text field with
@@ -172,17 +262,28 @@ export function AiChatPanel() {
             {worktree.split(/[\\/]/).slice(-2).join('/')}
           </span>
         )}
-        <select value={server || ''} onChange={(e) => setServer(e.target.value)}
-          title="choose the connected MCP server" data-tip-desc="select which connected MCP server the agent uses"
+        <select value={server} onChange={(e) => setServer(e.target.value)}
+          title="choose the provider" data-tip-desc="Claude nativo (subscription/API) oppure un server MCP connesso"
           style={{ ...selectStyle, flex: 1, maxWidth: '220px' }}>
-          {connectedServers.length === 0 && <option value="">no connected server</option>}
+          <option value={CLAUDE}>Claude ({claude.backend === 'api' ? 'API' : 'subscription'})</option>
           {connectedServers.map(name => <option key={name} value={name}>{presetLabel(name)}</option>)}
         </select>
-        {chatOpts && fieldRow('mode', chatOpts.mode, sel.mode, (v) => persistSel({ mode: v }), 'dl-mode')}
-        {chatOpts && fieldRow('model', chatOpts.model, sel.model, (v) => persistSel({ model: v }), 'dl-model')}
-        {chatOpts && fieldRow('effort', chatOpts.effort, sel.effort, (v) => persistSel({ effort: v }), 'dl-effort')}
+        {isClaude && (
+          <>
+            <span title={claudeAuthTip} data-tip-desc={claudeAuthTip}
+              style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: claudeReady ? 'var(--success-color)' : 'var(--error-color)' }} />
+            {miniSelect('model', claude.model, CLAUDE_MODELS.map(m => [m.id, m.label]), (v) => claude.setConfig({ model: v }))}
+            {miniSelect('effort', claude.effort, CLAUDE_EFFORTS.map(e => [e, e]), (v) => claude.setConfig({ effort: v as ClaudeEffort }))}
+            {claude.backend === 'subscription' &&
+              miniSelect('perm', claude.permissionMode, CLAUDE_PERMISSION_MODES.map(p => [p, p]), (v) => claude.setConfig({ permissionMode: v }))}
+          </>
+        )}
+        {!isClaude && chatOpts && fieldRow('mode', chatOpts.mode, sel.mode, (v) => persistSel({ mode: v }), 'dl-mode')}
+        {!isClaude && chatOpts && fieldRow('model', chatOpts.model, sel.model, (v) => persistSel({ model: v }), 'dl-model')}
+        {!isClaude && chatOpts && fieldRow('effort', chatOpts.effort, sel.effort, (v) => persistSel({ effort: v }), 'dl-effort')}
         {messages.length > 0 && (
-          <button onClick={() => clearChat(chatKey)} title="clear this worktree chat" data-tip-desc="delete all messages of this chat conversation"
+          <button onClick={() => { clearChat(chatKey); claude.clearSession(chatKey); setMeta('') }}
+            title="clear this worktree chat" data-tip-desc="delete all messages of this chat conversation"
             style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -206,8 +307,9 @@ export function AiChatPanel() {
       <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {messages.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-            scegli un server MCP connesso e scrivi un messaggio.<br />
-            L'agente userà il tool di chat esposto dal server.<br />
+            {isClaude
+              ? <>Claude {claude.backend === 'api' ? 'via API Anthropic' : 'con la tua subscription'} — {claude.model} / {claude.effort}.<br />{claudeAuthTip}<br /></>
+              : <>scegli un server MCP connesso e scrivi un messaggio.<br />L'agente userà il tool di chat esposto dal server.<br /></>}
             {worktree ? 'Questa conversazione è dedicata al worktree selezionato.' : 'Nessun worktree selezionato: conversazione generica.'}
           </div>
         )}
@@ -236,10 +338,33 @@ export function AiChatPanel() {
             </div>
           </div>
         ))}
+        {streaming && (
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start', alignSelf: 'flex-start', maxWidth: '85%' }}>
+            <span style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px',
+              borderRadius: '50%', flexShrink: 0, background: 'var(--bg-tag)', color: 'var(--text-secondary)'
+            }}>
+              <Sparkles size={10} />
+            </span>
+            <div style={{
+              padding: '6px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-color)', color: 'var(--text-primary)',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5
+            }}>
+              {streaming}
+            </div>
+          </div>
+        )}
         {busy && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-            lavorando...
+            {activity ? `${activity}…` : 'lavorando...'}
+          </div>
+        )}
+        {!busy && meta && (
+          <div style={{ alignSelf: 'flex-start', color: 'var(--text-muted)', fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
+            {meta}
           </div>
         )}
       </div>
@@ -251,8 +376,8 @@ export function AiChatPanel() {
       }}>
         <input value={input} onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          placeholder={connectedServers.length > 0 ? 'scrivi un messaggio all\'agente…' : 'configura e connetti un server MCP nelle impostazioni'}
-          disabled={connectedServers.length === 0 || busy}
+          placeholder={isClaude || connectedServers.length > 0 ? 'scrivi un messaggio all\'agente…' : 'configura e connetti un server MCP nelle impostazioni'}
+          disabled={(!isClaude && connectedServers.length === 0) || busy}
           spellCheck={false}
           style={{
             flex: 1, background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -260,17 +385,29 @@ export function AiChatPanel() {
             fontFamily: 'var(--font-mono)', padding: '4px 8px', outline: 'none'
           }}
         />
-        <button onClick={send} disabled={!input.trim() || connectedServers.length === 0 || busy}
-          title="send to the agent" data-tip-desc="send the message to the agent"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '24px',
-            background: input.trim() && connectedServers.length > 0 && !busy ? 'var(--accent-color)' : 'var(--bg-disabled)',
-            border: 'none', borderRadius: 'var(--radius-sm)',
-            color: input.trim() && connectedServers.length > 0 && !busy ? 'var(--text-inverse)' : 'var(--text-muted)',
-            cursor: input.trim() && connectedServers.length > 0 && !busy ? 'pointer' : 'not-allowed'
-          }}>
-          {busy ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={11} />}
-        </button>
+        {busy && isClaude ? (
+          <button onClick={() => window.electronAPI.ai.cancel(chatKey)}
+            title="stop" data-tip-desc="interrompe il turno in corso"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '24px',
+              background: 'var(--error-bg)', border: '1px solid var(--error-color)', borderRadius: 'var(--radius-sm)',
+              color: 'var(--error-color)', cursor: 'pointer'
+            }}>
+            <Square size={10} />
+          </button>
+        ) : (
+          <button onClick={send} disabled={!canSend}
+            title="send to the agent" data-tip-desc="send the message to the agent"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '24px',
+              background: canSend ? 'var(--accent-color)' : 'var(--bg-disabled)',
+              border: 'none', borderRadius: 'var(--radius-sm)',
+              color: canSend ? 'var(--text-inverse)' : 'var(--text-muted)',
+              cursor: canSend ? 'pointer' : 'not-allowed'
+            }}>
+            {busy ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={11} />}
+          </button>
+        )}
       </div>
     </div>
   )

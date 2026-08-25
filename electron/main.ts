@@ -13,10 +13,12 @@ import { RoslynService } from './services/roslyn/roslyn.service'
 import { createTerminal, writeToTerminal, resizeTerminal, destroyTerminal, destroyAllTerminals, TerminalType } from './services/terminal/terminal.service'
 import { startProcess, stopProcess, stopAllProcesses } from './services/process/process.service'
 import { McpService, McpServerConfig } from './services/mcp/mcp.service'
+import { ClaudeService, ClaudeSendRequest, setApiKey, hasApiKey } from './services/ai/claude.service'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
 let mcpService: McpService | null = null
+let claudeService: ClaudeService | null = null
 
 // IPC wrapper: rejects with a clean one-line Error (no mssql stack trace) so the
 // dev console does not flood with "Error occurred in handler for 'sql:...'".
@@ -108,9 +110,10 @@ app.whenReady().then(() => {
   const sqlService = new SqlService()
   const sqlWorkspaceService = new SqlWorkspaceService(app.getPath('userData'))
   mcpService = new McpService()
+  claudeService = new ClaudeService()
   roslynService = new RoslynService()
 
-  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService)
+  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService, claudeService)
   createWindow()
   setupAutoUpdater()
 
@@ -136,6 +139,7 @@ app.on('will-quit', () => {
   destroyAllTerminals()
   roslynService?.stop()
   mcpService?.disconnectAll()
+  claudeService?.cancelAll()
 })
 function registerIpcHandlers(
   git: GitService,
@@ -145,7 +149,8 @@ function registerIpcHandlers(
   sql: SqlService,
   sqlWorkspace: SqlWorkspaceService,
   roslyn: RoslynService,
-  mcp: McpService
+  mcp: McpService,
+  claude: ClaudeService
 ): void {
   // ─── Git ───────────────────────────────────────────
   ipcMain.handle('git:status', (_e, repoPath: string) => git.status(repoPath))
@@ -500,4 +505,14 @@ function registerIpcHandlers(
   ipcMain.handle('mcp:disconnect', (_e, name: string) => { mcp.disconnect(name) })
   ipcMain.handle('mcp:listTools', (_e, name: string) => mcp.listTools(name))
   ipcMain.handle('mcp:callTool', (_e, name: string, tool: string, args: Record<string, unknown>) => mcp.callTool(name, tool, args, mainWindow))
+
+  // ─── Claude (subscription CLI / Anthropic API) ─────
+  ipcMain.handle('ai:status', () => claude.status())
+  ipcMain.handle('ai:test', (_e, backend: 'subscription' | 'api') => claude.test(backend, mainWindow))
+  ipcMain.handle('ai:send', (_e, req: ClaudeSendRequest) => claude.send(req, mainWindow))
+  ipcMain.handle('ai:cancel', (_e, chatKey: string) => { claude.cancel(chatKey) })
+  // the key never reaches the renderer: it is stored encrypted (DPAPI/Keychain)
+  // and read only inside the main process when a request is sent
+  ipcMain.handle('ai:setApiKey', ipc((key: string | null) => { setApiKey(key); return hasApiKey() }))
+  ipcMain.handle('ai:hasApiKey', () => hasApiKey())
 }

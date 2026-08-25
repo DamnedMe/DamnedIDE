@@ -6,8 +6,59 @@ interface McpTool {
   inputSchema?: unknown
 }
 
+type ClaudeBackend = 'subscription' | 'api'
+type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+interface ClaudeUsage {
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+}
+
+interface ClaudeSendRequest {
+  chatKey: string
+  prompt: string
+  backend: ClaudeBackend
+  model: string
+  effort: ClaudeEffort
+  system?: string
+  cwd?: string
+  permissionMode?: string
+  resume?: string
+  history?: { role: 'user' | 'assistant'; text: string }[]
+}
+
+interface ClaudeResult {
+  ok: boolean
+  text?: string
+  error?: string
+  sessionId?: string
+  costUsd?: number
+  usage?: ClaudeUsage
+}
+
+interface ClaudeAuthStatus {
+  cli: boolean
+  loggedIn: boolean
+  authMethod?: string
+  email?: string
+  subscriptionType?: string
+  hasApiKey: boolean
+}
+
 interface Window {
   electronAPI: {
+    ai: {
+      status: () => Promise<ClaudeAuthStatus>
+      test: (backend: ClaudeBackend) => Promise<ClaudeResult>
+      send: (req: ClaudeSendRequest) => Promise<ClaudeResult>
+      cancel: (chatKey: string) => Promise<void>
+      setApiKey: (key: string | null) => Promise<boolean>
+      hasApiKey: () => Promise<boolean>
+      onChunk: (cb: (p: { chatKey: string; text: string }) => void) => () => void
+      onTool: (cb: (p: { chatKey: string; name: string }) => void) => () => void
+    }
     mcp: {
       connect: (config: { name: string; command: string; args: string[]; env?: Record<string, string> }) => Promise<{ ok: boolean; error?: string; tools: McpTool[] }>
       disconnect: (name: string) => Promise<void>

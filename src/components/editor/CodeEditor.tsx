@@ -23,7 +23,7 @@ import {
   PanelLeftClose, PanelLeftOpen, FolderTree, Search,
   ChevronRight, Asterisk, Regex, CaseSensitive, SeparatorHorizontal,
   Play, Hammer, Square, RotateCw, GitCompare,
-  ArrowLeft, ArrowRight, XCircle, AlertTriangle, Eye, Copy
+  ArrowLeft, ArrowRight, XCircle, AlertTriangle, Eye, Copy, Loader2
 } from 'lucide-react'
 
 type LeftPanel = 'explorer' | 'search' | 'changes'
@@ -123,7 +123,8 @@ const readLaunchProfiles = async (projectDir: string): Promise<LaunchProfileInfo
 }
 
 export function CodeEditor() {
-  const [rootPath, setRootPath] = useState<string | null>(null)
+  const rootPath = useEditorStore(s => s.editorRootPath)
+  const setRootPath = useEditorStore(s => s.setEditorRootPath)
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('explorer')
@@ -153,7 +154,12 @@ export function CodeEditor() {
   const [outputFilter, setOutputFilter] = useState<Record<OutputLevel, boolean>>({ info: true, trace: true, warn: true, error: true })
   const [isRunning, setIsRunning] = useState(false)
   const [runningProcessId, setRunningProcessId] = useState<string | null>(null)
+  const [buildProgress, setBuildProgress] = useState<{ completed: number; total: number } | null>(null)
   const outputBufferRef = useRef('')
+  const buildOutputBufferRef = useRef('')
+  const buildProjectNamesRef = useRef<string[]>([])
+  const buildCompletedProjectsRef = useRef(new Set<string>())
+  const buildTotalRef = useRef(0)
   const outputAreaRef = useRef<HTMLPreElement | null>(null)
   const runningKindRef = useRef<'build' | 'run' | null>(null)
   const launchUrlRef = useRef<string | null>(null)
@@ -161,6 +167,7 @@ export function CodeEditor() {
   const [gitModal, setGitModal] = useState<{ title: string; text?: string; blame?: { hash: string; author: string; date: string; line: string }[]; history?: { hash: string; date: string; message: string; authorName: string }[] } | null>(null)
   const openFileRef = useRef<(f: string, l?: number, fromNavigation?: boolean) => void>(() => {})
   const rootPathRef = useRef<string | null>(null)
+  const previousRootPathRef = useRef<string | null>(null)
   const navBackRef = useRef<NavEntry[]>([])
   const navForwardRef = useRef<NavEntry[]>([])
   const [, setNavVersion] = useState(0)
@@ -226,15 +233,42 @@ export function CodeEditor() {
       return
     }
     const wt = useWorktreeStore.getState().selectedWorktree
-    if (wt && !rootPath) {
+    if (wt && !useEditorStore.getState().editorRootPath) {
       setRootPath(wt)
       setExplorerVisible(true)
       setLeftPanel('explorer')
     }
-  }, [])
+  }, [setRootPath, setEditorNav])
 
   activeFileRef.current = activeFile
   rootPathRef.current = rootPath
+
+  // Switching worktrees changes the editor workspace. Clear files and
+  // navigation from the previous root, while keeping them across panel changes
+  // where the root itself does not change.
+  useEffect(() => {
+    const previous = previousRootPathRef.current
+    if (previous && previous !== rootPath) {
+      setOpenFiles([])
+      setActiveFile(null)
+      setDiffView(null)
+      setMdPreview(false)
+      pendingLineRef.current = null
+      originalContentsRef.current.clear()
+      decorationIdsRef.current.clear()
+      modifiedLinesRef.current.clear()
+      navBackRef.current = []
+      navForwardRef.current = []
+      setNavVersion(v => v + 1)
+      roslynReadyRef.current = false
+      roslynOffRef.current = false
+      roslynStartingRef.current = false
+      roslynReadyPromiseRef.current = null
+      setRoslynStatus('off')
+      setCsErrorCount({ errors: 0, warnings: 0 })
+    }
+    previousRootPathRef.current = rootPath
+  }, [rootPath])
 
   const updateModifiedDecorations = useCallback((editor: MonacoEditor, monaco: typeof import('monaco-editor'), filePath: string) => {
     const model = editor.getModel()
@@ -740,6 +774,7 @@ export function CodeEditor() {
   const [projectKind, setProjectKind] = useState<'dotnet' | 'node' | null>(null)
   const [dotnetProject, setDotnetProject] = useState<string | null>(null)
   const [solutionProjects, setSolutionProjects] = useState<SolutionProject[]>([])
+  const [solutionPath, setSolutionPath] = useState<string | null>(null)
   const [startupProject, setStartupProject] = useState<SolutionProject | null>(null)
   const [launchProfiles, setLaunchProfiles] = useState<string[]>([])
   const [launchProfile, setLaunchProfile] = useState<string | null>(null)
@@ -748,7 +783,7 @@ export function CodeEditor() {
   useEffect(() => {
     if (!rootPath) {
       setProjectKind(null); setDotnetProject(null)
-      setSolutionProjects([]); setStartupProject(null)
+      setSolutionProjects([]); setSolutionPath(null); setStartupProject(null)
       setLaunchProfiles([]); setLaunchProfile(null); setRunConfigDir(null)
       return
     }
@@ -765,11 +800,13 @@ export function CodeEditor() {
         setRunConfigDir(cfgDir)
 
         if (hasPackage && !rootCsproj && !sln) {
-          setProjectKind('node'); setDotnetProject(null)
+          setProjectKind('node'); setDotnetProject(null); setSolutionPath(null)
           setSolutionProjects([]); setStartupProject(null); setLaunchProfiles([]); setLaunchProfile(null)
           return
         }
 
+        const slnPath = sln ? `${rootPath}\\${sln.name}` : null
+        setSolutionPath(slnPath)
         const projects: SolutionProject[] = []
         const push = (rel: string) => {
           const norm = rel.split('/').join('\\')
@@ -793,7 +830,7 @@ export function CodeEditor() {
         const seen = new Set<string>()
         const uniq = projects.filter(p => { const k = p.csprojPath.toLowerCase(); return seen.has(k) ? false : (seen.add(k), true) })
         if (uniq.length === 0) {
-          setProjectKind(null); setDotnetProject(null)
+          setProjectKind(null); setDotnetProject(null); setSolutionPath(null)
           setSolutionProjects([]); setStartupProject(null); setLaunchProfiles([]); setLaunchProfile(null)
           return
         }
@@ -828,7 +865,7 @@ export function CodeEditor() {
         launchUrlRef.current = selectedProfile ? (info.launchUrls[selectedProfile] ?? null) : null
       })
       .catch(() => {
-        setProjectKind(null); setDotnetProject(null)
+        setProjectKind(null); setDotnetProject(null); setSolutionPath(null)
         setSolutionProjects([]); setStartupProject(null); setLaunchProfiles([]); setLaunchProfile(null)
       })
   }, [rootPath])
@@ -865,7 +902,8 @@ export function CodeEditor() {
       const proj = dotnetProject ? ['--project', dotnetProject] : []
       const run = { c: 'dotnet', a: ['run', ...proj] }
       if (launchProfile) run.a.push('--launch-profile', launchProfile)
-      const build = { c: 'dotnet', a: ['build', ...(dotnetProject ? [dotnetProject] : [])] }
+      const buildTarget = solutionPath ?? dotnetProject
+      const build = { c: 'dotnet', a: ['build', ...(buildTarget ? [buildTarget] : [])] }
       return { build, run }
     }
     return { build: { c: 'npm', a: ['run', 'build'] }, run: { c: 'npm', a: ['run', 'dev'] } }
@@ -901,23 +939,55 @@ export function CodeEditor() {
     if (text) window.electronAPI.clipboard.write(text)
   }
 
+  const markCompiledProject = (key: string) => {
+    if (buildCompletedProjectsRef.current.has(key)) return
+    buildCompletedProjectsRef.current.add(key)
+    setBuildProgress(prev => prev
+      ? { ...prev, completed: Math.min(prev.total, buildCompletedProjectsRef.current.size) }
+      : prev)
+  }
+
+  const trackBuildProgress = (data: string) => {
+    if (runningKindRef.current !== 'build' || buildTotalRef.current === 0) return
+    const parts = (buildOutputBufferRef.current + data).split('\n')
+    buildOutputBufferRef.current = parts.pop() ?? ''
+    for (const rawLine of parts) {
+      const line = rawLine.replace(/\r/g, '')
+      if (!/\s->\s/.test(line)) continue
+      const project = buildProjectNamesRef.current.find(name => {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        return new RegExp(`(?:^|[\\\\/\\s])${escaped}(?:\\.csproj)?\\s*->`, 'i').test(line)
+      })
+      if (project) markCompiledProject(project)
+      else if (buildTotalRef.current === 1) markCompiledProject('__project__')
+    }
+  }
+
   const startQuickCmd = async (kind: 'build' | 'run') => {
     const cmds = commandsFor()
     if (!rootPath || !cmds || isRunning) return
     const { c, a } = cmds[kind]
     runningKindRef.current = kind
     browserOpenedRef.current = false
+    buildOutputBufferRef.current = ''
+    buildCompletedProjectsRef.current.clear()
+    buildProjectNamesRef.current = solutionProjects.map(p => p.name)
+    buildTotalRef.current = kind === 'build' && projectKind === 'dotnet'
+      ? Math.max(solutionProjects.length, 1)
+      : 0
+    setBuildProgress(buildTotalRef.current > 0 ? { completed: 0, total: buildTotalRef.current } : null)
     setQuickOutput([{ level: 'info', text: `> ${c} ${a.join(' ')}` }])
     setIsRunning(true)
     setRunningProcessId(null)
     try {
-      // The selected project is passed explicitly so the process can run from
-      // the opened folder, including when the project belongs to a solution.
+      // Run uses the selected startup project; build uses the whole solution
+      // when one is available, so its progress can cover every project.
       const id = await window.electronAPI.process.start(rootPath, c, a)
       setRunningProcessId(id)
     } catch (e) {
       pushOutputLine('error', (e as Error).message)
       setIsRunning(false)
+      setBuildProgress(null)
       runningKindRef.current = null
     }
   }
@@ -928,6 +998,7 @@ export function CodeEditor() {
     }
     setRunningProcessId(null)
     setIsRunning(false)
+    setBuildProgress(null)
     runningKindRef.current = null
     pushOutputLine('info', '[stopped]')
   }
@@ -941,6 +1012,7 @@ export function CodeEditor() {
   useEffect(() => {
     const unsubOutput = window.electronAPI.process.onOutput((id, data) => {
       appendOutput(data)
+      trackBuildProgress(data)
       // once Kestrel is up, open the default browser on the launch page
       if (runningKindRef.current === 'run' && !browserOpenedRef.current) {
         const m = data.match(/Now listening on:\s*(\S+)/)
@@ -953,6 +1025,10 @@ export function CodeEditor() {
       }
     })
     const unsubExit = window.electronAPI.process.onExit((id, code) => {
+      const wasBuild = runningKindRef.current === 'build'
+      if (wasBuild && code === 0 && buildTotalRef.current > 0) {
+        setBuildProgress({ completed: buildTotalRef.current, total: buildTotalRef.current })
+      }
       pushOutputLine('info', `[exited ${code ?? '?'}]`)
       setIsRunning(false)
       setRunningProcessId(null)
@@ -1152,7 +1228,7 @@ export function CodeEditor() {
               <select
                 value={startupProject?.relative ?? ''}
                 onChange={(e) => handleStartupProjectChange(e.target.value)}
-                title="startup project" data-tip-desc="the .NET project used by run and build (saved per solution)"
+                 title="startup project" data-tip-desc="the .NET project used by run; solution build includes every project"
                 style={{
                   maxWidth: '140px', padding: '1px 4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
                   fontFamily: 'var(--font-mono)', background: 'var(--bg-input)',
@@ -1182,7 +1258,7 @@ export function CodeEditor() {
                 ))}
               </select>
             )}
-            <button onClick={() => startQuickCmd('build')} disabled={isRunning} title="build" data-tip-desc="build the project (dotnet build)"
+            <button onClick={() => startQuickCmd('build')} disabled={isRunning} title="build" data-tip-desc="build the solution or project (dotnet build)"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -1394,9 +1470,21 @@ export function CodeEditor() {
             padding: '3px 8px', background: 'var(--bg-primary)',
             borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
           }}>
-            <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
+              {isRunning && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-color)' }} />}
               {isRunning ? 'running...' : 'output'}
             </span>
+            {isRunning && runningKindRef.current === 'build' && buildProgress && (
+              <div title={`compiled projects: ${buildProgress.completed}/${buildProgress.total}`} data-tip-desc="build progress based on completed projects"
+                style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: '110px', maxWidth: '180px', flexShrink: 0 }}>
+                <div style={{ flex: 1, height: '5px', overflow: 'hidden', borderRadius: '3px', background: 'var(--bg-tag)', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ width: `${Math.round((buildProgress.completed / buildProgress.total) * 100)}%`, height: '100%', background: 'var(--accent-color)', transition: 'width 0.2s ease' }} />
+                </div>
+                <span style={{ color: 'var(--accent-color)', fontSize: 'calc(8px * var(--ui-text-scale, 1))', whiteSpace: 'nowrap' }}>
+                  {buildProgress.completed}/{buildProgress.total}
+                </span>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '3px', flex: 1, minWidth: 0, overflow: 'hidden' }}>
               {(['info', 'trace', 'warn', 'error'] as OutputLevel[]).map(level => {
                 const active = outputFilter[level]

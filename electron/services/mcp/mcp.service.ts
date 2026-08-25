@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { BrowserWindow } from 'electron'
 import { createInterface } from 'readline'
+import { resolveCommand } from '../process/resolve-command'
 
 export interface McpTool {
   name: string
@@ -88,7 +89,7 @@ export class McpService {
     this.disconnect(config.name)
     let proc: ChildProcess
     try {
-      proc = spawn(config.command, config.args, {
+      proc = spawn(resolveCommand(config.command), config.args, {
         env: { ...process.env, ...(config.env || {}) },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true

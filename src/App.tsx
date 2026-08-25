@@ -13,7 +13,7 @@ import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ToastHost } from './components/layout/ToastHost'
 import { TooltipHost } from './components/layout/TooltipHost'
 import { RecentReposDialog } from './components/layout/RecentReposDialog'
-import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore, useTerminalStore } from './store'
+import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from './components/editor/monaco-theme'
@@ -48,6 +48,8 @@ export default function App() {
   const gitStatus = useGitStore(s => s.status)
   const gitFiles = useGitStore(s => s.files)
   const modifiedCount = gitFiles.filter(f => !f.staged).length
+  const selectedWorktree = useWorktreeStore(s => s.selectedWorktree)
+  const setEditorRootPath = useEditorStore(s => s.setEditorRootPath)
   const themesDefined = useRef(false)
   const recentRepos = useRecentReposStore(s => s.repos)
   const addRepo = useRecentReposStore(s => s.addRepo)
@@ -64,6 +66,12 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', t)
     if (t !== theme) setTheme(t)
   }, [settingsTheme])
+
+  // The editor must follow an explicitly selected worktree, while keeping the
+  // repository folder when the user only changes panels or settings.
+  useEffect(() => {
+    if (selectedWorktree) setEditorRootPath(selectedWorktree)
+  }, [selectedWorktree, setEditorRootPath])
 
   // User-defined primary color: overrides the theme accent (both dark and light) and
   // its translucent derivates, independent of the active theme.
@@ -118,6 +126,8 @@ export default function App() {
 
   const handleRepoSelected = (path: string) => {
     addRepo(path)
+    useWorktreeStore.getState().selectWorktree(null)
+    setEditorRootPath(path)
     setRepoPath(path)
   }
 

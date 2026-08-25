@@ -43,31 +43,9 @@ interface AgentProfile {
   effortPath: string[]
 }
 
+// Claude is not here on purpose: it is a native provider (useClaudeStore), not
+// an MCP agent.
 const AGENT_PROFILES: Record<string, AgentProfile> = {
-  // extracted from the installed Claude Code 2.1.187 model ladder/picker and
-  // settings schema: effortLevel enum is low/medium/high/xhigh (default high)
-  'claude-code': {
-    models: [
-      'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8',
-      'claude-haiku-4-5', 'claude-mythos-5', 'claude-fable-5',
-      'claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku',
-      'opus', 'sonnet', 'haiku', 'fable'
-    ],
-    effort: ['low', 'medium', 'high', 'xhigh'],
-    modelPath: ['options', 'model'],
-    effortPath: ['options', 'effort']
-  },
-  'claude-subscription': {
-    models: [
-      'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8',
-      'claude-haiku-4-5', 'claude-mythos-5', 'claude-fable-5',
-      'claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku',
-      'opus', 'sonnet', 'haiku', 'fable'
-    ],
-    effort: ['low', 'medium', 'high', 'xhigh'],
-    modelPath: ['options', 'model'],
-    effortPath: ['options', 'effort']
-  },
   'codex': {
     models: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-codex'],
     effort: ['minimal', 'low', 'medium', 'high'],

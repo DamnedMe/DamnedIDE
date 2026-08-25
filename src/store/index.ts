@@ -145,7 +145,9 @@ export interface EditorNav {
 }
 
 interface EditorState {
+  editorRootPath: string | null
   editorNav: EditorNav | null
+  setEditorRootPath: (path: string | null) => void
   setEditorNav: (nav: EditorNav | null) => void
 }
 
@@ -467,7 +469,9 @@ export const useSettingsStore = create<SettingsState>((set) => {
 })
 
 export const useEditorStore = create<EditorState>((set) => ({
+  editorRootPath: null,
   editorNav: null,
+  setEditorRootPath: (path) => set({ editorRootPath: path }),
   setEditorNav: (nav) => set({ editorNav: nav })
 }))
 
@@ -506,8 +510,9 @@ export interface McpServerConfig {
 }
 
 export const MCP_PRESETS: { label: string; config: McpServerConfig }[] = [
-  { label: 'Claude Code', config: { name: 'claude-code', command: 'claude', args: ['mcp', 'serve'] } },
-  { label: 'Claude Subscription', config: { name: 'claude-subscription', command: 'claude', args: ['mcp', 'serve'] } },
+  // no Claude preset here: `claude mcp serve` exposes Claude Code's worker tools
+  // (Bash, Read, Edit…) and registers no agent type, so it can never answer a
+  // chat turn. Claude is a native provider — see useClaudeStore.
   { label: 'opencode', config: { name: 'opencode', command: 'opencode', args: ['mcp', 'start'] } },
   { label: 'Cursor', config: { name: 'cursor', command: 'cursor', args: ['mcp', 'serve'] } },
   { label: 'Codex', config: { name: 'codex', command: 'codex', args: ['mcp', 'server'] } }
@@ -550,9 +555,22 @@ interface McpState {
   setChatSel: (name: string, sel: McpChatSelection) => void
 }
 
+// The connected map is persisted by name, so a server that no longer exists
+// (removed preset, deleted custom entry) would keep showing up in the chat
+// provider list. Drop anything that is not a configured server any more.
+function loadConnected(custom: McpServerConfig[]): Record<string, boolean> {
+  const known = new Set([...MCP_PRESETS.map(p => p.config.name), ...custom.map(c => c.name)])
+  const stored = loadJson<Record<string, boolean>>(MCP_CONNECTED_KEY, {})
+  const pruned = Object.fromEntries(Object.entries(stored).filter(([name]) => known.has(name)))
+  if (Object.keys(pruned).length !== Object.keys(stored).length) saveJson(MCP_CONNECTED_KEY, pruned)
+  return pruned
+}
+
+const mcpCustom = loadJson<McpServerConfig[]>(MCP_CUSTOM_KEY, [])
+
 export const useMcpStore = create<McpState>((set) => ({
-  custom: loadJson<McpServerConfig[]>(MCP_CUSTOM_KEY, []),
-  connected: loadJson<Record<string, boolean>>(MCP_CONNECTED_KEY, {}),
+  custom: mcpCustom,
+  connected: loadConnected(mcpCustom),
   status: {},
   errors: {},
   tools: {},
@@ -589,6 +607,71 @@ export const useMcpStore = create<McpState>((set) => ({
     return { chatSel }
   })
 }))
+
+// ─── Claude nativo (subscription CLI / API Anthropic) ────────────────────────
+export const CLAUDE_MODELS: { id: string; label: string }[] = [
+  { id: 'claude-opus-5', label: 'Opus 5' },
+  { id: 'claude-opus-4-8', label: 'Opus 4.8' },
+  { id: 'claude-sonnet-5', label: 'Sonnet 5' },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
+  { id: 'claude-fable-5', label: 'Fable 5' }
+]
+export const CLAUDE_EFFORTS: ClaudeEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+// only meaningful on the subscription backend, where Claude drives real tools
+export const CLAUDE_PERMISSION_MODES = ['default', 'acceptEdits', 'plan', 'bypassPermissions']
+
+const CLAUDE_KEY = 'damnedide_claude'
+
+interface ClaudeState {
+  backend: ClaudeBackend
+  model: string
+  effort: ClaudeEffort
+  permissionMode: string
+  // chatKey -> CLI session id: resuming keeps the transcript on the CLI side so
+  // each turn only sends the new message instead of the whole history
+  sessions: Record<string, string>
+  setConfig: (patch: Partial<Pick<ClaudeState, 'backend' | 'model' | 'effort' | 'permissionMode'>>) => void
+  setSession: (chatKey: string, sessionId: string) => void
+  clearSession: (chatKey: string) => void
+}
+
+type ClaudePersisted = Pick<ClaudeState, 'backend' | 'model' | 'effort' | 'permissionMode' | 'sessions'>
+
+const CLAUDE_DEFAULTS: ClaudePersisted = {
+  backend: 'subscription',
+  model: 'claude-opus-5',
+  effort: 'high',
+  permissionMode: 'default',
+  sessions: {}
+}
+
+export const useClaudeStore = create<ClaudeState>((set) => {
+  const persist = (s: ClaudePersisted) => saveJson(CLAUDE_KEY, s)
+  const pick = (s: ClaudeState): ClaudePersisted => ({
+    backend: s.backend, model: s.model, effort: s.effort, permissionMode: s.permissionMode, sessions: s.sessions
+  })
+  return {
+    ...CLAUDE_DEFAULTS,
+    ...loadJson<Partial<ClaudePersisted>>(CLAUDE_KEY, {}),
+    setConfig: (patch) => set((s) => {
+      const next = { ...pick(s), ...patch }
+      persist(next)
+      return patch
+    }),
+    setSession: (chatKey, sessionId) => set((s) => {
+      const sessions = { ...s.sessions, [chatKey]: sessionId }
+      persist({ ...pick(s), sessions })
+      return { sessions }
+    }),
+    clearSession: (chatKey) => set((s) => {
+      const sessions = { ...s.sessions }
+      delete sessions[chatKey]
+      persist({ ...pick(s), sessions })
+      return { sessions }
+    })
+  }
+})
 
 // ─── AI chat: IDE-level generic rules (any agent) + per-worktree conversations ─
 export interface AiChatMessage {

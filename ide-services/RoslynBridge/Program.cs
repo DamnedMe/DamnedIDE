@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
@@ -7,30 +8,46 @@ using Microsoft.CodeAnalysis.Text;
 
 var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
+// Requests are handled concurrently: replies carry their id, so the client matches
+// them out of order. Serially, an F12 queued behind the diagnostics request that
+// every keystroke schedules — which is what made navigation feel slow.
+var writeLock = new object();
+
 string? line;
 while ((line = Console.ReadLine()) != null)
 {
     if (string.IsNullOrWhiteSpace(line)) continue;
-    var id = 0;
-    try
+    var raw = line;
+    _ = Task.Run(async () =>
     {
-        var req = JsonSerializer.Deserialize<BridgeRequest>(line, jsonOptions);
-        if (req == null)
+        var id = 0;
+        try
         {
-            Write(new BridgeResponse { Id = id, Ok = false, Error = "invalid request" });
-            continue;
+            var req = JsonSerializer.Deserialize<BridgeRequest>(raw, jsonOptions);
+            if (req == null)
+            {
+                Write(new BridgeResponse { Id = id, Ok = false, Error = "invalid request" });
+                return;
+            }
+            id = req.Id;
+            Write(await BridgeHandler.HandleAsync(req));
         }
-        id = req.Id;
-        Write(await BridgeHandler.HandleAsync(req));
-    }
-    catch (Exception ex)
-    {
-        Write(new BridgeResponse { Id = id, Ok = false, Error = ex.Message });
-    }
-    Console.Out.Flush();
+        catch (Exception ex)
+        {
+            Write(new BridgeResponse { Id = id, Ok = false, Error = ex.Message });
+        }
+    });
 }
 
-void Write(BridgeResponse r) => Console.WriteLine(JsonSerializer.Serialize(r, jsonOptions));
+void Write(BridgeResponse r)
+{
+    var json = JsonSerializer.Serialize(r, jsonOptions);
+    lock (writeLock)
+    {
+        Console.WriteLine(json);
+        Console.Out.Flush();
+    }
+}
 
 internal class BridgeRequest
 {
@@ -77,8 +94,10 @@ internal class BridgeDiagnostic
 
 internal static class BridgeHandler
 {
+    // Swapped by reference on re-open (worktree switch) so concurrent queries always
+    // read a whole, consistent map instead of one being cleared underneath them.
     private static Solution _solution = null!;
-    private static readonly Dictionary<string, Document> _documents = new(StringComparer.OrdinalIgnoreCase);
+    private static Dictionary<string, Document> _documents = new(StringComparer.OrdinalIgnoreCase);
     private static bool _refsComplete;
 
     public static async Task<BridgeResponse> HandleAsync(BridgeRequest req)
@@ -109,10 +128,10 @@ internal static class BridgeHandler
     // references from the csproj XML + per-project NuGet references from obj/assets),
     // files parsed in parallel, compilations warmed in parallel. Small compilations →
     // fast navigation and precise cross-project resolution.
-    private static async Task<BridgeResponse> OpenAsync(BridgeRequest req)
+    private static Task<BridgeResponse> OpenAsync(BridgeRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Solution))
-            return new BridgeResponse { Id = req.Id, Ok = false, Error = "no solution" };
+            return Task.FromResult(new BridgeResponse { Id = req.Id, Ok = false, Error = "no solution" });
 
         var root = Path.GetDirectoryName(req.Solution)!;
         var projects = DiscoverProjects(root);
@@ -222,8 +241,10 @@ internal static class BridgeHandler
         _solution = sol;
         IndexDocuments();
 
-        // build the identifier name index (parallel) for fast reference/implementation lookups
-        var index = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentBag<(string File, int Offset)>>(StringComparer.OrdinalIgnoreCase);
+        // Identifier name index (parallel) for fast reference/implementation lookups.
+        // Ordinal, not OrdinalIgnoreCase: C# is case sensitive, and folding `id`/`Id`/`ID`
+        // into one bucket only multiplies the candidates every lookup has to bind.
+        var index = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentBag<(string File, int Offset)>>(StringComparer.Ordinal);
         Parallel.For(0, parsed.Length, i =>
         {
             var (path, tree) = parsed[i];
@@ -236,20 +257,30 @@ internal static class BridgeHandler
                 index.GetOrAdd(t, _ => new System.Collections.Concurrent.ConcurrentBag<(string, int)>()).Add((path, tok.SpanStart));
             }
         });
-        _nameIndex = index.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.OrdinalIgnoreCase);
+        _nameIndex = index.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.Ordinal);
         Console.Error.WriteLine($"[roslyn] name index: {_nameIndex.Count} nomi");
 
-        // warm all compilations in parallel so the first query is instant
-        var compTasks = _solution.Projects.Select(p => p.GetCompilationAsync()).ToArray();
-        await Task.WhenAll(compTasks);
-        Console.Error.WriteLine($"[roslyn] {compTasks.Length} progetti compilati, docs={_documents.Count}");
+        // Compilations warm up in the BACKGROUND: the client waits for `open` before its
+        // first F12, and compiling every project up-front is most of that wait. Queries
+        // compile the projects they actually touch, on demand.
+        var projectCount = _solution.Projects.Count();
+        var warming = _solution;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.WhenAll(warming.Projects.Select(p => p.GetCompilationAsync()));
+                Console.Error.WriteLine($"[roslyn] {projectCount} progetti compilati");
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"[roslyn] warmup: {ex.Message}"); }
+        });
 
-        return new BridgeResponse
+        return Task.FromResult(new BridgeResponse
         {
             Id = req.Id,
             Ok = true,
-            Symbol = $"projects={compTasks.Length}, docs={_documents.Count}"
-        };
+            Symbol = $"projects={projectCount}, docs={_documents.Count}"
+        });
     }
 
     private sealed class ProjDef
@@ -410,12 +441,13 @@ internal static class BridgeHandler
 
     private static void IndexDocuments()
     {
-        _documents.Clear();
+        var map = new Dictionary<string, Document>(StringComparer.OrdinalIgnoreCase);
         foreach (var doc in _solution.Projects.SelectMany(p => p.Documents))
         {
             if (!string.IsNullOrEmpty(doc.FilePath))
-                _documents[NormalizePath(doc.FilePath)] = doc;
+                map[NormalizePath(doc.FilePath)] = doc;
         }
+        _documents = map;
     }
 
     private static string NormalizePath(string path) => path.Replace('\\', '/');
@@ -615,28 +647,37 @@ internal static class BridgeHandler
         };
     }
 
-    // Binds an identifier token at (file, offset) to its symbol.
-    private static ISymbol? BindAt(string file, int offset)
+    // Binds EVERY candidate offset inside one file, reusing that file's syntax root and
+    // semantic model. Binding one offset at a time rebuilt both for each occurrence, so a
+    // name used 300 times re-bound the same handful of files 300 times — the reason
+    // Ctrl+Shift+F12 on a common member took seconds.
+    private static void BindFile(string file, IEnumerable<int> offsets, Action<int, ISymbol> onBound)
     {
-        if (!_documents.TryGetValue(NormalizePath(file), out var doc)) return null;
+        if (!_documents.TryGetValue(NormalizePath(file), out var doc)) return;
         var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
         var sm = doc.GetSemanticModelAsync().GetAwaiter().GetResult();
-        if (root == null || sm == null) return null;
-        var token = root.FindToken(offset);
-        if (token.IsKind(SyntaxKind.None) || token.Parent == null) return null;
-        for (var n = token.Parent; n != null; n = n.Parent)
+        if (root == null || sm == null) return;
+        foreach (var offset in offsets)
         {
-            try
+            var token = root.FindToken(offset);
+            if (token.IsKind(SyntaxKind.None) || token.Parent == null) continue;
+            for (var n = token.Parent; n != null; n = n.Parent)
             {
-                var s = sm.GetSymbolInfo(n).Symbol;
-                if (s != null) return s;
-                var d = sm.GetDeclaredSymbol(n);
-                if (d != null) return d;
+                ISymbol? s = null;
+                try { s = sm.GetSymbolInfo(n).Symbol ?? sm.GetDeclaredSymbol(n); }
+                catch { /* not queryable */ }
+                if (s != null) { onBound(offset, s); break; }
             }
-            catch { /* not queryable */ }
         }
-        return null;
     }
+
+    // Name-index candidates grouped per file, so binding happens once per file.
+    private static IEnumerable<IGrouping<string, (string File, int Offset)>> CandidatesByFile(string name) =>
+        (_nameIndex.TryGetValue(name, out var list) ? list : [])
+            .GroupBy(c => c.File, StringComparer.OrdinalIgnoreCase);
+
+    private static async Task<T?> WithBudget<T>(Task<T> task, int ms) where T : class =>
+        await Task.WhenAny(task, Task.Delay(ms)) == task ? await task : null;
 
     // Fast references: name-index candidates + parallel semantic binding, with a
     // SymbolFinder fallback when the index yields nothing. Symbols are compared by
@@ -645,32 +686,42 @@ internal static class BridgeHandler
     private static async Task<List<BridgeTarget>> FindReferencesFastAsync(ISymbol symbol)
     {
         var res = new List<BridgeTarget>();
-        var candidates = _nameIndex.TryGetValue(symbol.Name, out var list) ? list : [];
-        var bag = new System.Collections.Concurrent.ConcurrentBag<BridgeTarget>();
+        var bag = new ConcurrentBag<BridgeTarget>();
         var targetDisplay = symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
-        Parallel.ForEach(candidates, c =>
+        Parallel.ForEach(CandidatesByFile(symbol.Name), group =>
         {
-            var s = BindAt(c.File, c.Offset);
-            if (s != null &&
-                string.Equals(s.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), targetDisplay, StringComparison.Ordinal) &&
-                _documents.TryGetValue(NormalizePath(c.File), out var doc))
+            if (!_documents.TryGetValue(NormalizePath(group.Key), out var doc)) return;
+            var tree = doc.GetSyntaxTreeAsync().GetAwaiter().GetResult();
+            if (tree == null) return;
+            BindFile(group.Key, group.Select(c => c.Offset), (offset, s) =>
             {
-                var tree = doc.GetSyntaxTreeAsync().GetAwaiter().GetResult();
-                var ls = tree?.GetLineSpan(new Microsoft.CodeAnalysis.Text.TextSpan(c.Offset, Math.Min(symbol.Name.Length, 40)));
-                if (ls.HasValue)
-                    bag.Add(new BridgeTarget { File = NormalizePath(c.File), Line = ls.Value.StartLinePosition.Line + 1, Column = ls.Value.StartLinePosition.Character + 1 });
-            }
+                if (!string.Equals(s.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), targetDisplay, StringComparison.Ordinal)) return;
+                var ls = tree.GetLineSpan(new TextSpan(offset, Math.Min(symbol.Name.Length, 40)));
+                bag.Add(new BridgeTarget { File = NormalizePath(group.Key), Line = ls.StartLinePosition.Line + 1, Column = ls.StartLinePosition.Character + 1 });
+            });
         });
         res.AddRange(bag);
         if (res.Count == 0)
         {
             // bounded fallback: SymbolFinder can hang on odd symbols (keywords, namespaces)
-            var refTask = SymbolFinder.FindReferencesAsync(symbol, _solution);
-            if (await Task.WhenAny(refTask, Task.Delay(5000)) == refTask)
-                res.AddRange((await refTask).SelectMany(r => r.Locations.Select(l => l.Location)).Where(l => l.IsInSource).Select(ToTarget));
+            var refs = await WithBudget(SymbolFinder.FindReferencesAsync(symbol, _solution), 5000);
+            if (refs != null)
+                res.AddRange(refs.SelectMany(r => r.Locations.Select(l => l.Location)).Where(l => l.IsInSource).Select(ToTarget));
         }
         return res;
     }
+
+    // Member signature WITHOUT the declaring type: `Handle(int)`.
+    // `CSharpErrorMessageFormat` includes the containing type, so comparing an interface
+    // member with its implementation (`IFoo.Handle(int)` vs `Impl.Handle(int)`) could
+    // never match: the whole fast path missed and EVERY Ctrl+F12 on an interface member
+    // fell through to the 5s-capped SymbolFinder.
+    private static readonly SymbolDisplayFormat MemberSigFormat = new(
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
+        memberOptions: SymbolDisplayMemberOptions.IncludeParameters,
+        parameterOptions: SymbolDisplayParameterOptions.IncludeType,
+        miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
 
     // Fast implementations: candidates with the same name whose containing type
     // implements the interface member (or overrides the virtual/abstract member).
@@ -678,42 +729,59 @@ internal static class BridgeHandler
     // implementation actually used), not the intermediate base classes.
     private static async Task<List<BridgeTarget>> FindImplementationsFastAsync(ISymbol symbol)
     {
-        var res = new List<BridgeTarget>();
-        var ifaceMember = symbol as IMethodSymbol;
-        var iface = symbol.ContainingType is { TypeKind: TypeKind.Interface } ? symbol.ContainingType : null;
-        var candidates = _nameIndex.TryGetValue(symbol.Name, out var list) ? list : [];
-        var memberSig = ifaceMember?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
-        var symbolSig = symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
-
-        var matched = new System.Collections.Concurrent.ConcurrentBag<IMethodSymbol>();
-        Parallel.ForEach(candidates, c =>
+        // Ctrl+F12 on an interface or base class itself → the types realizing it. There is
+        // no type index to shortcut this, so use the finder that already does it right.
+        if (symbol is INamedTypeSymbol type)
         {
-            if (BindAt(c.File, c.Offset) is not IMethodSymbol m) return;
-            if (!string.Equals(m.Name, symbol.Name, StringComparison.Ordinal)) return;
-            if (iface != null && ifaceMember != null)
+            var typeRes = new List<BridgeTarget>();
+            var impls = await WithBudget(SymbolFinder.FindImplementationsAsync(type, _solution), 15000);
+            if (impls != null)
+                typeRes.AddRange(impls.SelectMany(i => i.Locations).Where(l => l.IsInSource).Select(ToTarget));
+            if (type.TypeKind == TypeKind.Class)
             {
-                var t = m.ContainingType;
-                if (t.TypeKind == TypeKind.Class &&
-                    t.AllInterfaces.Any(i => DisplayEquals(i, iface)) &&
-                    DisplayEquals(m, ifaceMember)) matched.Add(m);
+                var derived = await WithBudget(SymbolFinder.FindDerivedClassesAsync(type, _solution), 15000);
+                if (derived != null)
+                    typeRes.AddRange(derived.SelectMany(d => d.Locations).Where(l => l.IsInSource).Select(ToTarget));
             }
-            else if (m.IsOverride && m.OverriddenMethod != null)
+            return typeRes;
+        }
+
+        var res = new List<BridgeTarget>();
+        var iface = symbol.ContainingType is { TypeKind: TypeKind.Interface } ? symbol.ContainingType : null;
+        var ifaceDisplay = iface?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+        var memberSig = symbol.ToDisplayString(MemberSigFormat);
+        var symbolDisplay = symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+
+        // methods, properties and events alike — Ctrl+F12 on an interface property is as
+        // valid as on a method in Visual Studio
+        var matched = new ConcurrentBag<ISymbol>();
+        Parallel.ForEach(CandidatesByFile(symbol.Name), group =>
+        {
+            BindFile(group.Key, group.Select(c => c.Offset), (_, s) =>
             {
-                var cur = m.OverriddenMethod;
-                while (cur != null)
+                if (s.Kind != symbol.Kind || !string.Equals(s.Name, symbol.Name, StringComparison.Ordinal)) return;
+                if (ifaceDisplay != null)
                 {
-                    if (DisplayEquals(cur, symbol)) { matched.Add(m); break; }
-                    cur = cur.OverriddenMethod;
+                    var t = s.ContainingType;
+                    if (t is { TypeKind: TypeKind.Class or TypeKind.Struct } &&
+                        t.AllInterfaces.Any(i => string.Equals(i.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), ifaceDisplay, StringComparison.Ordinal)) &&
+                        string.Equals(s.ToDisplayString(MemberSigFormat), memberSig, StringComparison.Ordinal))
+                        matched.Add(s);
+                    return;
                 }
-            }
-            else if (DisplayEquals(m, symbol))
-            {
-                matched.Add(m); // the declaration itself
-            }
+                if (Overridden(s) != null)
+                {
+                    for (var cur = Overridden(s); cur != null; cur = Overridden(cur))
+                        if (DisplayEquals(cur, symbol)) { matched.Add(s); break; }
+                    return;
+                }
+                if (string.Equals(s.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), symbolDisplay, StringComparison.Ordinal))
+                    matched.Add(s); // the declaration itself
+            });
         });
 
         var all = matched.ToList();
-        // keep only the most-derived: a method overridden by another matched method
+        // keep only the most-derived: a member overridden by another matched member
         // is an intermediate base, not the effective implementation
         foreach (var m in all)
         {
@@ -726,24 +794,28 @@ internal static class BridgeHandler
         }
         if (res.Count == 0)
         {
-            var implTask = SymbolFinder.FindImplementationsAsync(symbol, _solution);
-            if (await Task.WhenAny(implTask, Task.Delay(5000)) == implTask)
-                res.AddRange((await implTask).SelectMany(i => i.Locations).Where(l => l.IsInSource).Select(ToTarget));
+            var impls = await WithBudget(SymbolFinder.FindImplementationsAsync(symbol, _solution), 5000);
+            if (impls != null)
+                res.AddRange(impls.SelectMany(i => i.Locations).Where(l => l.IsInSource).Select(ToTarget));
         }
         return res;
     }
 
+    private static ISymbol? Overridden(ISymbol s) => s switch
+    {
+        IMethodSymbol m => m.OverriddenMethod,
+        IPropertySymbol p => p.OverriddenProperty,
+        IEventSymbol e => e.OverriddenEvent,
+        _ => null
+    };
+
     private static bool DisplayEquals(ISymbol a, ISymbol b) =>
         string.Equals(a.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), b.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), StringComparison.Ordinal);
 
-    private static bool OverrideChainContains(IMethodSymbol derived, IMethodSymbol target)
+    private static bool OverrideChainContains(ISymbol derived, ISymbol target)
     {
-        var cur = derived.OverriddenMethod;
-        while (cur != null)
-        {
+        for (var cur = Overridden(derived); cur != null; cur = Overridden(cur))
             if (DisplayEquals(cur, target)) return true;
-            cur = cur.OverriddenMethod;
-        }
         return false;
     }
 }

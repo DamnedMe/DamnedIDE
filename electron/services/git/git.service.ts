@@ -1,4 +1,7 @@
-import simpleGit, { SimpleGit } from 'simple-git'
+import simpleGit from 'simple-git'
+import type { SimpleGit } from 'simple-git'
+import { rm } from 'fs/promises'
+import { join } from 'path'
 
 export interface SerializableGitStatus {
   current: string
@@ -99,6 +102,27 @@ export class GitService {
   async unstage(repoPath: string, files: string[]): Promise<void> {
     const git = this.getGit(repoPath)
     await git.reset(['--', ...files])
+  }
+
+  /**
+   * Discards the pending changes of a file, restoring it to HEAD. A staged file
+   * is first dropped from the index, an untracked/new file is simply deleted
+   * from the working tree, everything else is checked out from the index.
+   */
+  async discardChanges(
+    repoPath: string,
+    file: string,
+    opts: { staged?: boolean; untracked?: boolean } = {}
+  ): Promise<void> {
+    const git = this.getGit(repoPath)
+    if (opts.staged) {
+      await git.reset(['--', file]).catch(() => { /* already unstaged */ })
+    }
+    if (opts.untracked) {
+      await rm(join(repoPath, file), { force: true, recursive: true }).catch(() => { /* gone */ })
+      return
+    }
+    await git.checkout(['--', file])
   }
 
   async commit(repoPath: string, message: string): Promise<void> {

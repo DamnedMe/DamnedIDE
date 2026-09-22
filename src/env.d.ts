@@ -29,6 +29,32 @@ interface ClaudeSendRequest {
   history?: { role: 'user' | 'assistant'; text: string }[]
 }
 
+type AgentProviderId = 'claude' | 'opencode' | 'codex' | 'cursor'
+
+interface AgentSendRequest {
+  chatKey: string
+  provider: AgentProviderId
+  prompt: string
+  cwd?: string
+  system?: string
+  model?: string
+  effort?: string
+  permissionMode?: string
+  resume?: string
+  history?: { role: 'user' | 'assistant'; text: string }[]
+  backend?: ClaudeBackend
+}
+
+interface AgentProviderInfo {
+  id: AgentProviderId
+  label: string
+  available: boolean
+  detail: string
+  models: { id: string; label: string }[]
+  efforts: string[]
+  permissionModes: string[]
+}
+
 interface ClaudeResult {
   ok: boolean
   text?: string
@@ -52,7 +78,9 @@ interface Window {
     ai: {
       status: () => Promise<ClaudeAuthStatus>
       test: (backend: ClaudeBackend) => Promise<ClaudeResult>
-      send: (req: ClaudeSendRequest) => Promise<ClaudeResult>
+      providers: () => Promise<AgentProviderInfo[]>
+      models: (provider: AgentProviderId) => Promise<{ id: string; label: string }[]>
+      send: (req: AgentSendRequest) => Promise<ClaudeResult>
       cancel: (chatKey: string) => Promise<void>
       setApiKey: (key: string | null) => Promise<boolean>
       hasApiKey: () => Promise<boolean>
@@ -72,6 +100,7 @@ interface Window {
       porcelain: (repoPath: string) => Promise<{ staged: { path: string; changeType: string }[]; unstaged: { path: string; changeType: string }[]; unmerged: { path: string; changeType: string }[] }>
       stage: (repoPath: string, files: string[]) => Promise<void>
       unstage: (repoPath: string, files: string[]) => Promise<void>
+      discardChanges: (repoPath: string, file: string, opts: { staged?: boolean; untracked?: boolean }) => Promise<void>
       commit: (repoPath: string, message: string) => Promise<void>
       branches: (repoPath: string) => Promise<import('./types/git').BranchInfo[]>
       log: (repoPath: string, count: number) => Promise<import('./types/git').CommitInfo[]>
@@ -93,7 +122,7 @@ interface Window {
     worktree: {
       list: (repoPath: string) => Promise<WorktreeEntry[]>
       add: (repoPath: string, branch: string, path: string) => Promise<void>
-      remove: (repoPath: string, worktreePath: string) => Promise<void>
+      remove: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; warning?: string; error?: string }>
       prune: (repoPath: string) => Promise<void>
     }
     diff: {
@@ -157,8 +186,8 @@ interface Window {
       removeDir: (dirPath: string) => Promise<void>
       delete: (targetPath: string) => Promise<void>
       mkdir: (dirPath: string) => Promise<void>
-      searchFiles: (rootPath: string, query: string, maxResults?: number) =>
-        Promise<{ file: string; line: number; column: number; preview: string }[]>
+      searchFiles: (rootPath: string, query: string, maxResults?: number, exts?: string[]) =>
+        Promise<{ file: string; line: number; column: number; preview: string; next: string }[]>
       listFiles: (rootPath: string, maxResults?: number) => Promise<string[]>
     }
     window: {

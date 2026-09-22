@@ -8,9 +8,10 @@ import { CompleteWorktreeDialog } from './CompleteWorktreeDialog'
 import { NewWorktreeDialog } from './NewWorktreeDialog'
 import { FileTree } from '../editor/FileTree'
 import { FileFilterBar } from '../editor/CodeEditor'
-import { useWorktreeStore } from '../../store'
+import { Modal } from '../layout/Modal'
+import { useWorktreeStore, useToastStore } from '../../store'
 import { useI18n } from '../../i18n'
-import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2 } from 'lucide-react'
+import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle } from 'lucide-react'
 import { WorktreeEntry } from '../../types/worktree'
 
 type CheckState = 'ok' | 'ko'
@@ -42,9 +43,12 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const [filterSpaceSensitive, setFilterSpaceSensitive] = useState(false)
   const [stripMenu, setStripMenu] = useState<{ x: number; y: number; entry: WorktreeEntry } | null>(null)
   const [completeTarget, setCompleteTarget] = useState<WorktreeEntry | null>(null)
+  const [removeConfirm, setRemoveConfirm] = useState<{ path: string; error?: string } | null>(null)
+  const [isForcingRemove, setIsForcingRemove] = useState(false)
   const [showNewWorktree, setShowNewWorktree] = useState(false)
   const [hiddenPaths, setHiddenPaths] = useState<Set<string>>(new Set())
   const changesHandleRef = useRef<WorktreeChangesHandle | null>(null)
+  const showToast = useToastStore(s => s.showToast)
 
   const filter = fileFilter
     ? { query: fileFilter, mode: filterMode, caseSensitive: filterCaseSensitive, spaceSensitive: filterSpaceSensitive }
@@ -76,13 +80,31 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
 
   const handleRemoveWorktree = async (path: string) => {
     if (!repoPath) return
-    try {
-      await window.electronAPI.worktree.remove(repoPath, path)
-    } catch {
-      // fallback: delete the folder directly
-      try { await window.electronAPI.fs.removeDir(path) } catch { /* ignore */ }
+    // First attempt: plain removal. If the folder is locked (open in a terminal,
+    // Explorer, another app) it fails and we ask for confirmation before forcing.
+    const res = await window.electronAPI.worktree.remove(repoPath, path)
+    if (!res.ok) {
+      setRemoveConfirm({ path, error: res.error })
+      return
     }
+    if (res.warning) showToast(res.warning, 'error')
     loadWorktrees()
+  }
+
+  const handleForceRemoveWorktree = async () => {
+    if (!repoPath || !removeConfirm) return
+    setIsForcingRemove(true)
+    try {
+      const res = await window.electronAPI.worktree.remove(repoPath, removeConfirm.path, true)
+      if (res.warning) showToast(res.warning, 'error')
+      else showToast('worktree removed')
+    } catch (e) {
+      showToast((e as Error).message || 'rimozione fallita', 'error')
+    } finally {
+      setIsForcingRemove(false)
+      setRemoveConfirm(null)
+      loadWorktrees()
+    }
   }
 
   const handleHide = (path: string) => {
@@ -336,6 +358,54 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
           onClose={() => setShowNewWorktree(false)}
           onCreated={() => { setShowNewWorktree(false); loadWorktrees() }}
         />
+      )}
+
+      {removeConfirm && (
+        <Modal onClose={() => { if (!isForcingRemove) setRemoveConfirm(null) }} width={460} label="remove worktree">
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={16} style={{ color: 'var(--warning-color)', flexShrink: 0 }} />
+              <span style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {t('remove worktree')}
+              </span>
+            </div>
+            <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              {t('the worktree folder is locked (probably open in a terminal, Explorer or another program)')}.
+              <div style={{ marginTop: '6px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+                {removeConfirm.path}
+              </div>
+              {removeConfirm.error && (
+                <div style={{ marginTop: '6px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', wordBreak: 'break-word' }}>
+                  {removeConfirm.error}
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              {t('force removal unregisters the worktree from git; if the folder stays locked you will have to delete it manually')}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => setRemoveConfirm(null)} disabled={isForcingRemove}
+                style={{
+                  display: 'flex', alignItems: 'center', padding: '5px 12px', height: '26px',
+                  background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-secondary)', cursor: isForcingRemove ? 'not-allowed' : 'pointer',
+                  fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                }}>
+                {t('cancel')}
+              </button>
+              <button onClick={handleForceRemoveWorktree} disabled={isForcingRemove}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '26px',
+                  background: 'var(--error-color)', border: 'none', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-inverse)', cursor: isForcingRemove ? 'not-allowed' : 'pointer',
+                  fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                }}>
+                <Trash2 size={11} />
+                {isForcingRemove ? t('removing…') : t('force remove')}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </PanelContainer>
   )

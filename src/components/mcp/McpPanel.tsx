@@ -226,7 +226,7 @@ export function McpPanel() {
       </div>
 
       <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
-        launch an MCP server of an AI tool (stdio) and use its tools from the AI chat. Config is kept across restarts.
+        generic MCP client: launch any MCP server over stdio and inspect/invoke its tools. The chat agents (Claude, opencode, Codex, Cursor) are configured in the AI panel, not here. Config is kept across restarts.
       </div>
 
       {showAdd && (

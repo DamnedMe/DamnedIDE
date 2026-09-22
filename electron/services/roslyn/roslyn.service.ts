@@ -39,6 +39,8 @@ export interface RoslynHover {
 
 const BRIDGE_TFM = 'net8.0'
 
+const SKIP_DIRS = new Set(['bin', 'obj', 'node_modules', 'packages', 'dist', 'out', 'TestResults'])
+
 function bridgeDir(): string {
   return join(app.getAppPath(), 'ide-services', 'RoslynBridge')
 }
@@ -53,6 +55,10 @@ export class RoslynService {
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
   private nextId = 1
   private disabled = false
+  private bridgeBroken = false
+  private buildPromise: Promise<boolean> | null = null
+  private openedRoot: string | null = null
+  private ensuring: Promise<boolean> | null = null
   ready = false
 
   private dllPath(): string {
@@ -61,24 +67,26 @@ export class RoslynService {
 
   private ensureBuilt(): Promise<boolean> {
     if (existsSync(this.dllPath())) return Promise.resolve(true)
-    return new Promise((resolve) => {
+    // single-flight: two roots warming up at once must not run two dotnet builds
+    this.buildPromise ??= new Promise<boolean>((resolve) => {
       execFile('dotnet', ['build', '-c', 'Release', bridgeDir()], { windowsHide: true, timeout: 300000 }, (err) => resolve(!err))
     })
+    return this.buildPromise
   }
 
   private async start(): Promise<boolean> {
-    if (this.disabled) return false
+    if (this.bridgeBroken) return false
     if (this.proc) return true
     const built = await this.ensureBuilt()
     if (!built) {
       console.error('[roslyn] build bridge fallita: servizio disabilitato')
-      this.disabled = true
+      this.bridgeBroken = true
       return false
     }
     this.proc = spawn('dotnet', [this.dllPath()], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     this.proc.on('error', () => {
       console.error('[roslyn] spawn fallito: servizio disabilitato')
-      this.disabled = true
+      this.bridgeBroken = true
       this.proc = null
     })
     this.proc.on('exit', () => {
@@ -86,6 +94,9 @@ export class RoslynService {
       this.pending.clear()
       this.proc = null
       this.ready = false
+      // a crashed bridge must re-open on the next ensure(), not report the old root
+      this.openedRoot = null
+      this.ensuring = null
     })
     const rl = createInterface({ input: this.proc.stdout! })
     rl.on('line', (line) => {
@@ -126,19 +137,54 @@ export class RoslynService {
     return true
   }
 
+  /**
+   * Breadth-first, bounded search for the solution: worktrees very often keep the
+   * .sln in a subfolder (`src/`, `backend/`…), and a root-only lookup used to
+   * disable semantic navigation for the whole worktree.
+   * Nearest to the root wins, .sln before .csproj at the same depth.
+   */
   async findSolution(rootPath: string): Promise<string | null> {
-    try {
-      const entries = await readdir(rootPath, { withFileTypes: true })
-      const sln = entries.find(e => e.isFile() && /\.slnx?$/i.test(e.name))
-      if (sln) return join(rootPath, sln.name)
-      const proj = entries.find(e => e.isFile() && e.name.endsWith('.csproj'))
-      if (proj) return join(rootPath, proj.name)
-    } catch { /* ignore */ }
-    return null
+    let level = [rootPath]
+    let firstProject: string | null = null
+    for (let depth = 0; depth < 4 && level.length > 0; depth++) {
+      const next: string[] = []
+      for (const dir of level) {
+        let entries
+        try {
+          entries = await readdir(dir, { withFileTypes: true })
+        } catch { continue }
+        for (const e of entries) {
+          if (e.isDirectory()) {
+            if (!SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) next.push(join(dir, e.name))
+            continue
+          }
+          if (!e.isFile()) continue
+          if (/\.slnx?$/i.test(e.name)) return join(dir, e.name)
+          if (!firstProject && e.name.endsWith('.csproj')) firstProject = join(dir, e.name)
+        }
+      }
+      if (firstProject) return firstProject
+      level = next
+    }
+    return firstProject
   }
 
-  async ensure(rootPath: string): Promise<boolean> {
-    if (this.ready || this.disabled) return this.ready
+  /**
+   * Loads the workspace for `rootPath`. Switching worktree changes the root: the
+   * sidecar MUST re-open, otherwise every query resolves against the previous
+   * worktree's documents, silently returns nothing and the UI falls back to a
+   * whole-disk text scan.
+   */
+  ensure(rootPath: string): Promise<boolean> {
+    if (this.openedRoot === rootPath && this.ensuring) return this.ensuring
+    this.openedRoot = rootPath
+    this.ready = false
+    this.disabled = false
+    this.ensuring = this.openRoot(rootPath)
+    return this.ensuring
+  }
+
+  private async openRoot(rootPath: string): Promise<boolean> {
     const solution = await this.findSolution(rootPath)
     if (!solution) {
       console.error('[roslyn] solution/csproj non trovata in', rootPath)

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, clipboard, nativeImage } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { join, normalize } from 'path'
+import { join, normalize, extname } from 'path'
 import { readdir, readFile, writeFile, stat, rm, mkdir } from 'fs/promises'
 import { exec } from 'child_process'
 import { GitService } from './services/git/git.service'
@@ -10,15 +10,17 @@ import { AdoService } from './services/ado/ado.service'
 import { SqlService, SqlConnectionConfig, buildConnectionString, parseConnectionString } from './services/sql/sql.service'
 import { SqlWorkspaceDocument, SqlWorkspaceService } from './services/sql/sql-workspace.service'
 import { RoslynService } from './services/roslyn/roslyn.service'
-import { createTerminal, writeToTerminal, resizeTerminal, destroyTerminal, destroyAllTerminals, TerminalType } from './services/terminal/terminal.service'
+import { createTerminal, writeToTerminal, resizeTerminal, destroyTerminal, destroyAllTerminals, destroyTerminalsUnderPath, TerminalType } from './services/terminal/terminal.service'
 import { startProcess, stopProcess, stopAllProcesses } from './services/process/process.service'
 import { McpService, McpServerConfig } from './services/mcp/mcp.service'
-import { ClaudeService, ClaudeSendRequest, setApiKey, hasApiKey } from './services/ai/claude.service'
+import { ClaudeService, setApiKey, hasApiKey } from './services/ai/claude.service'
+import { AgentService, AgentSendRequest, AgentProviderId } from './services/ai/agent.service'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
 let mcpService: McpService | null = null
 let claudeService: ClaudeService | null = null
+let agentService: AgentService | null = null
 
 // IPC wrapper: rejects with a clean one-line Error (no mssql stack trace) so the
 // dev console does not flood with "Error occurred in handler for 'sql:...'".
@@ -111,9 +113,10 @@ app.whenReady().then(() => {
   const sqlWorkspaceService = new SqlWorkspaceService(app.getPath('userData'))
   mcpService = new McpService()
   claudeService = new ClaudeService()
+  agentService = new AgentService(claudeService)
   roslynService = new RoslynService()
 
-  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService, claudeService)
+  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService, claudeService, agentService)
   createWindow()
   setupAutoUpdater()
 
@@ -139,7 +142,7 @@ app.on('will-quit', () => {
   destroyAllTerminals()
   roslynService?.stop()
   mcpService?.disconnectAll()
-  claudeService?.cancelAll()
+  agentService?.cancelAll()
 })
 function registerIpcHandlers(
   git: GitService,
@@ -150,13 +153,16 @@ function registerIpcHandlers(
   sqlWorkspace: SqlWorkspaceService,
   roslyn: RoslynService,
   mcp: McpService,
-  claude: ClaudeService
+  claude: ClaudeService,
+  agent: AgentService
 ): void {
   // ─── Git ───────────────────────────────────────────
   ipcMain.handle('git:status', (_e, repoPath: string) => git.status(repoPath))
   ipcMain.handle('git:porcelain', (_e, repoPath: string) => git.porcelain(repoPath))
   ipcMain.handle('git:stage', (_e, repoPath: string, files: string[]) => git.stage(repoPath, files))
   ipcMain.handle('git:unstage', (_e, repoPath: string, files: string[]) => git.unstage(repoPath, files))
+  ipcMain.handle('git:discardChanges', (_e, repoPath: string, file: string, opts: { staged?: boolean; untracked?: boolean }) =>
+    git.discardChanges(repoPath, file, opts))
   ipcMain.handle('git:commit', (_e, repoPath: string, message: string) => git.commit(repoPath, message))
   ipcMain.handle('git:branches', (_e, repoPath: string) => git.branches(repoPath))
   ipcMain.handle('git:log', (_e, repoPath: string, count: number) => git.log(repoPath, count))
@@ -168,7 +174,12 @@ function registerIpcHandlers(
   ipcMain.handle('worktree:list', (_e, repoPath: string) => worktree.list(repoPath))
   ipcMain.handle('worktree:add', (_e, repoPath: string, branch: string, path: string) =>
     worktree.add(repoPath, branch, path))
-  ipcMain.handle('worktree:remove', (_e, repoPath: string, worktreePath: string) => worktree.remove(repoPath, worktreePath))
+  ipcMain.handle('worktree:remove', (_e, repoPath: string, worktreePath: string, force?: boolean) => {
+    // a terminal rooted in the worktree keeps a handle on the folder on Windows:
+    // on a forced removal close those first, otherwise rm/`worktree remove` fail
+    if (force) destroyTerminalsUnderPath(worktreePath)
+    return worktree.remove(repoPath, worktreePath, !!force)
+  })
   ipcMain.handle('worktree:prune', (_e, repoPath: string) => worktree.prune(repoPath))
 
   // ─── Diff ──────────────────────────────────────────
@@ -290,11 +301,12 @@ function registerIpcHandlers(
     await rm(dirPath, { recursive: true, force: true })
   })
 
-  ipcMain.handle('fs:searchFiles', async (_e, rootPath: string, query: string, maxResults = 300) => {
+  ipcMain.handle('fs:searchFiles', async (_e, rootPath: string, query: string, maxResults = 300, exts?: string[]) => {
     if (!query || query.length < 2) return []
     const lowerQuery = query.toLowerCase()
     const skipDirs = new Set(['node_modules', '.git', 'bin', 'obj', 'dist', 'out', '.vs', 'packages', '.worktrees'])
-    const results: { file: string; line: number; column: number; preview: string }[] = []
+    const extSet = exts?.length ? new Set(exts.map(e => e.toLowerCase())) : null
+    const results: { file: string; line: number; column: number; preview: string; next: string }[] = []
     const files: string[] = []
 
     // parallel directory walk (collects file paths first)
@@ -318,7 +330,7 @@ function registerIpcHandlers(
           if (e.name.startsWith('.') || skipDirs.has(e.name)) continue
           const full = join(dir, e.name)
           if (e.isDirectory()) walkQueue.push(full)
-          else if (e.isFile()) files.push(full)
+          else if (e.isFile() && (!extSet || extSet.has(extname(e.name).toLowerCase()))) files.push(full)
         }
       } catch { /* unreadable */ } finally {
         walkRelease()
@@ -346,7 +358,9 @@ function registerIpcHandlers(
                 file: files[i],
                 line: ln + 1,
                 column: idx + 1,
-                preview: lines[ln].slice(0, 200).trim()
+                preview: lines[ln].slice(0, 200).trim(),
+                // symbol scoring needs the next line to recognise Allman-style bodies
+                next: (lines[ln + 1] ?? '').slice(0, 200).trim()
               })
             }
           }
@@ -509,10 +523,12 @@ function registerIpcHandlers(
   // ─── Claude (subscription CLI / Anthropic API) ─────
   ipcMain.handle('ai:status', () => claude.status())
   ipcMain.handle('ai:test', (_e, backend: 'subscription' | 'api') => claude.test(backend, mainWindow))
-  ipcMain.handle('ai:send', (_e, req: ClaudeSendRequest) => claude.send(req, mainWindow))
-  ipcMain.handle('ai:cancel', (_e, chatKey: string) => { claude.cancel(chatKey) })
-  // the key never reaches the renderer: it is stored encrypted (DPAPI/Keychain)
-  // and read only inside the main process when a request is sent
   ipcMain.handle('ai:setApiKey', ipc((key: string | null) => { setApiKey(key); return hasApiKey() }))
   ipcMain.handle('ai:hasApiKey', () => hasApiKey())
+
+  // ─── Agent chat (multi-provider: claude / opencode / codex / cursor) ───
+  ipcMain.handle('ai:providers', () => agent.providers())
+  ipcMain.handle('ai:models', (_e, provider: AgentProviderId) => agent.listModels(provider))
+  ipcMain.handle('ai:send', (_e, req: AgentSendRequest) => agent.send(req, mainWindow))
+  ipcMain.handle('ai:cancel', (_e, chatKey: string) => { agent.cancel(chatKey) })
 }

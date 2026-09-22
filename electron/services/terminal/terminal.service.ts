@@ -9,6 +9,7 @@ interface TerminalSession {
   id: string
   pty: IPty
   windowId: number | null
+  cwd: string
 }
 
 const sessions = new Map<string, TerminalSession>()
@@ -73,7 +74,7 @@ export function createTerminal(cwd: string, type: TerminalType, targetWindow: Br
     return id
   }
 
-  const session: TerminalSession = { id, pty, windowId: targetWindow?.id ?? null }
+  const session: TerminalSession = { id, pty, windowId: targetWindow?.id ?? null, cwd: cwd || process.cwd() }
   sessions.set(id, session)
 
   pty.onData((data: string) => send(data))
@@ -114,4 +115,25 @@ export function destroyTerminal(id: string): void {
 
 export function destroyAllTerminals(): void {
   for (const [id] of sessions) destroyTerminal(id)
+}
+
+function normalizeForCompare(p: string): string {
+  return p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+// A terminal whose shell cwd lives inside a worktree keeps a handle on that
+// folder on Windows, so `rm -rf` / `git worktree remove` fail with EBUSY. Kill
+// every terminal rooted in (or under) `root` before removing the worktree.
+export function destroyTerminalsUnderPath(root: string): number {
+  const target = normalizeForCompare(root)
+  if (!target) return 0
+  let killed = 0
+  for (const [id, session] of [...sessions]) {
+    const cwd = normalizeForCompare(session.cwd)
+    if (cwd === target || cwd.startsWith(`${target}/`)) {
+      destroyTerminal(id)
+      killed++
+    }
+  }
+  return killed
 }

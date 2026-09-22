@@ -37,6 +37,24 @@ export function normalizeSqlConnectionConfig<T extends { server: string; encrypt
   }
 }
 
+/**
+ * Windows-only transports fail on Linux/macOS with cryptic socket errors, so
+ * they are rejected up front with a message that says what to do instead.
+ * `platform` is injectable to keep this testable off-Windows.
+ */
+export function validatePlatformSqlConfig(
+  config: { server: string; authType?: string; user?: string; password?: string },
+  platform: string = process.platform
+): void {
+  if (platform === 'win32') return
+  if (parseSqlServerTarget(config.server).isLocalDb) {
+    throw new Error('LocalDB è disponibile solo su Windows: usa un SQL Server su host/porta')
+  }
+  if ((config.authType ?? 'sql') === 'windows' && !(config.user && config.password)) {
+    throw new Error('Windows Authentication su questo sistema richiede dominio, utente e password espliciti (NTLM): la sessione di Windows non è disponibile')
+  }
+}
+
 /** Stored/UI/connection-string timeout values are seconds; mssql expects milliseconds. */
 export function sqlTimeoutMilliseconds(seconds: number | undefined, fallbackMilliseconds: number): number {
   if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) return fallbackMilliseconds

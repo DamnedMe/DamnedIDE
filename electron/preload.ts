@@ -7,6 +7,8 @@ import type { AgentSendRequest, AgentProviderInfo } from './services/ai/agent.se
 import type { UpdateState } from './services/update/update.service'
 
 const electronAPI = {
+  // lets the renderer hide/gate Windows-only features (LocalDB, Windows auth…)
+  platform: process.platform,
   ai: {
     status: (): Promise<ClaudeAuthStatus> => ipcRenderer.invoke('ai:status'),
     test: (backend: 'subscription' | 'api'): Promise<ClaudeResult> => ipcRenderer.invoke('ai:test', backend),

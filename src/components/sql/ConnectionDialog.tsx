@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SqlConnection, SqlConnectionConfig, SqlRecentConnection, SqlTestResult } from '../../types/sql'
 import { Modal } from '../layout/Modal'
-import { AUTH_TYPES, ConnectionForm, EMPTY_FORM, connectionToForm, formToConfig } from './sqlForm'
+import { authTypesForPlatform, ConnectionForm, EMPTY_FORM, connectionToForm, formToConfig } from './sqlForm'
 import { Database, History, KeyRound, Link2, Loader2, PlugZap, ShieldCheck, X } from 'lucide-react'
 
 type TabId = 'login' | 'properties' | 'string'
@@ -58,6 +58,8 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
 
   const canConnect = form.server.trim().length > 0
   const isLocalDb = /^\(localdb\)/i.test(form.server.trim())
+  const isWindows = window.electronAPI.platform === 'win32'
+  const authTypes = authTypesForPlatform(isWindows, form.authType)
 
   const handleTest = async () => {
     if (!canConnect || testing) return
@@ -182,7 +184,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleTest()
                   }}
-                  placeholder="localhost · (localdb)\\MSSQLLocalDB · server\\instance"
+                  placeholder={isWindows ? 'localhost · (localdb)\\MSSQLLocalDB · server\\instance' : 'localhost · server\\instance · host,port'}
                   spellCheck={false}
                   style={inputStyle}
                 />
@@ -211,13 +213,20 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                   ))}
                 </div>
               )}
-              {isLocalDb && <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 9 }}>LocalDB uses its local named pipe; transport encryption is disabled automatically.</div>}
+              {isLocalDb && (isWindows
+                ? <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 9 }}>LocalDB uses its local named pipe; transport encryption is disabled automatically.</div>
+                : <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 9 }}>LocalDB esiste solo su Windows: su questo sistema usa un SQL Server su host/porta.</div>)}
             </Field>
 
             <Field label="authentication">
               <select value={form.authType} onChange={(e) => set({ authType: e.target.value as ConnectionForm['authType'] })} style={inputStyle}>
-                {AUTH_TYPES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                {authTypes.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
+              {!isWindows && form.authType === 'windows' && (
+                <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 9 }}>
+                  Windows Authentication non usa la sessione di Windows su questo sistema: servono dominio, utente e password (NTLM) espliciti.
+                </div>
+              )}
             </Field>
 
             {authNeeds.includes('domain') && (
@@ -340,8 +349,14 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                 <select value={form.protocol} onChange={(e) => set({ protocol: e.target.value as ConnectionForm['protocol'] })} style={inputStyle}>
                   <option value="default">default</option>
                   <option value="tcp">TCP/IP</option>
-                  <option value="named-pipes">named pipes</option>
+                  {isWindows && <option value="named-pipes">named pipes</option>}
+                  {!isWindows && form.protocol === 'named-pipes' && <option value="named-pipes">named pipes (solo Windows)</option>}
                 </select>
+                {!isWindows && form.protocol === 'named-pipes' && (
+                  <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--warning-color)', marginTop: '3px' }}>
+                    I named pipes non sono supportati su questo sistema: verrà usata la connessione TCP.
+                  </div>
+                )}
               </Field>
               <Field label="port (optional)">
                 <input value={form.port} onChange={(e) => set({ port: e.target.value })} placeholder="1433" spellCheck={false} style={inputStyle} />

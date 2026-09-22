@@ -1,10 +1,11 @@
-import { ConnectionPool, config as sqlConfig, IResult, Request } from 'mssql'
+import { ConnectionPool } from 'mssql'
+import type { config as sqlConfig, IResult, Request } from 'mssql'
 import { parseSqlConnectionString } from '@tediousjs/connection-string'
 import net from 'net'
 import { execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { connectPoolWithRetry, normalizeSqlConnectionConfig, parseSqlServerTarget, sqlTimeoutMilliseconds } from '../../../src/shared/sqlConnection'
+import { connectPoolWithRetry, normalizeSqlConnectionConfig, parseSqlServerTarget, sqlTimeoutMilliseconds, validatePlatformSqlConfig } from '../../../src/shared/sqlConnection'
 
 export type SqlAuthType =
   | 'windows'
@@ -469,6 +470,7 @@ export class SqlService {
 
   private openPool(config: SqlConnectionConfig): Promise<ConnectionPool> {
     const normalized = normalizeSqlConnectionConfig(config)
+    validatePlatformSqlConfig(normalized)
     return connectPoolWithRetry((attempt) => {
       if (attempt > 1 && parseSqlServerTarget(normalized.server).isLocalDb) invalidateLocalDbPipe(normalized.server)
       return new ConnectionPool(this.buildPoolConfig(normalized))

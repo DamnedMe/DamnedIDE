@@ -7,6 +7,9 @@ files:
   - out/**/*
   - resources/icon.ico
   - resources/icon.png
+# afterPack hook: labels the package for electron-updater (only when the
+# DAMNED_PACKAGE_TYPE env var is set — used for the pacman-only build)
+afterPack: scripts/after-pack.cjs
 publish:
   provider: github
   owner: DamnedMe
@@ -39,6 +42,25 @@ linux:
     - deb
     - pacman
   icon: resources/icon.png
+# electron-builder derives the pacman dependencies from the ELF NEEDED entries,
+# which yields names that do not exist in the Arch repositories (http-parser,
+# libappindicator-gtk3, re2, snappy, libvpx, ffmpeg...). This is the Arch-valid
+# set (same intent as the curated .deb depends).
+pacman:
+  depends:
+    - c-ares
+    - gtk3
+    - libevent
+    - libnotify
+    - libsecret
+    - libxslt
+    - libxss
+    - libxtst
+    - minizip
+    - nss
+    - at-spi2-core
+    - util-linux-libs
+    - xdg-utils
 mac:
   target:
     - dmg

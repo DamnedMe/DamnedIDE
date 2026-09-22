@@ -252,6 +252,53 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
     }
   }
 
+  // Re-read every expanded directory, preserving the expansion state: keeps the
+  // tree fresh when files are created/deleted outside the IDE.
+  const refreshLoaded = async (node: TreeNode): Promise<void> => {
+    if (!node.isDirectory || !node.loaded) return
+    const loaded = await buildNode(node.path, node.name)
+    const previous = node.children || []
+    node.children = (loaded.children || []).map(child => {
+      const prev = previous.find(p => p.path === child.path)
+      if (prev && child.isDirectory) {
+        child.loaded = prev.loaded
+        child.children = prev.children
+        child.isLoading = false
+      }
+      return child
+    })
+    for (const child of node.children) {
+      if (child.isDirectory && child.loaded) await refreshLoaded(child)
+    }
+  }
+
+  const treeRef = useRef<TreeNode | null>(null)
+  treeRef.current = tree
+  const refreshLoadedRef = useRef(refreshLoaded)
+  refreshLoadedRef.current = refreshLoaded
+
+  useEffect(() => {
+    window.electronAPI.fs.watch(rootPath)
+    let timer: number | undefined
+    const normalize = (p: string) => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+    const target = normalize(rootPath)
+    const off = window.electronAPI.fs.onChanged(({ root }) => {
+      if (normalize(root) !== target) return
+      if (timer) clearTimeout(timer)
+      timer = window.setTimeout(async () => {
+        const current = treeRef.current
+        if (!current) return
+        await refreshLoadedRef.current(current)
+        setTree({ ...current })
+      }, 200)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      off()
+      window.electronAPI.fs.unwatch(rootPath)
+    }
+  }, [rootPath])
+
   const toggleExpand = async (node: TreeNode) => {
     if (filteredTree) return
     if (node.loaded) {
@@ -518,7 +565,8 @@ function TreeNodeItem({
 
   return (
     <div>
-      <div onClick={handleClick} onContextMenu={handleContextMenu} data-file-path={node.path} ref={nodeRef} style={{
+      <div onClick={handleClick} onContextMenu={handleContextMenu} data-file-path={node.path} ref={nodeRef}
+        title={node.name} data-tip-delay="1000" style={{
         display: 'flex', alignItems: 'center',
         padding: `3px 8px 3px ${8 + depth * 14}px`,
         cursor: 'pointer', fontSize: 'calc(12px * var(--ui-text-scale, 1))', gap: '4px',

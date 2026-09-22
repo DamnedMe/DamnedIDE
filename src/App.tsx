@@ -136,6 +136,32 @@ export default function App() {
     if (p) handleRepoSelected(p)
   }
 
+  // Open a folder / file handed over by the OS ("Open with DamnedIDE"): a
+  // directory becomes the repository, a file opens in the editor (.md straight
+  // into the rendered preview).
+  const handleOpenTarget = (target: { path: string; isDirectory: boolean }) => {
+    if (target.isDirectory) {
+      handleRepoSelected(target.path)
+      setActivePanel('worktree')
+      return
+    }
+    const dir = target.path.replace(/[\\/][^\\/]*$/, '')
+    setEditorRootPath(dir)
+    setActivePanel('editor')
+    useEditorStore.getState().setEditorNav({
+      rootPath: dir,
+      filePath: target.path,
+      line: 1,
+      previewMd: /\.(md|markdown)$/i.test(target.path)
+    })
+  }
+
+  useEffect(() => {
+    window.electronAPI.app.initialTarget().then((t) => { if (t) handleOpenTarget(t) }).catch(() => { /* no target */ })
+    return window.electronAPI.app.onOpenPath(handleOpenTarget)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
 
   // Remember the last active panel at startup.

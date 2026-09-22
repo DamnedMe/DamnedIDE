@@ -1,6 +1,6 @@
 import { GitFileStatus } from '../../types/git'
 import { useState } from 'react'
-import { Plus, Minus, Eye, Check, X, Copy, Undo2 } from 'lucide-react'
+import { Plus, Minus, Eye, Check, X, Copy, Undo2, FolderOpen } from 'lucide-react'
 import { FileTypeIcon } from '../../utils/file-icon'
 
 interface FileDiffListProps {
@@ -13,9 +13,10 @@ interface FileDiffListProps {
   onToggleCheck?: (filePath: string, state: 'ok' | 'ko' | null) => void
   onCopyPath?: (filePath: string) => void
   onDiscard?: (filePath: string, info: { staged: boolean; untracked: boolean }) => void
+  onReveal?: (filePath: string) => void
 }
 
-export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiffFile, checkMarks, onToggleCheck, onCopyPath, onDiscard }: FileDiffListProps) {
+export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiffFile, checkMarks, onToggleCheck, onCopyPath, onDiscard, onReveal }: FileDiffListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filePath: string; staged: boolean; untracked: boolean } | null>(null)
 
   if (files.length === 0) {
@@ -36,7 +37,8 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
         const isActive = activeDiffFile === f.path
         return (
             <div key={`${f.staged ? 's' : 'u'}:${f.path}`} onClick={() => onViewDiff?.(f.path)}
-              onContextMenu={(onCopyPath || onDiscard) ? (e) => {
+              title={f.path} data-tip-delay="1000"
+              onContextMenu={(onCopyPath || onDiscard || onReveal) ? (e) => {
                 e.preventDefault()
                 setContextMenu({
                   x: e.clientX, y: e.clientY, filePath: f.path,
@@ -128,7 +130,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
           </div>
         )
       })}
-      {contextMenu && (onCopyPath || onDiscard) && (
+      {contextMenu && (onCopyPath || onDiscard || onReveal) && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setContextMenu(null)} />
           <div style={{
@@ -142,6 +144,13 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
                 icon={<Copy size={12} />}
                 label="Copy path"
                 onClick={() => { onCopyPath(contextMenu.filePath); setContextMenu(null) }}
+              />
+            )}
+            {onReveal && (
+              <ContextMenuItem
+                icon={<FolderOpen size={12} />}
+                label="Open in file explorer"
+                onClick={() => { onReveal(contextMenu.filePath); setContextMenu(null) }}
               />
             )}
             {onDiscard && (

@@ -1,5 +1,4 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, clipboard, nativeImage } from 'electron'
-import { autoUpdater } from 'electron-updater'
 import { join, normalize, extname } from 'path'
 import { readdir, readFile, writeFile, stat, rm, mkdir } from 'fs/promises'
 import { exec } from 'child_process'
@@ -15,6 +14,9 @@ import { startProcess, stopProcess, stopAllProcesses } from './services/process/
 import { McpService, McpServerConfig } from './services/mcp/mcp.service'
 import { ClaudeService, setApiKey, hasApiKey } from './services/ai/claude.service'
 import { AgentService, AgentSendRequest, AgentProviderId } from './services/ai/agent.service'
+import { UpdateService } from './services/update/update.service'
+import { watchRoot, unwatchRoot, closeAllWatchers } from './services/watch/watch.service'
+import { openTargetFromArgv, resolveOpenTarget, type OpenTarget } from './services/open/open-target'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
@@ -44,31 +46,47 @@ function appIcon(): Electron.NativeImage {
   return nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.ico'))
 }
 
-// Auto-update via electron-updater (GitHub releases). Only active in the packaged app:
-// downloads updates in the background and lets the user install from the renderer.
-function setupAutoUpdater(): void {
-  if (!app.isPackaged) return
-  autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = true
-  autoUpdater.logger = null
+// ─── Open with DamnedIDE (folder / .md from Explorer, `damned-ide <path>`) ────
+let pendingOpenTarget: OpenTarget | null = null
 
-  autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('update:downloaded')
-  })
-  autoUpdater.on('error', (e) => {
-    console.error('[updater]', e?.message)
-  })
-
-  ipcMain.handle('update:install', () => {
-    autoUpdater.quitAndInstall(false, true)
-    return true
-  })
-
-  // check on startup (with a short delay) and then periodically
-  const check = () => autoUpdater.checkForUpdates().catch(() => {})
-  setTimeout(check, 8000)
-  setInterval(check, 30 * 60 * 1000)
+function argvOpenTarget(argv: string[]): OpenTarget | null {
+  return openTargetFromArgv(argv, { packaged: app.isPackaged, appPath: app.getAppPath() })
 }
+
+function sendOpenTarget(target: OpenTarget): void {
+  const w = mainWindow
+  if (!w) { pendingOpenTarget = target; return }
+  if (w.webContents.isLoading()) {
+    w.webContents.once('did-finish-load', () => {
+      try { w.webContents.send('app:openPath', target) } catch { /* closed */ }
+    })
+  } else {
+    try { w.webContents.send('app:openPath', target) } catch { pendingOpenTarget = target }
+  }
+}
+
+// A second launch (e.g. "Open with" on another file) must reach the running
+// instance instead of starting a new one.
+if (app.requestSingleInstanceLock()) {
+  app.on('second-instance', (_e, argv) => {
+    const target = argvOpenTarget(argv)
+    if (target) sendOpenTarget(target)
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+} else {
+  app.quit()
+}
+
+// macOS: Finder "Open with" delivers the file through this event, not argv, and
+// it can fire before the app is ready
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  const target = resolveOpenTarget(filePath)
+  if (target) sendOpenTarget(target)
+})
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -117,8 +135,11 @@ app.whenReady().then(() => {
   roslynService = new RoslynService()
 
   registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService, claudeService, agentService)
+  const fromArgv = argvOpenTarget(process.argv)
+  if (fromArgv) pendingOpenTarget = fromArgv
   createWindow()
-  setupAutoUpdater()
+  // OTA: automatic checks + the manual "verifica aggiornamenti" in settings
+  new UpdateService(() => mainWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -143,6 +164,7 @@ app.on('will-quit', () => {
   roslynService?.stop()
   mcpService?.disconnectAll()
   agentService?.cancelAll()
+  closeAllWatchers()
 })
 function registerIpcHandlers(
   git: GitService,
@@ -289,6 +311,10 @@ function registerIpcHandlers(
     }
   })
 
+  ipcMain.handle('shell:showItemInFolder', (_e, itemPath: string) => {
+    try { shell.showItemInFolder(normalize(itemPath)) } catch { /* invalid path */ }
+  })
+
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {
     await shell.openExternal(url)
   })
@@ -407,6 +433,17 @@ function registerIpcHandlers(
 
     await walk(rootPath)
     return results
+  })
+
+  // ─── Filesystem watch (auto-refresh of changes / file tree) ─────────────────
+  ipcMain.handle('fs:watch', (_e, root: string) => { watchRoot(root) })
+  ipcMain.handle('fs:unwatch', (_e, root: string) => { unwatchRoot(root) })
+
+  // ─── Open with DamnedIDE: the path passed at launch (folder / .md) ──────────
+  ipcMain.handle('app:initialTarget', () => {
+    const target = pendingOpenTarget
+    pendingOpenTarget = null
+    return target
   })
 
   // ─── Git: show file ─────────────────────────────────

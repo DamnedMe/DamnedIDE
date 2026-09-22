@@ -15,6 +15,12 @@ win:
   target:
     - nsis
   icon: resources/icon.ico
+fileAssociations:
+  - ext: md
+    name: Markdown
+    description: Markdown document
+    role: Editor
+    icon: resources/icon.ico
 asarUnpack:
   - "**/node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*"
   - "**/*.node"
@@ -27,6 +33,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   installerIcon: resources/icon.ico
   uninstallerIcon: resources/icon.ico
+  include: resources/installer.nsh
 linux:
   target:
     - AppImage

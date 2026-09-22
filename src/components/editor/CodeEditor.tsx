@@ -222,21 +222,30 @@ export function CodeEditor() {
   }, [activeFile, roslynStatus])
 
   useEffect(() => {
-    const nav = useEditorStore.getState().editorNav
-    if (nav) {
-      setEditorNav(null)
+    const handleNav = (nav: { rootPath: string; filePath: string; line: number; previewMd?: boolean }) => {
+      useEditorStore.getState().setEditorNav(null)
       setRootPath(nav.rootPath)
       setExplorerVisible(true)
       setLeftPanel('explorer')
-      setTimeout(() => openFile(nav.filePath, nav.line), 0)
-      return
+      if (nav.previewMd && nav.filePath.toLowerCase().endsWith('.md')) setMdPreview(true)
+      setTimeout(() => openFileRef.current(nav.filePath, nav.line), 0)
     }
-    const wt = useWorktreeStore.getState().selectedWorktree
-    if (wt && !useEditorStore.getState().editorRootPath) {
-      setRootPath(wt)
-      setExplorerVisible(true)
-      setLeftPanel('explorer')
+    const nav = useEditorStore.getState().editorNav
+    if (nav) {
+      handleNav(nav)
+    } else {
+      const wt = useWorktreeStore.getState().selectedWorktree
+      if (wt && !useEditorStore.getState().editorRootPath) {
+        setRootPath(wt)
+        setExplorerVisible(true)
+        setLeftPanel('explorer')
+      }
     }
+    // a nav set while the editor is already mounted (a file opened from the OS)
+    // must be consumed too, not only on mount
+    return useEditorStore.subscribe((state, prev) => {
+      if (state.editorNav && state.editorNav !== prev.editorNav) handleNav(state.editorNav)
+    })
   }, [setRootPath, setEditorNav])
 
   activeFileRef.current = activeFile
@@ -1184,6 +1193,7 @@ export function CodeEditor() {
                   onClick={() => { setActiveFile(f.path); setDiffView(null) }}
                   title={f.path}
                   data-tip-desc="open this file in the editor"
+                  data-tip-delay="1000"
                   style={{
                     display: 'flex', alignItems: 'center', gap: '6px',
                     padding: '5px 8px 5px 12px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',

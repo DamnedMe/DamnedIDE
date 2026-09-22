@@ -178,17 +178,16 @@ export function CodeEditor() {
   const [roslynStatus, setRoslynStatus] = useState<'off' | 'indexing' | 'ready'>('off')
   const [csErrorCount, setCsErrorCount] = useState<DiagnosticCounts>({ errors: 0, warnings: 0 })
 
-  // Warm up the Roslyn bridge when a .cs file becomes active (loads the solution via
-  // MSBuildWorkspace in the sidecar, so symbol navigation is semantic, not heuristic).
+  // Warm up the Roslyn bridge as soon as a workspace root is set — worktree switches
+  // included — so the solution loads while the user is still browsing instead of on the
+  // first F12. Roots without a .sln/.csproj never spawn the sidecar.
   useEffect(() => {
-    const file = activeFile
-    if (!file?.toLowerCase().endsWith('.cs')) return
-    if (roslynReadyRef.current || roslynOffRef.current || roslynStartingRef.current) return
-    const root = rootPathRef.current
-    if (!root) return
+    if (!rootPath) return
+    roslynReadyRef.current = false
+    roslynOffRef.current = false
     roslynStartingRef.current = true
     setRoslynStatus('indexing')
-    const ensurePromise = window.electronAPI.roslyn.ensure(root)
+    const ensurePromise = window.electronAPI.roslyn.ensure(rootPath)
     roslynReadyPromiseRef.current = ensurePromise
     ensurePromise
       .then(ok => {
@@ -206,7 +205,7 @@ export function CodeEditor() {
         roslynOffRef.current = true
         setRoslynStatus('off')
       })
-  }, [activeFile])
+  }, [rootPath])
 
   // Live compiler diagnostics (squiggles) for .cs files, like Visual Studio.
   useEffect(() => {
@@ -260,11 +259,8 @@ export function CodeEditor() {
       navBackRef.current = []
       navForwardRef.current = []
       setNavVersion(v => v + 1)
-      roslynReadyRef.current = false
-      roslynOffRef.current = false
-      roslynStartingRef.current = false
-      roslynReadyPromiseRef.current = null
-      setRoslynStatus('off')
+      // Roslyn state belongs to the warm-up effect above, which already re-armed it for
+      // the new root — clearing it here would cancel that warm-up.
       setCsErrorCount({ errors: 0, warnings: 0 })
     }
     previousRootPathRef.current = rootPath
@@ -515,6 +511,11 @@ export function CodeEditor() {
       }
     }
 
+    // .cs with a loaded Roslyn workspace: a semantic miss means there is no source to
+    // go to (BCL/NuGet symbol, keyword…). Visual Studio does not grep the disk for it
+    // either, and that scan is what made F12 feel frozen.
+    if (currentFile?.toLowerCase().endsWith('.cs') && roslynReadyRef.current) return
+
     // 3) workspace scan
     if (kind === 'implementation') {
       // collect EVERY implementation: when several classes implement the same
@@ -560,14 +561,22 @@ export function CodeEditor() {
     // Roslyn fast path for .cs files: semantic references (skip C# keywords — the
     // bridge cannot resolve them and the fallback would hang)
     const currentFile = activeFileRef.current
-    if (currentFile?.toLowerCase().endsWith('.cs') && roslynReadyRef.current && !CSharpKeywordSet.has(symbol.toLowerCase())) {
-      try {
-        const r = await window.electronAPI.roslyn.references(currentFile, pos.lineNumber, pos.column)
-        if (r && r.targets.length > 0) {
-          setReferencesModal({ symbol: r.symbol || symbol, hits: r.targets })
-          return
-        }
-      } catch { /* fall back to heuristics */ }
+    const isCSharp = !!currentFile?.toLowerCase().endsWith('.cs')
+    if (isCSharp && !CSharpKeywordSet.has(symbol.toLowerCase())) {
+      // like goToSymbol: wait for the warm-up already running rather than falling into
+      // the heuristic scan just because indexing has not finished yet
+      if (!roslynReadyRef.current && roslynReadyPromiseRef.current) {
+        await roslynReadyPromiseRef.current
+      }
+      if (roslynReadyRef.current) {
+        try {
+          const r = await window.electronAPI.roslyn.references(currentFile!, pos.lineNumber, pos.column)
+          if (r && r.targets.length > 0) {
+            setReferencesModal({ symbol: r.symbol || symbol, hits: r.targets })
+            return
+          }
+        } catch { /* fall back to heuristics */ }
+      }
     }
 
     const hits: WorkspaceHit[] = []
@@ -582,7 +591,10 @@ export function CodeEditor() {
         hits.push({ file: m.uri.fsPath || m.uri.path, line: ln })
       }
     }
-    const ws = await searchWorkspaceReferences(rootPathRef.current || '', symbol)
+    // .cs resolved semantically: no disk scan (see goToSymbol)
+    const ws = isCSharp && roslynReadyRef.current
+      ? []
+      : await searchWorkspaceReferences(rootPathRef.current || '', symbol)
     const seen = new Set<string>()
     const unique: WorkspaceHit[] = []
     for (const h of [...hits, ...ws]) {

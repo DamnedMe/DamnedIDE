@@ -2,13 +2,16 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { SqlConnectionConfig } from './services/sql/sql.service'
 import type { TerminalType } from './services/terminal/terminal.service'
 import type { McpServerConfig, McpTool } from './services/mcp/mcp.service'
-import type { ClaudeSendRequest, ClaudeResult, ClaudeAuthStatus } from './services/ai/claude.service'
+import type { ClaudeResult, ClaudeAuthStatus } from './services/ai/claude.service'
+import type { AgentSendRequest, AgentProviderInfo } from './services/ai/agent.service'
 
 const electronAPI = {
   ai: {
     status: (): Promise<ClaudeAuthStatus> => ipcRenderer.invoke('ai:status'),
     test: (backend: 'subscription' | 'api'): Promise<ClaudeResult> => ipcRenderer.invoke('ai:test', backend),
-    send: (req: ClaudeSendRequest): Promise<ClaudeResult> => ipcRenderer.invoke('ai:send', req),
+    providers: (): Promise<AgentProviderInfo[]> => ipcRenderer.invoke('ai:providers'),
+    models: (provider: string): Promise<{ id: string; label: string }[]> => ipcRenderer.invoke('ai:models', provider),
+    send: (req: AgentSendRequest): Promise<ClaudeResult> => ipcRenderer.invoke('ai:send', req),
     cancel: (chatKey: string): Promise<void> => ipcRenderer.invoke('ai:cancel', chatKey),
     setApiKey: (key: string | null): Promise<boolean> => ipcRenderer.invoke('ai:setApiKey', key),
     hasApiKey: (): Promise<boolean> => ipcRenderer.invoke('ai:hasApiKey'),
@@ -44,6 +47,8 @@ const electronAPI = {
     porcelain: (repoPath: string) => ipcRenderer.invoke('git:porcelain', repoPath),
     stage: (repoPath: string, files: string[]) => ipcRenderer.invoke('git:stage', repoPath, files),
     unstage: (repoPath: string, files: string[]) => ipcRenderer.invoke('git:unstage', repoPath, files),
+    discardChanges: (repoPath: string, file: string, opts: { staged?: boolean; untracked?: boolean }) =>
+      ipcRenderer.invoke('git:discardChanges', repoPath, file, opts),
     commit: (repoPath: string, message: string) => ipcRenderer.invoke('git:commit', repoPath, message),
     branches: (repoPath: string) => ipcRenderer.invoke('git:branches', repoPath),
     log: (repoPath: string, count: number) => ipcRenderer.invoke('git:log', repoPath, count),
@@ -67,7 +72,7 @@ const electronAPI = {
     list: (repoPath: string) => ipcRenderer.invoke('worktree:list', repoPath),
     add: (repoPath: string, branch: string, path: string) =>
       ipcRenderer.invoke('worktree:add', repoPath, branch, path),
-    remove: (repoPath: string, worktreePath: string) => ipcRenderer.invoke('worktree:remove', repoPath, worktreePath),
+    remove: (repoPath: string, worktreePath: string, force?: boolean) => ipcRenderer.invoke('worktree:remove', repoPath, worktreePath, force),
     prune: (repoPath: string) => ipcRenderer.invoke('worktree:prune', repoPath)
   },
   diff: {
@@ -137,8 +142,8 @@ const electronAPI = {
     removeDir: (dirPath: string) => ipcRenderer.invoke('fs:removeDir', dirPath),
     delete: (targetPath: string) => ipcRenderer.invoke('fs:delete', targetPath),
     mkdir: (dirPath: string) => ipcRenderer.invoke('fs:mkdir', dirPath),
-    searchFiles: (rootPath: string, query: string, maxResults?: number) =>
-      ipcRenderer.invoke('fs:searchFiles', rootPath, query, maxResults),
+    searchFiles: (rootPath: string, query: string, maxResults?: number, exts?: string[]) =>
+      ipcRenderer.invoke('fs:searchFiles', rootPath, query, maxResults, exts),
     listFiles: (rootPath: string, maxResults?: number) =>
       ipcRenderer.invoke('fs:listFiles', rootPath, maxResults)
   },

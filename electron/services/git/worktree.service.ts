@@ -1,4 +1,5 @@
-import simpleGit, { SimpleGit } from 'simple-git'
+import simpleGit from 'simple-git'
+import type { SimpleGit } from 'simple-git'
 import { rm } from 'fs/promises'
 
 export interface WorktreeEntry {
@@ -8,6 +9,20 @@ export interface WorktreeEntry {
   bare: boolean
   detached: boolean
 }
+
+export interface RemoveResult {
+  ok: boolean
+  // the folder could not be deleted (still locked by another process), but the
+  // worktree registration has been pruned: it no longer appears in the list
+  warning?: string
+  error?: string
+}
+
+function normalizeForCompare(p: string): string {
+  return p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 export class WorktreeService {
   private getGit(repoPath: string): SimpleGit {
@@ -58,16 +73,52 @@ export class WorktreeService {
     await git.raw(['config', `branch.${branch}.merge`, `refs/heads/${branch}`])
   }
 
-  async remove(repoPath: string, worktreePath: string): Promise<void> {
+  /**
+   * Removes a worktree. Without `force` this is a plain recursive delete: if the
+   * folder is locked (a terminal, Explorer, another app) it fails and the caller
+   * can ask the user to confirm a forced removal. With `force` we unregister the
+   * worktree in git first (`worktree remove --force`), retry the folder delete a
+   * few times, then prune: the entry disappears from the list even when an
+   * external process still holds the folder (a warning is returned instead).
+   */
+  async remove(repoPath: string, worktreePath: string, force = false): Promise<RemoveResult> {
     // Guard: never delete the main repository itself
-    if (worktreePath === repoPath) {
+    if (normalizeForCompare(worktreePath) === normalizeForCompare(repoPath)) {
       await this.getGit(repoPath).raw(['worktree', 'prune'])
-      return
+      return { ok: true }
     }
-    // Delete the entire folder regardless of git state
-    await rm(worktreePath, { recursive: true, force: true })
-    // Clean up the worktree registration from the main repo
-    await this.getGit(repoPath).raw(['worktree', 'prune'])
+
+    if (!force) {
+      try {
+        await rm(worktreePath, { recursive: true, force: true })
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+      await this.getGit(repoPath).raw(['worktree', 'prune']).catch(() => {})
+      return { ok: true }
+    }
+
+    // force: unregister first, then insist on the folder
+    await this.getGit(repoPath).raw(['worktree', 'remove', '--force', worktreePath]).catch(() => {})
+    let rmError: Error | null = null
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await rm(worktreePath, { recursive: true, force: true })
+        rmError = null
+        break
+      } catch (e) {
+        rmError = e as Error
+        await delay(250)
+      }
+    }
+    await this.getGit(repoPath).raw(['worktree', 'prune']).catch(() => {})
+    if (rmError) {
+      return {
+        ok: true,
+        warning: `worktree rimosso dal repository, ma la cartella non è stata eliminata (probabilmente aperta in un altro programma): ${rmError.message}`
+      }
+    }
+    return { ok: true }
   }
 
   async prune(repoPath: string): Promise<void> {

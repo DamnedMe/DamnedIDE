@@ -1,6 +1,6 @@
 import { GitFileStatus } from '../../types/git'
 import { useState } from 'react'
-import { Plus, Minus, Eye, Check, X, Copy } from 'lucide-react'
+import { Plus, Minus, Eye, Check, X, Copy, Undo2 } from 'lucide-react'
 import { FileTypeIcon } from '../../utils/file-icon'
 
 interface FileDiffListProps {
@@ -12,10 +12,11 @@ interface FileDiffListProps {
   checkMarks?: Record<string, 'ok' | 'ko'>
   onToggleCheck?: (filePath: string, state: 'ok' | 'ko' | null) => void
   onCopyPath?: (filePath: string) => void
+  onDiscard?: (filePath: string, info: { staged: boolean; untracked: boolean }) => void
 }
 
-export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiffFile, checkMarks, onToggleCheck, onCopyPath }: FileDiffListProps) {
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filePath: string } | null>(null)
+export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiffFile, checkMarks, onToggleCheck, onCopyPath, onDiscard }: FileDiffListProps) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filePath: string; staged: boolean; untracked: boolean } | null>(null)
 
   if (files.length === 0) {
     return (
@@ -35,9 +36,13 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
         const isActive = activeDiffFile === f.path
         return (
             <div key={`${f.staged ? 's' : 'u'}:${f.path}`} onClick={() => onViewDiff?.(f.path)}
-              onContextMenu={onCopyPath ? (e) => {
+              onContextMenu={(onCopyPath || onDiscard) ? (e) => {
                 e.preventDefault()
-                setContextMenu({ x: e.clientX, y: e.clientY, filePath: f.path })
+                setContextMenu({
+                  x: e.clientX, y: e.clientY, filePath: f.path,
+                  staged: !!f.staged,
+                  untracked: !!f.isNew
+                })
               } : undefined}
               style={{
               display: 'flex', alignItems: 'center', padding: '4px 10px',
@@ -123,7 +128,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
           </div>
         )
       })}
-      {contextMenu && onCopyPath && (
+      {contextMenu && (onCopyPath || onDiscard) && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setContextMenu(null)} />
           <div style={{
@@ -132,22 +137,51 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
             borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
             padding: '4px 0', minWidth: '150px', animation: 'fadeIn 0.1s ease'
           }}>
-            <div
-              onClick={() => { onCopyPath(contextMenu.filePath); setContextMenu(null) }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px',
-                fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
-                cursor: 'pointer', color: 'var(--text-primary)', transition: 'background 0.1s ease'
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-            >
-              <Copy size={12} />
-              Copy path
-            </div>
+            {onCopyPath && (
+              <ContextMenuItem
+                icon={<Copy size={12} />}
+                label="Copy path"
+                onClick={() => { onCopyPath(contextMenu.filePath); setContextMenu(null) }}
+              />
+            )}
+            {onDiscard && (
+              <ContextMenuItem
+                icon={<Undo2 size={12} />}
+                label={contextMenu.untracked ? 'Discard (delete file)' : 'Discard changes'}
+                danger
+                onClick={() => {
+                  onDiscard(contextMenu.filePath, { staged: contextMenu.staged, untracked: contextMenu.untracked })
+                  setContextMenu(null)
+                }}
+              />
+            )}
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function ContextMenuItem({ icon, label, onClick, danger }: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  danger?: boolean
+}) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px',
+        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
+        cursor: 'pointer', color: danger ? 'var(--error-color)' : 'var(--text-primary)',
+        transition: 'background 0.1s ease'
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = danger ? 'var(--error-bg)' : 'var(--bg-hover)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+    >
+      {icon}
+      {label}
     </div>
   )
 }

@@ -1,7 +1,5 @@
 const DEF_KEYWORDS = /(class|struct|interface|enum|record|function|func|def|fn|async|public|private|protected|internal|static|readonly|abstract|sealed|virtual|override|export|import|type|namespace|package|module|let|const|var|using|impl|trait|pub|val|constructor|new|ref|out|this\.)/i
 
-const SRC_EXT = /\.(cs|ts|tsx|js|jsx|java|go|rs|py|c|cpp|h|hpp|cshtml|razor|sql)$/i
-
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -106,36 +104,35 @@ export interface WorkspaceHit {
   line: number
 }
 
+const SRC_EXTS = ['.cs', '.ts', '.tsx', '.js', '.jsx', '.java', '.go', '.rs', '.py', '.c', '.cpp', '.h', '.hpp', '.cshtml', '.razor', '.sql']
+
+/**
+ * One bounded workspace scan for `symbol`, run in the main process: it walks and reads
+ * files concurrently and stops early. The renderer used to list the tree and then read
+ * up to a thousand files one IPC round-trip at a time, which is what made F12 hang for
+ * seconds whenever semantic navigation was unavailable.
+ */
+async function scanWorkspace(rootPath: string, symbol: string, maxHits: number): Promise<{ file: string; line: number; preview: string; next: string }[]> {
+  if (!rootPath || symbol.length < 2) return []
+  try {
+    return await window.electronAPI.fs.searchFiles(rootPath, symbol, maxHits, SRC_EXTS)
+  } catch {
+    return []
+  }
+}
+
 /**
  * Searches workspace files (bounded) for a definition/implementation of `symbol`.
  */
 export async function searchWorkspaceFiles(rootPath: string, symbol: string, kind: 'definition' | 'implementation'): Promise<WorkspaceHit | null> {
-  if (!rootPath) return null
-  let files: string[]
-  try {
-    files = await window.electronAPI.fs.listFiles(rootPath, 3000)
-  } catch {
-    return null
-  }
-  let scanned = 0
   let best: WorkspaceHit | null = null
   let bestScore = 0
-  for (const file of files) {
-    if (!SRC_EXT.test(file)) continue
-    if (scanned >= 1000) break
-    scanned++
-    try {
-      const content = await window.electronAPI.fs.readFile(file)
-      if (content.length > 400000) continue
-      const lines = content.split('\n').slice(0, 1500)
-      for (let i = 0; i < lines.length; i++) {
-        const score = scoreLine(lines[i], symbol, kind, lines[i + 1])
-        if (score > bestScore) {
-          bestScore = score
-          best = { file, line: i + 1 }
-        }
-      }
-    } catch { /* unreadable */ }
+  for (const hit of await scanWorkspace(rootPath, symbol, 4000)) {
+    const score = scoreLine(hit.preview, symbol, kind, hit.next)
+    if (score > bestScore) {
+      bestScore = score
+      best = { file: hit.file, line: hit.line }
+    }
   }
   return best
 }
@@ -146,36 +143,14 @@ export async function searchWorkspaceFiles(rootPath: string, symbol: string, kin
  * the same interface member.
  */
 export async function searchImplementations(rootPath: string, symbol: string): Promise<WorkspaceHit[]> {
-  if (!rootPath) return []
-  let files: string[]
-  try {
-    files = await window.electronAPI.fs.listFiles(rootPath, 3000)
-  } catch {
-    return []
+  const best = new Map<string, WorkspaceHit & { score: number }>()
+  for (const hit of await scanWorkspace(rootPath, symbol, 4000)) {
+    const score = scoreLine(hit.preview, symbol, 'implementation', hit.next)
+    if (score <= 0) continue
+    const current = best.get(hit.file)
+    if (!current || score > current.score) best.set(hit.file, { file: hit.file, line: hit.line, score })
   }
-  const scored: (WorkspaceHit & { score: number })[] = []
-  let scanned = 0
-  for (const file of files) {
-    if (!SRC_EXT.test(file)) continue
-    if (scanned >= 1000) break
-    scanned++
-    try {
-      const content = await window.electronAPI.fs.readFile(file)
-      if (content.length > 400000) continue
-      const lines = content.split('\n').slice(0, 1500)
-      let bestScore = 0
-      let bestLine = 0
-      for (let i = 0; i < lines.length; i++) {
-        const score = scoreLine(lines[i], symbol, 'implementation', lines[i + 1])
-        if (score > bestScore) {
-          bestScore = score
-          bestLine = i + 1
-        }
-      }
-      if (bestLine) scored.push({ file, line: bestLine, score: bestScore })
-    } catch { /* unreadable */ }
-  }
-  return scored.sort((a, b) => b.score - a.score).map(h => ({ file: h.file, line: h.line }))
+  return [...best.values()].sort((a, b) => b.score - a.score).map(h => ({ file: h.file, line: h.line }))
 }
 
 /**
@@ -183,28 +158,14 @@ export async function searchImplementations(rootPath: string, symbol: string): P
  * early so common symbols do not produce huge/hanging result lists.
  */
 export async function searchWorkspaceReferences(rootPath: string, symbol: string, maxHits = 500): Promise<WorkspaceHit[]> {
-  if (!rootPath) return []
-  let files: string[]
-  try {
-    files = await window.electronAPI.fs.listFiles(rootPath, 3000)
-  } catch {
-    return []
-  }
+  const re = new RegExp(`\\b${escapeRegExp(symbol)}\\b`)
   const hits: WorkspaceHit[] = []
-  let scanned = 0
-  for (const file of files) {
-    if (!SRC_EXT.test(file)) continue
-    if (scanned >= 1000) break
-    scanned++
-    try {
-      const content = await window.electronAPI.fs.readFile(file)
-      if (content.length > 400000) continue
-      const lines = content.split('\n').slice(0, 1500)
-      for (const line of findReferenceLines(lines, symbol, 0)) {
-        hits.push({ file, line })
-        if (hits.length >= maxHits) return hits
-      }
-    } catch { /* unreadable */ }
+  // the scan matches substrings case-insensitively: re-apply the word-boundary and
+  // comment rules `findReferenceLines` uses so both paths agree on what a reference is
+  for (const hit of await scanWorkspace(rootPath, symbol, maxHits * 4)) {
+    if (!re.test(hit.preview) || isCommentLine(hit.preview)) continue
+    hits.push({ file: hit.file, line: hit.line })
+    if (hits.length >= maxHits) break
   }
   return hits
 }

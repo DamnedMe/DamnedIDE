@@ -510,12 +510,10 @@ export interface McpServerConfig {
 }
 
 export const MCP_PRESETS: { label: string; config: McpServerConfig }[] = [
-  // no Claude preset here: `claude mcp serve` exposes Claude Code's worker tools
-  // (Bash, Read, Edit…) and registers no agent type, so it can never answer a
-  // chat turn. Claude is a native provider — see useClaudeStore.
-  { label: 'opencode', config: { name: 'opencode', command: 'opencode', args: ['mcp', 'start'] } },
-  { label: 'Cursor', config: { name: 'cursor', command: 'cursor', args: ['mcp', 'serve'] } },
-  { label: 'Codex', config: { name: 'codex', command: 'codex', args: ['mcp', 'server'] } }
+  // No agent presets: agent CLIs (Claude, opencode, Codex, Cursor) are now
+  // first-class chat providers (see useAgentChatStore / AgentService), not MCP
+  // chat servers. This panel is a generic MCP *client*: add any MCP server
+  // (e.g. `npx -y @modelcontextprotocol/server-filesystem .`) and call its tools.
 ]
 
 const MCP_CUSTOM_KEY = 'damnedide_mcp_servers'
@@ -673,30 +671,25 @@ export const useClaudeStore = create<ClaudeState>((set) => {
   }
 })
 
-// ─── AI chat: IDE-level generic rules (any agent) + per-worktree conversations ─
+// ─── Agentic chat: IDE-level rules + concurrent multi-provider sessions ───────
 export interface AiChatMessage {
   role: 'user' | 'assistant'
   text: string
 }
 
 const AI_RULES_KEY = 'damnedide_ai_rules'
-const AI_CHATS_KEY = 'damnedide_ai_chats'
 
 // {worktree} is replaced at send time with the currently selected worktree path.
 const DEFAULT_AI_RULES = ["L'area di lavoro da considerare è il worktree: {worktree}"]
 
-interface AiChatState {
+interface AiRulesState {
   rules: string[]
-  chats: Record<string, AiChatMessage[]>
   addRule: (r: string) => void
   removeRule: (index: number) => void
-  setMessages: (key: string, msgs: AiChatMessage[]) => void
-  clearChat: (key: string) => void
 }
 
-export const useAiChatStore = create<AiChatState>((set) => ({
+export const useAiChatStore = create<AiRulesState>((set) => ({
   rules: loadJson<string[]>(AI_RULES_KEY, DEFAULT_AI_RULES),
-  chats: loadJson<Record<string, AiChatMessage[]>>(AI_CHATS_KEY, {}),
   addRule: (r) => set((s) => {
     const rules = [...s.rules, r]
     saveJson(AI_RULES_KEY, rules)
@@ -706,19 +699,100 @@ export const useAiChatStore = create<AiChatState>((set) => ({
     const rules = s.rules.filter((_, i) => i !== index)
     saveJson(AI_RULES_KEY, rules)
     return { rules }
-  }),
-  setMessages: (key, msgs) => set((s) => {
-    const chats = { ...s.chats, [key]: msgs }
-    saveJson(AI_CHATS_KEY, chats)
-    return { chats }
-  }),
-  clearChat: (key) => set((s) => {
-    const chats = { ...s.chats }
-    delete chats[key]
-    saveJson(AI_CHATS_KEY, chats)
-    return { chats }
   })
 }))
+
+// A chat session: an independent conversation pinned to a provider (and usually
+// a worktree). Several sessions can be open — and stream — at the same time.
+export interface AgentSession {
+  id: string
+  title: string
+  provider: AgentProviderId
+  worktree: string | null
+  model: string
+  effort: string
+  permissionMode: string
+  backend: ClaudeBackend
+  messages: AiChatMessage[]
+  // provider-side session id, used to resume (claude --resume, opencode --session…)
+  sessionId?: string
+}
+
+const AGENT_SESSIONS_KEY = 'damnedide_agent_sessions'
+const AGENT_ACTIVE_KEY = 'damnedide_agent_active'
+
+interface AgentChatState {
+  sessions: AgentSession[]
+  activeId: string | null
+  createSession: (partial?: Partial<Omit<AgentSession, 'id' | 'messages'>>) => string
+  closeSession: (id: string) => void
+  setActive: (id: string | null) => void
+  updateSession: (id: string, patch: Partial<AgentSession>) => void
+  setMessages: (id: string, msgs: AiChatMessage[]) => void
+  clearMessages: (id: string) => void
+}
+
+function loadAgentSessions(): AgentSession[] {
+  const list = loadJson<AgentSession[]>(AGENT_SESSIONS_KEY, [])
+  return Array.isArray(list) ? list.filter(s => s && typeof s.id === 'string') : []
+}
+
+export const useAgentChatStore = create<AgentChatState>((set) => {
+  const persist = (s: AgentChatState) => saveJson(AGENT_SESSIONS_KEY, s.sessions)
+  const saveActive = (id: string | null) => saveJson(AGENT_ACTIVE_KEY, id)
+  const makeId = () => `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+  return {
+    sessions: loadAgentSessions(),
+    activeId: loadJson<string | null>(AGENT_ACTIVE_KEY, null),
+    createSession: (partial) => {
+      const id = makeId()
+      const session: AgentSession = {
+        id,
+        title: partial?.title || 'new chat',
+        provider: partial?.provider || 'claude',
+        worktree: partial?.worktree ?? null,
+        model: partial?.model || '',
+        effort: partial?.effort || '',
+        permissionMode: partial?.permissionMode || 'default',
+        backend: partial?.backend || 'subscription',
+        messages: []
+      }
+      set((s) => {
+        const next = { sessions: [...s.sessions, session], activeId: id }
+        persist(next as AgentChatState)
+        saveActive(id)
+        return next
+      })
+      return id
+    },
+    closeSession: (id) => set((s) => {
+      const sessions = s.sessions.filter(x => x.id !== id)
+      const activeId = s.activeId === id ? (sessions[sessions.length - 1]?.id ?? null) : s.activeId
+      persist({ sessions } as AgentChatState)
+      saveActive(activeId)
+      return { sessions, activeId }
+    }),
+    setActive: (id) => {
+      saveActive(id)
+      set({ activeId: id })
+    },
+    updateSession: (id, patch) => set((s) => {
+      const sessions = s.sessions.map(x => x.id === id ? { ...x, ...patch } : x)
+      persist({ sessions } as AgentChatState)
+      return { sessions }
+    }),
+    setMessages: (id, msgs) => set((s) => {
+      const sessions = s.sessions.map(x => x.id === id ? { ...x, messages: msgs } : x)
+      persist({ sessions } as AgentChatState)
+      return { sessions }
+    }),
+    clearMessages: (id) => set((s) => {
+      const sessions = s.sessions.map(x => x.id === id ? { ...x, messages: [], sessionId: undefined } : x)
+      persist({ sessions } as AgentChatState)
+      return { sessions }
+    })
+  }
+})
 
 const RECENT_REPOS_KEY = 'damnedide_recent_repos'
 const RECENT_REPOS_MAX = 5

@@ -5,7 +5,8 @@ import { DiffViewer } from '../editor/DiffViewer'
 import type { DiffViewerHandle } from '../editor/DiffViewer'
 import { useEditorStore } from '../../store'
 import { ResizableSplitter } from '../layout/ResizableSplitter'
-import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye, GitCommitHorizontal, Download, Upload, Check, ArrowRightLeft } from 'lucide-react'
+import { Modal } from '../layout/Modal'
+import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye, GitCommitHorizontal, Download, Upload, Check, ArrowRightLeft, AlertTriangle, Undo2 } from 'lucide-react'
 import { MergeTool } from './MergeTool'
 import { MarkdownView } from '../editor/MarkdownView'
 import Editor from '@monaco-editor/react'
@@ -72,6 +73,8 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const [moveTarget, setMoveTarget] = useState('')
   const [moveIsMove, setMoveIsMove] = useState(true)
   const [moveStagedOnly, setMoveStagedOnly] = useState(false)
+  const [discardTarget, setDiscardTarget] = useState<{ file: string; staged: boolean; untracked: boolean } | null>(null)
+  const [isDiscarding, setIsDiscarding] = useState(false)
 
   const updateEditorNav = (line: number | null) => {
     if (!diffFile || line == null) return
@@ -134,6 +137,28 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const handleUnstage = async (filePath: string) => {
     await window.electronAPI.git.unstage(worktreePath, [filePath])
     loadStatus()
+  }
+
+  const confirmDiscard = async () => {
+    if (!discardTarget) return
+    setIsDiscarding(true)
+    try {
+      await window.electronAPI.git.discardChanges(worktreePath, discardTarget.file, {
+        staged: discardTarget.staged,
+        untracked: discardTarget.untracked
+      })
+      showToast(discardTarget.untracked ? `file eliminato: ${discardTarget.file}` : `modifiche annullate: ${discardTarget.file}`)
+      if (diffFileRef.current === discardTarget.file) {
+        diffFileRef.current = null
+        setDiffFile(null)
+      }
+      await loadStatus()
+    } catch (e) {
+      showToast((e as Error).message || 'annullamento fallito', 'error')
+    } finally {
+      setIsDiscarding(false)
+      setDiscardTarget(null)
+    }
   }
 
   const handleCopyPath = (filePath: string) => {
@@ -388,6 +413,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
            checkMarks={checkMarks}
            onToggleCheck={onToggleCheck}
            onCopyPath={handleCopyPath}
+           onDiscard={(file, info) => setDiscardTarget({ file, ...info })}
          />
       </div>
     )
@@ -949,6 +975,48 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           onClose={() => setMergeTarget(null)}
           onResolved={loadStatus}
         />
+      )}
+
+      {discardTarget && (
+        <Modal onClose={() => { if (!isDiscarding) setDiscardTarget(null) }} width={440} label="discard changes">
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={16} style={{ color: 'var(--error-color)', flexShrink: 0 }} />
+              <span style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {discardTarget.untracked ? 'Elimina file' : 'Annulla modifiche'}
+              </span>
+            </div>
+            <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              {discardTarget.untracked
+                ? 'Il file non è tracciato da git: verrà eliminato dal disco. Operazione non reversibile.'
+                : 'Le modifiche non salvate di questo file verranno ripristinate all\'ultima versione committata. Operazione non reversibile.'}
+              <div style={{ marginTop: '6px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+                {discardTarget.file}
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => setDiscardTarget(null)} disabled={isDiscarding}
+                style={{
+                  display: 'flex', alignItems: 'center', padding: '5px 12px', height: '26px',
+                  background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-secondary)', cursor: isDiscarding ? 'not-allowed' : 'pointer',
+                  fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                }}>
+                annulla
+              </button>
+              <button onClick={confirmDiscard} disabled={isDiscarding}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '26px',
+                  background: 'var(--error-color)', border: 'none', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-inverse)', cursor: isDiscarding ? 'not-allowed' : 'pointer',
+                  fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                }}>
+                {isDiscarding ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Undo2 size={11} />}
+                {isDiscarding ? 'annullamento…' : (discardTarget.untracked ? 'elimina' : 'annulla modifiche')}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </>
   )

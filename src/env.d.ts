@@ -86,6 +86,8 @@ interface ClaudeAuthStatus {
 
 interface Window {
   electronAPI: {
+    // 'win32' | 'darwin' | 'linux'
+    platform: string
     ai: {
       status: () => Promise<ClaudeAuthStatus>
       test: (backend: ClaudeBackend) => Promise<ClaudeResult>

@@ -11,6 +11,16 @@ export const AUTH_TYPES: { value: SqlAuthType; label: string }[] = [
   { value: 'azure-token', label: 'Azure Active Directory - Access Token' }
 ]
 
+// Windows Authentication (NTLM with the OS session) only exists on Windows:
+// elsewhere it needs explicit domain/user/password, so it is hidden unless it is
+// the value already stored in the connection being edited.
+export function authTypesForPlatform(isWindows: boolean, current?: SqlAuthType): { value: SqlAuthType; label: string }[] {
+  if (isWindows) return AUTH_TYPES
+  return AUTH_TYPES
+    .filter(a => a.value !== 'windows' || a.value === current)
+    .map(a => a.value === 'windows' ? { ...a, label: `${a.label} (solo Windows)` } : a)
+}
+
 export interface ConnectionForm {
   server: string
   port: string

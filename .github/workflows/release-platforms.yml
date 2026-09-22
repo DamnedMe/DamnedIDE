@@ -97,7 +97,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npx electron-builder --config electron-builder.yml --linux AppImage deb pacman --publish always
+          npx electron-builder --config electron-builder.yml --linux AppImage deb --publish always
+          # pacman is built separately so resources/package-type stays "pacman"
+          # (electron-updater must pick PacmanUpdater, not DebUpdater)
+          DAMNED_PACKAGE_TYPE=pacman npx electron-builder --config electron-builder.yml --linux pacman --publish always
 
   build-macos:
     needs: [prepare-release, build-linux]

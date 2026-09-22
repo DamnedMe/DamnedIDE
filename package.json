@@ -25,6 +25,7 @@
     "test:fs-watch": "node --experimental-strip-types scripts/fs-watch.check.ts",
     "test:open-target": "node --experimental-strip-types scripts/open-target.check.ts",
     "test:sql-ui": "node --experimental-strip-types scripts/sql-ui-regression.mjs",
+    "test:sql-guards": "node --experimental-strip-types scripts/sql-linux-guards.check.ts",
     "test:sql-playwright": "playwright test --config playwright.config.ts",
     "test:sql": "npm run test:sql-ui && npm run test:sql-playwright",
     "test:sql-playwright:report": "playwright show-report playwright-report/sql",

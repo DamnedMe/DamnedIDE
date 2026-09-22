@@ -91,7 +91,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npx electron-builder --config electron-builder.yml --linux AppImage deb --publish always
+          npx electron-builder --config electron-builder.yml --linux AppImage deb pacman --publish always
 
   build-macos:
     needs: [prepare-release, build-linux]

@@ -83,6 +83,12 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Install Arch packaging tools
+        # fpm builds the pacman package with bsdtar, which is not on the runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools
+
       - name: Install dependencies
         run: npm ci
 

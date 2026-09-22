@@ -20,7 +20,6 @@ fileAssociations:
     name: Markdown
     description: Markdown document
     role: Editor
-    icon: resources/icon.ico
 asarUnpack:
   - "**/node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*"
   - "**/*.node"

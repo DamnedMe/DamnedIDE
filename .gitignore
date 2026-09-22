@@ -8,3 +8,9 @@ dist/
 Thumbs.db
 ide-services/**/bin/
 ide-services/**/obj/
+
+# Graphify: artefatti locali, rigenerabili con `graphify update .`
+graphify-out/
+
+# Claude Code: permessi per-sviluppatore (le skill in .claude/skills/ restano condivise)
+.claude/settings.local.json

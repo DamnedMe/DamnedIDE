@@ -1,6 +1,6 @@
 {
   "name": "damned-ide",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "IDE leggero per backend .NET con gestione worktree Git, Azure DevOps e SQL Server",
   "main": "./out/main/index.js",
   "author": {

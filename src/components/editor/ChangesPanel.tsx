@@ -35,7 +35,8 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
       setStaged(build(p.staged, true))
       setUnstaged(build(p.unstaged, false))
     } catch (e) {
-      setError((e as Error).message)
+      // a watcher-driven refresh must not blank the panel on a transient failure
+      if (initial) setError((e as Error).message)
     } finally {
       if (initial) setIsLoading(false)
     }
@@ -43,10 +44,22 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
 
   useEffect(() => {
     load(true)
-    // Poll to track changes, but keep it light and skip when the window is hidden
-    const timer = setInterval(() => { if (!document.hidden) load() }, 5000)
-    return () => clearInterval(timer)
-  }, [load])
+    // event-driven refresh (file watcher) instead of polling git status
+    window.electronAPI.fs.watch(repoPath)
+    let timer: number | undefined
+    const normalize = (p: string) => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+    const target = normalize(repoPath)
+    const off = window.electronAPI.fs.onChanged(({ root }) => {
+      if (normalize(root) !== target) return
+      if (timer) clearTimeout(timer)
+      timer = window.setTimeout(() => load(), 300)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      off()
+      window.electronAPI.fs.unwatch(repoPath)
+    }
+  }, [load, repoPath])
 
   const handleStage = async (file: string) => {
     await window.electronAPI.git.stage(repoPath, [file])
@@ -110,6 +123,8 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
           onUnstage={handleUnstage}
           onViewDiff={handleViewDiff}
           activeDiffFile={activeFile}
+          onCopyPath={(file) => window.electronAPI.clipboard.write(`${repoPath.replace(/[\\/]+$/, '')}\\${file.replace(/\//g, '\\')}`)}
+          onReveal={(file) => window.electronAPI.shell.showItemInFolder(`${repoPath.replace(/[\\/]+$/, '')}\\${file.replace(/\//g, '\\')}`)}
         />
       </div>
     )

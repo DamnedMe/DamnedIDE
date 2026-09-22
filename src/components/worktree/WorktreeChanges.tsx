@@ -46,6 +46,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const [error, setError] = useState<string | null>(null)
   const [diffFile, setDiffFile] = useState<string | null>(null)
   const diffFileRef = useRef<string | null>(null)
+  const filesRef = useRef<GitFileStatus[]>([])
   const [diffOriginal, setDiffOriginal] = useState('')
   const [diffModified, setDiffModified] = useState('')
   const [isLoadingDiff, setIsLoadingDiff] = useState(false)
@@ -86,12 +87,14 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     onFileSelected?.(`${worktreePath}\\${diffFile}`)
   }, [diffFile])
 
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(async (opts?: { keepSelection?: boolean }) => {
     setIsLoading(true)
     setError(null)
-    setDiffFile(null)
-    diffFileRef.current = null
-    setSelectedIndex(0)
+    if (!opts?.keepSelection) {
+      setDiffFile(null)
+      diffFileRef.current = null
+      setSelectedIndex(0)
+    }
     try {
       const p = await window.electronAPI.git.porcelain(worktreePath)
       const staged = p.staged.map(f => ({
@@ -113,12 +116,21 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
         isNew: false, isModified: true, isDeleted: false, isRenamed: false
       }))
       sortByPath(unmerged)
+      const combined = [...staged, ...unstaged].sort((a, b) => a.path.localeCompare(b.path))
+      filesRef.current = combined
       setStagedFiles(staged)
       setUnstagedFiles(unstaged)
       setUnmergedFiles(unmerged)
-      setFiles([...staged, ...unstaged].sort((a, b) => a.path.localeCompare(b.path)))
+      setFiles(combined)
+      // a watcher-driven refresh must not steal the file the user is looking at
+      if (opts?.keepSelection) {
+        const current = diffFileRef.current
+        const idx = current ? combined.findIndex(f => f.path === current) : -1
+        setSelectedIndex(idx >= 0 ? idx : -1)
+      }
     } catch (e) {
-      setError((e as Error).message)
+      // a background refresh must not replace the panel with an error banner
+      if (!opts?.keepSelection) setError((e as Error).message)
     } finally {
       setIsLoading(false)
     }
@@ -128,6 +140,53 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     loadStatus()
     setDiffFile(null)
   }, [loadStatus])
+
+  // Reload the open diff from disk without touching the current selection.
+  const reloadActiveDiff = async () => {
+    const path = diffFileRef.current
+    if (!path || isEditing) return
+    const f = filesRef.current.find(x => x.path === path)
+    if (!f) {
+      diffFileRef.current = null
+      setDiffFile(null)
+      return
+    }
+    const needsOriginal = !f.isNew
+    const needsModified = !f.isDeleted
+    const [original, modified] = await Promise.all([
+      needsOriginal ? window.electronAPI.git.showFile(worktreePath, path).catch(() => '') : Promise.resolve(''),
+      needsModified ? window.electronAPI.fs.readFile(`${worktreePath}/${path}`).catch(() => '') : Promise.resolve('')
+    ])
+    setDiffOriginal(original)
+    setDiffModified(modified)
+  }
+
+  const loadStatusRef = useRef(loadStatus)
+  loadStatusRef.current = loadStatus
+  const reloadActiveDiffRef = useRef(reloadActiveDiff)
+  reloadActiveDiffRef.current = reloadActiveDiff
+
+  // Auto-refresh: edits made in the worktree (agent CLI, another editor, the
+  // terminal) are reflected without clicking refresh or reselecting the worktree.
+  useEffect(() => {
+    window.electronAPI.fs.watch(worktreePath)
+    let timer: number | undefined
+    const normalize = (p: string) => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+    const target = normalize(worktreePath)
+    const off = window.electronAPI.fs.onChanged(({ root }) => {
+      if (normalize(root) !== target) return
+      if (timer) clearTimeout(timer)
+      timer = window.setTimeout(async () => {
+        await loadStatusRef.current({ keepSelection: true })
+        await reloadActiveDiffRef.current()
+      }, 250)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      off()
+      window.electronAPI.fs.unwatch(worktreePath)
+    }
+  }, [worktreePath])
 
   const handleStage = async (filePath: string) => {
     await window.electronAPI.git.stage(worktreePath, [filePath])
@@ -164,6 +223,12 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const handleCopyPath = (filePath: string) => {
     const root = worktreePath.replace(/[\\/]+$/, '')
     window.electronAPI.clipboard.write(`${root}\\${filePath.replace(/\//g, '\\')}`)
+  }
+
+  // open Explorer/Finder on the file's folder, with the file selected
+  const handleReveal = (filePath: string) => {
+    const root = worktreePath.replace(/[\\/]+$/, '')
+    window.electronAPI.shell.showItemInFolder(`${root}\\${filePath.replace(/\//g, '\\')}`)
   }
 
   const handleStageAll = async () => {
@@ -413,6 +478,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
            checkMarks={checkMarks}
            onToggleCheck={onToggleCheck}
            onCopyPath={handleCopyPath}
+           onReveal={handleReveal}
            onDiscard={(file, info) => setDiscardTarget({ file, ...info })}
          />
       </div>
@@ -499,7 +565,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           {gitBtn('pull', 'pull', <Download size={10} />, handlePull, 'pull the latest changes from the remote into this worktree')}
           {gitBtn('push', 'push', <Upload size={10} />, handlePush, 'push the local commits of this worktree to the remote')}
           <button
-            onClick={loadStatus}
+            onClick={() => loadStatus()}
             title="refresh" data-tip-desc="reload the current data from the repository"
             style={{
               display: 'flex', background: 'none', border: 'none',

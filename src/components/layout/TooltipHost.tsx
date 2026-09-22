@@ -85,7 +85,10 @@ export function TooltipHost() {
         node.dataset._title = node.getAttribute('title') || ''
         node.removeAttribute('title')
       }
-      s.timer = window.setTimeout(() => setTip(content), DELAY_MS)
+      // elements can request a longer delay (e.g. file names: 1000ms) so the
+      // tooltip does not flash while scanning a list
+      const delay = Number(node.dataset.tipDelay) || DELAY_MS
+      s.timer = window.setTimeout(() => setTip(content), delay)
     }
 
     // the element that currently has the tooltip semantics under the cursor.

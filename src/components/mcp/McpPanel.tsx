@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plug, PlugZap, Plus, X, Trash2, Loader2, ChevronDown, ChevronUp, TerminalSquare } from 'lucide-react'
+import { Plug, PlugZap, Plus, X, Trash2, Loader2, ChevronDown, ChevronUp, TerminalSquare, Pencil } from 'lucide-react'
 import { useMcpStore, MCP_PRESETS } from '../../store'
 import { ClaudeSettings } from './ClaudeSettings'
 
@@ -9,10 +9,25 @@ const PRESET_ICONS: Record<string, React.ReactNode> = {
   codex: <PlugZap size={12} />
 }
 
+// "KEY=value" lines <-> env object, the format users paste from MCP docs
+function parseEnv(text: string): Record<string, string> | undefined {
+  const env: Record<string, string> = {}
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim()
+  }
+  return Object.keys(env).length > 0 ? env : undefined
+}
+
 export function McpPanel() {
-  const { custom, connected, status, errors, tools, addServer, removeServer, setConnected, setStatus, setError, setTools } = useMcpStore()
+  const { custom, connected, status, errors, tools, addServer, removeServer, updateServer, setConnected, setStatus, setError, setTools } = useMcpStore()
   const [showAdd, setShowAdd] = useState(false)
-  const [newCfg, setNewCfg] = useState({ name: '', command: '', args: [] as string[] })
+  const [newCfg, setNewCfg] = useState({ name: '', command: '', args: '', env: '' })
+  const [editingName, setEditingName] = useState<string | null>(null)
+  const [editCfg, setEditCfg] = useState({ name: '', command: '', args: '', env: '' })
   const [callArgs, setCallArgs] = useState<Record<string, string>>({})
   const [results, setResults] = useState<Record<string, string>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -72,19 +87,83 @@ export function McpPanel() {
 
   const addCustom = () => {
     if (!newCfg.name.trim() || !newCfg.command.trim()) return
-    addServer({ name: newCfg.name.trim(), command: newCfg.command.trim(), args: newCfg.args })
+    addServer({
+      name: newCfg.name.trim(),
+      command: newCfg.command.trim(),
+      args: newCfg.args.split(/\s+/).filter(Boolean),
+      env: parseEnv(newCfg.env)
+    })
     setShowAdd(false)
-    setNewCfg({ name: '', command: '', args: [] })
+    setNewCfg({ name: '', command: '', args: '', env: '' })
+  }
+
+  const startEdit = (config: { name: string; command: string; args: string[]; env?: Record<string, string> }) => {
+    setEditingName(config.name)
+    setEditCfg({
+      name: config.name,
+      command: config.command,
+      args: config.args.join(' '),
+      env: Object.entries(config.env || {}).map(([k, v]) => `${k}=${v}`).join('\n')
+    })
+  }
+
+  const saveEdit = async () => {
+    if (!editingName) return
+    const name = editCfg.name.trim()
+    const command = editCfg.command.trim()
+    if (!name || !command) return
+    // the running process belongs to the old config: stop it, the user reconnects
+    if (connected[editingName]) await disconnect(editingName)
+    updateServer(editingName, {
+      name,
+      command,
+      args: editCfg.args.split(/\s+/).filter(Boolean),
+      env: parseEnv(editCfg.env)
+    })
+    setEditingName(null)
+  }
+
+  const deleteServer = async (name: string) => {
+    if (connected[name]) await disconnect(name)
+    removeServer(name)
   }
 
   const allServers = [...MCP_PRESETS.map(p => p.config), ...custom]
 
-  const renderServer = (config: { name: string; command: string; args: string[] }, presetLabel?: string, presetIcon?: React.ReactNode) => {
+  const renderServer = (config: { name: string; command: string; args: string[]; env?: Record<string, string> }, presetLabel?: string, presetIcon?: React.ReactNode) => {
     const st = status[config.name] || 'idle'
     const isConn = st === 'connected'
     const connecting = st === 'connecting'
     const failed = st === 'error'
     const cmdLine = `${config.command} ${config.args.join(' ')}`.trim()
+
+    if (editingName === config.name) {
+      return (
+        <div key={config.name} style={{
+          border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-md)',
+          padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg-card)'
+        }}>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input placeholder="name" value={editCfg.name} onChange={(e) => setEditCfg({ ...editCfg, name: e.target.value })} style={inputStyle} />
+            <input placeholder="command (e.g. npx)" value={editCfg.command} onChange={(e) => setEditCfg({ ...editCfg, command: e.target.value })} style={{ ...inputStyle, flex: 2 }} />
+          </div>
+          <input placeholder="args (space separated)" value={editCfg.args}
+            onChange={(e) => setEditCfg({ ...editCfg, args: e.target.value })} style={inputStyle} />
+          <textarea placeholder="env (KEY=value, one per line)" value={editCfg.env} rows={2} spellCheck={false}
+            onChange={(e) => setEditCfg({ ...editCfg, env: e.target.value })}
+            style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 } as React.CSSProperties} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+            <button onClick={() => setEditingName(null)} style={smallBtn('var(--text-secondary)')}>cancel</button>
+            <button onClick={saveEdit} disabled={!editCfg.name.trim() || !editCfg.command.trim()} style={{
+              ...smallBtn('var(--accent-color)'),
+              background: editCfg.name.trim() && editCfg.command.trim() ? 'var(--accent-color)' : 'var(--bg-disabled)',
+              color: editCfg.name.trim() && editCfg.command.trim() ? 'var(--text-inverse)' : 'var(--text-muted)'
+            }}>save</button>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div key={config.name} style={{
         border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
@@ -112,12 +191,20 @@ export function McpPanel() {
             </button>
           )}
           {!MCP_PRESETS.some(p => p.config.name === config.name) && (
-            <button onClick={() => removeServer(config.name)} title="remove server" data-tip-desc="remove this MCP server configuration"
-              style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
-              <Trash2 size={11} />
-            </button>
+            <>
+              <button onClick={() => startEdit(config)} title="edit server" data-tip-desc="edit this MCP server configuration"
+                style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
+                <Pencil size={11} />
+              </button>
+              <button onClick={() => deleteServer(config.name)} title="remove server" data-tip-desc="remove this MCP server configuration"
+                style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
+                <Trash2 size={11} />
+              </button>
+            </>
           )}
           {isConn ? (
             <button onClick={() => disconnect(config.name)} title="disconnect" data-tip-desc="disconnect from this MCP server"
@@ -211,7 +298,8 @@ export function McpPanel() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
           <PlugZap size={13} style={{ color: 'var(--accent-color)' }} />
-          MCP servers
+          Strumenti MCP
+          <span style={{ fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>· server di strumenti (stdio)</span>
         </div>
         <button onClick={() => setShowAdd(v => !v)} title="add custom MCP server" data-tip-desc="add a custom MCP server configuration"
           style={{
@@ -226,7 +314,7 @@ export function McpPanel() {
       </div>
 
       <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
-        generic MCP client: launch any MCP server over stdio and inspect/invoke its tools. The chat agents (Claude, opencode, Codex, Cursor) are configured in the AI panel, not here. Config is kept across restarts.
+        client MCP generico: lancia un server di strumenti via stdio e prova/invoca i suoi tool (Model Context Protocol). Gli agenti della chat (Claude, opencode, Codex, Cursor) si configurano nel pannello AI, non qui. La configurazione è mantenuta tra i riavvii.
       </div>
 
       {showAdd && (
@@ -235,8 +323,11 @@ export function McpPanel() {
             <input placeholder="name" value={newCfg.name} onChange={(e) => setNewCfg({ ...newCfg, name: e.target.value })} style={inputStyle} />
             <input placeholder="command (e.g. npx)" value={newCfg.command} onChange={(e) => setNewCfg({ ...newCfg, command: e.target.value })} style={{ ...inputStyle, flex: 2 }} />
           </div>
-          <input placeholder="args (space separated)" value={newCfg.args.join(' ')}
-            onChange={(e) => setNewCfg({ ...newCfg, args: e.target.value.split(/\s+/).filter(Boolean) })} style={inputStyle} />
+          <input placeholder="args (space separated)" value={newCfg.args}
+            onChange={(e) => setNewCfg({ ...newCfg, args: e.target.value })} style={inputStyle} />
+          <textarea placeholder="env (KEY=value, one per line)" value={newCfg.env} rows={2} spellCheck={false}
+            onChange={(e) => setNewCfg({ ...newCfg, env: e.target.value })}
+            style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 } as React.CSSProperties} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
             <button onClick={() => setShowAdd(false)} style={smallBtn('var(--text-secondary)')}>cancel</button>
             <button onClick={addCustom} disabled={!newCfg.name.trim() || !newCfg.command.trim()} style={{
@@ -252,7 +343,7 @@ export function McpPanel() {
         {custom.map(c => renderServer(c))}
         {allServers.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-            no MCP servers configured
+            nessuno strumento MCP configurato
           </div>
         )}
       </div>

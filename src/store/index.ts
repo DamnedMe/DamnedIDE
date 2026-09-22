@@ -142,6 +142,8 @@ export interface EditorNav {
   rootPath: string
   filePath: string
   line: number
+  // open the markdown preview (e.g. a .md opened from the OS)
+  previewMd?: boolean
 }
 
 interface EditorState {
@@ -545,6 +547,7 @@ interface McpState {
   tools: Record<string, McpTool[]>
   addServer: (c: McpServerConfig) => void
   removeServer: (name: string) => void
+  updateServer: (name: string, patch: Partial<McpServerConfig>) => void
   setConnected: (name: string, v: boolean) => void
   setStatus: (name: string, s: 'idle' | 'connecting' | 'connected' | 'error') => void
   setError: (name: string, e?: string) => void
@@ -584,6 +587,22 @@ export const useMcpStore = create<McpState>((set) => ({
     const connected = { ...s.connected }
     delete connected[name]
     saveJson(MCP_CONNECTED_KEY, connected)
+    return { custom, connected }
+  }),
+  updateServer: (name, patch) => set((s) => {
+    const idx = s.custom.findIndex(c => c.name === name)
+    if (idx < 0) return {}
+    const next = { ...s.custom[idx], ...patch }
+    const custom = s.custom.map((c, i) => i === idx ? next : c)
+    saveJson(MCP_CUSTOM_KEY, custom)
+    const connected = { ...s.connected }
+    // a rename must move the persisted "connected" flag with the server
+    if (next.name !== name) {
+      const wasConnected = connected[name]
+      delete connected[name]
+      if (wasConnected) connected[next.name] = true
+      saveJson(MCP_CONNECTED_KEY, connected)
+    }
     return { custom, connected }
   }),
   setConnected: (name, v) => set((s) => {

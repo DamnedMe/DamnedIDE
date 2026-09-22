@@ -55,6 +55,17 @@ interface AgentProviderInfo {
   permissionModes: string[]
 }
 
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
+
+interface UpdateState {
+  packaged: boolean
+  currentVersion: string
+  status: UpdateStatus
+  version?: string
+  progress?: number
+  error?: string
+}
+
 interface ClaudeResult {
   ok: boolean
   text?: string
@@ -189,6 +200,9 @@ interface Window {
       searchFiles: (rootPath: string, query: string, maxResults?: number, exts?: string[]) =>
         Promise<{ file: string; line: number; column: number; preview: string; next: string }[]>
       listFiles: (rootPath: string, maxResults?: number) => Promise<string[]>
+      watch: (root: string) => Promise<void>
+      unwatch: (root: string) => Promise<void>
+      onChanged: (cb: (payload: { root: string }) => void) => () => void
     }
     window: {
       minimize: () => void
@@ -198,6 +212,9 @@ interface Window {
     }
     updater: {
       install: () => Promise<boolean>
+      state: () => Promise<UpdateState>
+      check: () => Promise<UpdateState>
+      onState: (callback: (state: UpdateState) => void) => () => void
       onDownloaded: (callback: () => void) => () => void
     }
     terminal: {
@@ -210,7 +227,12 @@ interface Window {
     shell: {
       exec: (command: string, cwd: string) => Promise<string>
       openFolder: (path: string) => Promise<void>
+      showItemInFolder: (path: string) => Promise<void>
       openExternal: (url: string) => Promise<void>
+    }
+    app: {
+      initialTarget: () => Promise<{ path: string; isDirectory: boolean } | null>
+      onOpenPath: (cb: (target: { path: string; isDirectory: boolean }) => void) => () => void
     }
     clipboard: {
       write: (text: string) => void

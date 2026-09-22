@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSettingsStore, useToastStore, AppSettings, ThemeColorConfig, DEFAULT_DARK_COLORS, DEFAULT_LIGHT_COLORS } from '../../store'
 import { PanelContainer } from '../layout/PanelContainer'
 import { relativeLuminance } from '../../utils/color'
 import { useI18n } from '../../i18n'
-import { Settings, Sun, Moon, Type, LayoutGrid, WrapText, Indent, Save, RotateCcw, AlignLeft, TextQuote, Palette, X, ChevronLeft, Languages, Images, SlidersHorizontal, PenLine, Globe, PlugZap, Bot, Plus, Trash2 } from 'lucide-react'
+import { Settings, Sun, Moon, Type, LayoutGrid, WrapText, Indent, Save, RotateCcw, AlignLeft, TextQuote, Palette, X, ChevronLeft, Languages, Images, SlidersHorizontal, PenLine, Globe, PlugZap, Bot, Plus, Trash2, RefreshCw, Loader2, AlertCircle, Check, Download } from 'lucide-react'
 import { McpPanel } from '../mcp/McpPanel'
 import { useAiChatStore } from '../../store'
 
@@ -122,6 +122,50 @@ export function SettingsPanel() {
   const [newRule, setNewRule] = useState('')
   const t = useI18n()
 
+  // ─── OTA: current version + manual check, kept in sync with the main process ─
+  const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [checkingUpdates, setCheckingUpdates] = useState(false)
+
+  useEffect(() => {
+    window.electronAPI.updater.state().then(setUpdate).catch(() => { /* main not ready */ })
+    return window.electronAPI.updater.onState(setUpdate)
+  }, [])
+
+  const checkUpdates = async () => {
+    setCheckingUpdates(true)
+    try {
+      const st = await window.electronAPI.updater.check()
+      setUpdate(st)
+      if (!st.packaged) showToast('gli aggiornamenti OTA valgono solo per la versione installata', 'info')
+      else if (st.status === 'up-to-date') showToast('sei già alla versione più recente')
+      else if (st.status === 'error') showToast(st.error || 'verifica aggiornamenti fallita', 'error')
+      else if (st.status === 'available') showToast(`nuova versione ${st.version} in scaricamento`)
+    } catch (e) {
+      showToast((e as Error).message || 'verifica aggiornamenti fallita', 'error')
+    } finally {
+      setCheckingUpdates(false)
+    }
+  }
+
+  const updateBusy = checkingUpdates || update?.status === 'checking' || update?.status === 'downloading'
+  const updateStatusText = (st: UpdateState | null): string => {
+    if (!st) return '…'
+    if (!st.packaged) return "versione di sviluppo: gli aggiornamenti OTA sono attivi solo nell'app installata"
+    switch (st.status) {
+      case 'idle': return `versione installata ${st.currentVersion}`
+      case 'checking': return 'verifica in corso…'
+      case 'available': return `nuova versione ${st.version} disponibile — avvio scaricamento…`
+      case 'downloading': return `scaricamento ${st.version ?? ''}… ${st.progress ?? 0}%`
+      case 'downloaded': return `versione ${st.version} pronta — riavvia per installarla`
+      case 'up-to-date': return `sei alla versione più recente (${st.currentVersion})`
+      case 'error': return `errore: ${st.error || 'verifica non riuscita'}`
+    }
+  }
+  const updateStatusColor =
+    update?.status === 'up-to-date' || update?.status === 'downloaded' ? 'var(--success-color)'
+      : update?.status === 'error' ? 'var(--error-color)'
+        : 'var(--text-muted)'
+
   // Primary color is independent of the theme, but black/near-black is blocked on the
   // dark theme and white/near-white on the light theme (otherwise it would be invisible).
   const handleAccentChange = (value: string) => {
@@ -183,7 +227,7 @@ export function SettingsPanel() {
               </button>
               <PlugZap size={14} style={{ color: 'var(--accent-color)' }} />
               <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-                MCP servers
+                Strumenti MCP
               </span>
             </>
           ) : showColors ? (
@@ -251,6 +295,59 @@ export function SettingsPanel() {
           </>
         ) : (
           <>
+            <Section title="updates" data-tip-desc="check for and install new versions of the IDE" icon={<RefreshCw size={11} />}>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 12px', background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                  <span style={{ display: 'flex', color: updateStatusColor, flexShrink: 0 }}>
+                    {update?.status === 'checking' || update?.status === 'downloading' || checkingUpdates
+                      ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                      : update?.status === 'error' ? <AlertCircle size={14} />
+                        : update?.status === 'up-to-date' || update?.status === 'downloaded' ? <Check size={14} />
+                          : <RefreshCw size={14} />}
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                      DamnedIDE {update?.currentVersion || '…'}
+                    </div>
+                    <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: updateStatusColor, fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>
+                      {updateStatusText(update)}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                  <button onClick={checkUpdates} disabled={updateBusy}
+                    title="verifica la disponibilità di aggiornamenti" data-tip-desc="check GitHub releases for a newer version"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
+                      background: 'var(--bg-subtle)', border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)', color: updateBusy ? 'var(--text-muted)' : 'var(--text-secondary)',
+                      cursor: updateBusy ? 'not-allowed' : 'pointer',
+                      fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                    }}>
+                    {updateBusy ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={11} />}
+                    verifica aggiornamenti
+                  </button>
+                  {update?.status === 'downloaded' && (
+                    <button onClick={() => window.electronAPI.updater.install()}
+                      title="riavvia e installa l'aggiornamento" data-tip-desc="quit and install the downloaded update"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
+                        background: 'var(--accent-color)', border: 'none', borderRadius: 'var(--radius-sm)',
+                        color: 'var(--text-inverse)', cursor: 'pointer',
+                        fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                      }}>
+                      <Download size={11} />
+                      riavvia e aggiorna
+                    </button>
+                  )}
+                </div>
+              </div>
+            </Section>
+
             <Section title="appearance" data-tip-desc="interface appearance options" icon={<SlidersHorizontal size={11} />}>
               <SettingRow icon={<Sun size={13} />} label={t('theme')}>
                 <div style={{ display: 'flex', gap: '4px' }}>
@@ -385,7 +482,7 @@ export function SettingsPanel() {
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--accent-color)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
                 <PlugZap size={12} />
-                MCP servers
+                Strumenti MCP
               </button>
             </Section>
 

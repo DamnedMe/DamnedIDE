@@ -22,6 +22,8 @@
     "test:roslyn-nav": "node --experimental-strip-types scripts/roslyn-nav.check.ts",
     "test:git-discard": "node --experimental-strip-types scripts/git-discard.check.ts",
     "test:worktree-remove": "node --experimental-strip-types scripts/worktree-remove.check.ts",
+    "test:fs-watch": "node --experimental-strip-types scripts/fs-watch.check.ts",
+    "test:open-target": "node --experimental-strip-types scripts/open-target.check.ts",
     "test:sql-ui": "node --experimental-strip-types scripts/sql-ui-regression.mjs",
     "test:sql-playwright": "playwright test --config playwright.config.ts",
     "test:sql": "npm run test:sql-ui && npm run test:sql-playwright",

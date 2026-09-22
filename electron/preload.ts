@@ -4,6 +4,7 @@ import type { TerminalType } from './services/terminal/terminal.service'
 import type { McpServerConfig, McpTool } from './services/mcp/mcp.service'
 import type { ClaudeResult, ClaudeAuthStatus } from './services/ai/claude.service'
 import type { AgentSendRequest, AgentProviderInfo } from './services/ai/agent.service'
+import type { UpdateState } from './services/update/update.service'
 
 const electronAPI = {
   ai: {
@@ -145,7 +146,14 @@ const electronAPI = {
     searchFiles: (rootPath: string, query: string, maxResults?: number, exts?: string[]) =>
       ipcRenderer.invoke('fs:searchFiles', rootPath, query, maxResults, exts),
     listFiles: (rootPath: string, maxResults?: number) =>
-      ipcRenderer.invoke('fs:listFiles', rootPath, maxResults)
+      ipcRenderer.invoke('fs:listFiles', rootPath, maxResults),
+    watch: (root: string): Promise<void> => ipcRenderer.invoke('fs:watch', root),
+    unwatch: (root: string): Promise<void> => ipcRenderer.invoke('fs:unwatch', root),
+    onChanged: (cb: (payload: { root: string }) => void) => {
+      const l = (_e: unknown, p: { root: string }) => cb(p)
+      ipcRenderer.on('fs:changed', l)
+      return () => ipcRenderer.removeListener('fs:changed', l)
+    }
   },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
@@ -155,6 +163,13 @@ const electronAPI = {
   },
   updater: {
     install: () => ipcRenderer.invoke('update:install'),
+    state: (): Promise<UpdateState> => ipcRenderer.invoke('update:state'),
+    check: (): Promise<UpdateState> => ipcRenderer.invoke('update:check'),
+    onState: (callback: (state: UpdateState) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, state: UpdateState) => callback(state)
+      ipcRenderer.on('update:state', handler)
+      return () => ipcRenderer.removeListener('update:state', handler)
+    },
     onDownloaded: (callback: () => void) => {
       const handler = () => callback()
       ipcRenderer.on('update:downloaded', handler)
@@ -175,7 +190,16 @@ const electronAPI = {
   shell: {
     exec: (command: string, cwd: string) => ipcRenderer.invoke('shell:exec', command, cwd),
     openFolder: (path: string) => ipcRenderer.invoke('shell:openFolder', path),
+    showItemInFolder: (path: string) => ipcRenderer.invoke('shell:showItemInFolder', path),
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
+  },
+  app: {
+    initialTarget: (): Promise<{ path: string; isDirectory: boolean } | null> => ipcRenderer.invoke('app:initialTarget'),
+    onOpenPath: (cb: (target: { path: string; isDirectory: boolean }) => void) => {
+      const l = (_e: unknown, target: { path: string; isDirectory: boolean }) => cb(target)
+      ipcRenderer.on('app:openPath', l)
+      return () => ipcRenderer.removeListener('app:openPath', l)
+    }
   },
   clipboard: {
     write: (text: string) => ipcRenderer.send('clipboard:write', text)

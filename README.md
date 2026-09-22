@@ -149,10 +149,9 @@ npm run dev
 # 4. build di produzione
 npm run build
 
-# 5. pacchetto (installer NSIS / AppImage / dmg)
+# 5. pacchetto (installer NSIS / AppImage / deb / pacman / dmg)
 npm run package
 ```
-
 > Requisiti: **Node.js** ≥ 18, **.NET SDK** 8+ (per la navigazione C# e i progetti .NET).
 
 ### Sviluppo e aggiornamenti
@@ -162,7 +161,7 @@ npm run package
 - Ogni aggiornamento di `main` incrementa automaticamente la versione patch, crea il tag GitHub e pubblica gli installer Windows, Linux e macOS.
 - L'applicazione installata controlla gli aggiornamenti all'avvio e periodicamente, scarica la nuova versione in background e propone il riavvio per installarla.
 
-Gli aggiornamenti OTA richiedono una versione installata tramite un installer prodotto da una GitHub Release. Il pacchetto macOS viene pubblicato anche in formato `zip`, usato da `electron-updater` per l'aggiornamento automatico. Su Linux l'OTA e' supportato dall'AppImage; il pacchetto `.deb` va aggiornato tramite una nuova installazione o il package manager.
+Gli aggiornamenti OTA richiedono una versione installata tramite un installer prodotto da una GitHub Release. Il pacchetto macOS viene pubblicato anche in formato `zip`, usato da `electron-updater` per l'aggiornamento automatico. Su Linux l'OTA e' supportato dall'AppImage; i pacchetti `.deb` e `.pacman` (Arch Linux) vanno aggiornati tramite una nuova installazione o il package manager.
 
 ---
 

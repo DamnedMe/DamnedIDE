@@ -66,21 +66,11 @@ function sendOpenTarget(target: OpenTarget): void {
   }
 }
 
-// A second launch (e.g. "Open with" on another file) must reach the running
-// instance instead of starting a new one.
-if (app.requestSingleInstanceLock()) {
-  app.on('second-instance', (_e, argv) => {
-    const target = argvOpenTarget(argv)
-    if (target) sendOpenTarget(target)
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
-  })
-} else {
-  app.quit()
-}
-
+// Multiple instances are allowed on purpose (one per repository/project): no
+// single-instance lock. A launch with a path ("Open with DamnedIDE", the
+// installer's folder context menu, `damned-ide <path>`) opens that path in the
+// new instance through the argv handling below.
+//
 // macOS: Finder "Open with" delivers the file through this event, not argv, and
 // it can fire before the app is ready
 app.on('open-file', (event, filePath) => {

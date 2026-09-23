@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { PanelContainer } from '../layout/PanelContainer'
-import { useUIStore, useSettingsStore } from '../../store'
+import { useUIStore, useSettingsStore, useTerminalStore } from '../../store'
 import { hexToRgba } from '../../utils/color'
 import { Monitor, ExternalLink, Plus, X, ChevronDown } from 'lucide-react'
 
@@ -136,6 +136,11 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
       try { term.write(pendingBuffer) } catch { /* disposed */ }
       pendingBuffer = ''
     }
+    // a command requested while the terminal was closed (agent login)
+    const pending = useTerminalStore.getState().takePendingCommand()
+    if (pending) {
+      try { window.electronAPI.terminal.write(id, `${pending}\r`) } catch { /* closed */ }
+    }
 
     // xterm's native input event → forward the bytes to the pty (the pty echoes)
     term.onData((data) => {
@@ -175,6 +180,17 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
   const switchTab = (tab: Tab) => {
     setActiveTabId(tab.id)
   }
+
+  // a command requested while this terminal is already running (agent login from
+  // the settings) is typed into the current shell
+  const pendingCommand = useTerminalStore(s => s.pendingCommand)
+  useEffect(() => {
+    if (!pendingCommand || !sessionRef.current) return
+    const command = useTerminalStore.getState().takePendingCommand()
+    if (command) {
+      try { window.electronAPI.terminal.write(sessionRef.current, `${command}\r`) } catch { /* closed */ }
+    }
+  }, [pendingCommand])
 
   // auto-open a default shell when the terminal mounts (dock open / panel), so it's
   // usable immediately without picking a shell type

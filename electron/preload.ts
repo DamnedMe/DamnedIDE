@@ -11,8 +11,9 @@ const electronAPI = {
   platform: process.platform,
   ai: {
     status: (): Promise<ClaudeAuthStatus> => ipcRenderer.invoke('ai:status'),
-    test: (backend: 'subscription' | 'api'): Promise<ClaudeResult> => ipcRenderer.invoke('ai:test', backend),
-    providers: (): Promise<AgentProviderInfo[]> => ipcRenderer.invoke('ai:providers'),
+    test: (provider?: string, backend?: 'subscription' | 'api'): Promise<ClaudeResult> =>
+      ipcRenderer.invoke('ai:test', provider, backend),
+    providers: (refresh?: boolean): Promise<AgentProviderInfo[]> => ipcRenderer.invoke('ai:providers', refresh),
     models: (provider: string): Promise<{ id: string; label: string }[]> => ipcRenderer.invoke('ai:models', provider),
     send: (req: AgentSendRequest): Promise<ClaudeResult> => ipcRenderer.invoke('ai:send', req),
     cancel: (chatKey: string): Promise<void> => ipcRenderer.invoke('ai:cancel', chatKey),
@@ -67,6 +68,7 @@ const electronAPI = {
     merge: (repoPath: string, branch: string) => ipcRenderer.invoke('git:merge', repoPath, branch),
     currentBranch: (repoPath: string) => ipcRenderer.invoke('git:currentBranch', repoPath),
     gitCommonDir: (repoPath: string) => ipcRenderer.invoke('git:gitCommonDir', repoPath),
+    resolveRepoRoot: (dirPath: string): Promise<string | null> => ipcRenderer.invoke('git:resolveRepoRoot', dirPath),
     blame: (repoPath: string, filePath: string) => ipcRenderer.invoke('git:blame', repoPath, filePath),
     fileLog: (repoPath: string, filePath: string, count?: number) => ipcRenderer.invoke('git:fileLog', repoPath, filePath, count),
     diffFile: (repoPath: string, filePath: string) => ipcRenderer.invoke('git:diffFile', repoPath, filePath)

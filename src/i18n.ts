@@ -76,7 +76,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     'force remove': 'rimuovi comunque',
     'removing…': 'rimozione…',
     'hide hidden': 'nascondi i nascosti',
-    'show hidden': 'mostra i nascosti'
+    'show hidden': 'mostra i nascosti',
+    'AI agents': 'Agenti AI'
   }
 }
 

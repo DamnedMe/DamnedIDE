@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, existsSync, rmSync, mkdirSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { WorktreeService } from '../electron/services/git/worktree.service.ts'
+import { WorktreeService, moveToTrash, scheduleDelete, cancelScheduledDeletes } from '../electron/services/git/worktree.service.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'damned-wt-'))
 const repo = join(root, 'repo')
@@ -42,6 +42,19 @@ assert.equal(existsSync(wt2), false, 'worktree folder deleted on force')
 const r3 = await service.remove(repo, repo, true)
 assert.equal(r3.ok, true)
 assert.equal(existsSync(repo), true, 'main repository is never deleted')
+
+// locked folder fallback: moveToTrash frees the path, scheduleDelete cleans it
+const locked = join(root, 'locked-worktree')
+mkdirSync(locked)
+writeFileSync(join(locked, 'held.txt'), 'open elsewhere\n')
+const trashed = await moveToTrash(locked)
+assert.ok(trashed, 'moveToTrash returns the new path')
+assert.equal(existsSync(locked), false, 'original path is freed immediately')
+assert.equal(existsSync(join(trashed!, 'held.txt')), true, 'content preserved in the trash')
+scheduleDelete(trashed!, { attempts: 10, intervalMs: 50, initialDelayMs: 30 })
+await new Promise((r) => setTimeout(r, 300))
+assert.equal(existsSync(trashed!), false, 'scheduled deletion removes the trashed folder')
+cancelScheduledDeletes()
 
 rmSync(root, { recursive: true, force: true })
 console.log('ok — worktree remove')

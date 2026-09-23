@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plug, PlugZap, Plus, X, Trash2, Loader2, ChevronDown, ChevronUp, TerminalSquare, Pencil } from 'lucide-react'
 import { useMcpStore, MCP_PRESETS } from '../../store'
-import { ClaudeSettings } from './ClaudeSettings'
 
 const PRESET_ICONS: Record<string, React.ReactNode> = {
   opencode: <TerminalSquare size={12} />,
@@ -293,8 +292,6 @@ export function McpPanel() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'auto', padding: '4px' }}>
-      <ClaudeSettings />
-
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
           <PlugZap size={13} style={{ color: 'var(--accent-color)' }} />

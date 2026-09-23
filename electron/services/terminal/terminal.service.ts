@@ -1,6 +1,7 @@
 import { spawn as ptySpawn, IPty } from '@homebridge/node-pty-prebuilt-multiarch'
 import { BrowserWindow } from 'electron'
 import { execSync } from 'child_process'
+import { realpathSync } from 'fs'
 import { killProcessTree } from '../process/process.service'
 
 export type TerminalType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
@@ -118,7 +119,10 @@ export function destroyAllTerminals(): void {
 }
 
 function normalizeForCompare(p: string): string {
-  return p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+  // 8.3 short paths (C:\Users\DAMIAN~1\...) must compare equal to the long form
+  let full = p
+  try { full = realpathSync.native(p) } catch { /* path gone: compare as-is */ }
+  return full.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
 }
 
 // A terminal whose shell cwd lives inside a worktree keeps a handle on that

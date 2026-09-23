@@ -47,6 +47,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const [isForcingRemove, setIsForcingRemove] = useState(false)
   const [showNewWorktree, setShowNewWorktree] = useState(false)
   const [hiddenPaths, setHiddenPaths] = useState<Set<string>>(new Set())
+  const [listError, setListError] = useState<string | null>(null)
   const changesHandleRef = useRef<WorktreeChangesHandle | null>(null)
   const showToast = useToastStore(s => s.showToast)
 
@@ -73,6 +74,11 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     try {
       await window.electronAPI.worktree.prune(repoPath).catch(() => {})
       await refreshWorktrees()
+      setListError(null)
+    } catch (e) {
+      // e.g. the opened folder is not a git repository
+      setEntries([])
+      setListError((e as Error).message)
     } finally {
       setLoading(false)
     }
@@ -96,7 +102,8 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     setIsForcingRemove(true)
     try {
       const res = await window.electronAPI.worktree.remove(repoPath, removeConfirm.path, true)
-      if (res.warning) showToast(res.warning, 'error')
+      if (res.trashedPath && res.warning) showToast(res.warning, 'info')
+      else if (res.warning) showToast(res.warning, 'error')
       else showToast('worktree removed')
     } catch (e) {
       showToast((e as Error).message || 'rimozione fallita', 'error')
@@ -316,7 +323,16 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
           </div>
           ) : (
           <div style={{ flex: 1, minWidth: 0, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            <WorktreeList repoPath={repoPath} entries={entries} isLoading={isLoading} onRemove={handleRemoveWorktree} onComplete={handleComplete} />
+            {listError ? (
+              <div style={{
+                padding: '24px', color: 'var(--error-color)', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
+                fontFamily: 'var(--font-mono)', lineHeight: 1.7, wordBreak: 'break-word'
+              }}>
+                {listError}
+              </div>
+            ) : (
+              <WorktreeList repoPath={repoPath} entries={entries} isLoading={isLoading} onRemove={handleRemoveWorktree} onComplete={handleComplete} />
+            )}
           </div>
         )}
       </div>

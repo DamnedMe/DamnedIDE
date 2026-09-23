@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Send, Bot, User, Loader2, Trash2, ChevronDown, Square, Sparkles, Plus, X, Cpu, AlertCircle } from 'lucide-react'
 import {
-  useAgentChatStore, useWorktreeStore, useTerminalStore, useClaudeStore, useAiChatStore,
+  useAgentChatStore, useWorktreeStore, useTerminalStore, useClaudeStore, useAiChatStore, useAgentConfigStore,
   type AgentSession, type AiChatMessage
 } from '../../store'
 
@@ -34,6 +34,7 @@ export function AiChatPanel() {
   const worktree = useWorktreeStore(s => s.selectedWorktree)
   const worktreeEntries = useWorktreeStore(s => s.entries)
   const rules = useAiChatStore(s => s.rules)
+  const configuredAgents = useAgentConfigStore(s => s.configured)
   const claude = useClaudeStore()
 
   const [providers, setProviders] = useState<AgentProviderInfo[]>([])
@@ -48,6 +49,9 @@ export function AiChatPanel() {
 
   const active = sessions.find(s => s.id === activeId) || null
   const providerInfo = active ? providers.find(p => p.id === active.provider) || null : null
+  // only the agents configured in settings are offered (plus the session's own,
+  // so a chat keeps working if its provider is removed from the list)
+  const visibleProviders = providers.filter(p => configuredAgents.includes(p.id) || p.id === active?.provider)
   const activeBusy = active ? !!busy[active.id] : false
   const activeStreaming = active ? (streaming[active.id] || '') : ''
   const messages: AiChatMessage[] = active?.messages || []
@@ -272,7 +276,7 @@ export function AiChatPanel() {
           <select value={active.provider} onChange={(e) => changeProvider(e.target.value as AgentProviderId)}
             title="provider" data-tip-desc="choose the agent that answers this conversation"
             style={{ ...selectStyle, maxWidth: '160px' }}>
-            {providers.map(p => (
+            {visibleProviders.map(p => (
               <option key={p.id} value={p.id}>{p.label}{p.available ? '' : ' — non disponibile'}</option>
             ))}
           </select>
@@ -346,6 +350,12 @@ export function AiChatPanel() {
               ? <>Claude {active.backend === 'api' ? 'via API Anthropic' : 'con la tua subscription'} — {active.model || 'modello predefinito'}{active.effort ? ` / ${active.effort}` : ''}.<br />{claudeAuthTip}<br /></>
               : <>{providerInfo?.label || active.provider} — {providerInfo?.detail || 'in attesa'}.<br />Provider CLI in modalità headless, con i suoi strumenti sul worktree.<br /></>}
             {active.worktree ? `Conversazione su ${shortPath(active.worktree)}.` : 'Nessun worktree: conversazione generica.'}
+          </div>
+        )}
+        {visibleProviders.length === 0 && (
+          <div style={{ padding: '16px', textAlign: 'center', color: 'var(--warning-color)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
+            nessun agente configurato.<br />
+            aggiungilo da Impostazioni → Agenti AI (accedi con la CLI o inserisci la API key).
           </div>
         )}
         {messages.map((m, i) => (

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useSettingsStore, useToastStore, AppSettings, ThemeColorConfig, DEFAULT_DARK_COLORS, DEFAULT_LIGHT_COLORS } from '../../store'
+import { useSettingsStore, useToastStore, useWorktreeStore, AppSettings, ThemeColorConfig, DEFAULT_DARK_COLORS, DEFAULT_LIGHT_COLORS } from '../../store'
 import { PanelContainer } from '../layout/PanelContainer'
 import { relativeLuminance } from '../../utils/color'
 import { useI18n } from '../../i18n'
 import { Settings, Sun, Moon, Type, LayoutGrid, WrapText, Indent, Save, RotateCcw, AlignLeft, TextQuote, Palette, X, ChevronLeft, Languages, Images, SlidersHorizontal, PenLine, Globe, PlugZap, Bot, Plus, Trash2, RefreshCw, Loader2, AlertCircle, Check, Download } from 'lucide-react'
 import { McpPanel } from '../mcp/McpPanel'
+import { AgentSettings } from './AgentSettings'
+import { TerminalDock } from '../terminal/TerminalDock'
 import { useAiChatStore } from '../../store'
 
 function SettingRow({ icon, label, children }: {
@@ -113,9 +115,13 @@ function SelectInput({ value, options, onChange }: {
 export function SettingsPanel() {
   const { settings, themeDefaults, updateSettings, resetSettings, setThemeDefaults, resetThemeToDefaults } = useSettingsStore()
   const showToast = useToastStore(s => s.showToast)
+  // the terminal dock lives here too, so "accedi" (agent login) is visible without
+  // switching panel
+  const dockRepoPath = useWorktreeStore(s => s.selectedWorktree)
   const s = settings
   const [showColors, setShowColors] = useState(false)
   const [showMcp, setShowMcp] = useState(false)
+  const [showAgents, setShowAgents] = useState(false)
   const aiRules = useAiChatStore(s => s.rules)
   const addAiRule = useAiChatStore(s => s.addRule)
   const removeAiRule = useAiChatStore(s => s.removeRule)
@@ -208,8 +214,9 @@ export function SettingsPanel() {
 
   return (
     <PanelContainer>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{
-        height: '100%', display: 'flex', flexDirection: 'column',
+        flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
         padding: '12px', gap: '8px', overflow: 'auto'
       }}>
         <div style={{
@@ -217,7 +224,20 @@ export function SettingsPanel() {
           padding: '4px 8px 10px', borderBottom: '1px solid var(--border-subtle)',
           flexShrink: 0
         }}>
-          {showMcp ? (
+          {showAgents ? (
+            <>
+              <button onClick={() => setShowAgents(false)} title="back" data-tip-desc="go back to the previous view"
+                style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
+                <ChevronLeft size={13} />
+              </button>
+              <Bot size={14} style={{ color: 'var(--accent-color)' }} />
+              <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                {t('AI agents')}
+              </span>
+            </>
+          ) : showMcp ? (
             <>
               <button onClick={() => setShowMcp(false)} title="back" data-tip-desc="go back to the previous view"
                 style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
@@ -253,7 +273,9 @@ export function SettingsPanel() {
           )}
         </div>
 
-        {showMcp ? (
+        {showAgents ? (
+          <AgentSettings />
+        ) : showMcp ? (
           <McpPanel />
         ) : showColors ? (
           <>
@@ -472,6 +494,21 @@ export function SettingsPanel() {
                 <Palette size={12} />
                 {t('editor colors')}
               </button>
+            </Section>
+
+            <Section title="ai" data-tip-desc="AI agents and tool servers" icon={<Bot size={11} />}>
+              <button onClick={() => setShowAgents(true)} style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '8px 14px', height: '32px',
+                background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
+                borderRadius: 'var(--radius-md)', color: 'var(--accent-color)',
+                cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--text-inverse)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent-bg)'; e.currentTarget.style.color = 'var(--accent-color)' }}>
+                <Bot size={12} />
+                {t('AI agents')} — Claude, Codex, Cursor, opencode
+              </button>
               <button onClick={() => setShowMcp(true)} style={{
                 display: 'flex', alignItems: 'center', gap: '6px',
                 padding: '8px 14px', height: '32px',
@@ -482,7 +519,7 @@ export function SettingsPanel() {
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--accent-color)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
                 <PlugZap size={12} />
-                Strumenti MCP
+                Server MCP (client di strumenti)
               </button>
             </Section>
 
@@ -511,6 +548,8 @@ export function SettingsPanel() {
             </div>
           </>
         )}
+      </div>
+      <TerminalDock repoPath={dockRepoPath} />
       </div>
     </PanelContainer>
   )

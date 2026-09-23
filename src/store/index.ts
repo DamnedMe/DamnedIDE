@@ -481,9 +481,13 @@ interface TerminalState {
   open: boolean
   height: number
   mode: 'terminal' | 'ai'
+  // command to type into the terminal as soon as it is ready (agent login)
+  pendingCommand: string | null
   setOpen: (open: boolean) => void
   setHeight: (h: number) => void
   setMode: (m: 'terminal' | 'ai') => void
+  runCommand: (command: string) => void
+  takePendingCommand: () => string | null
 }
 
 function defaultTerminalHeight(): number {
@@ -494,13 +498,22 @@ function defaultTerminalHeight(): number {
   return 280
 }
 
-export const useTerminalStore = create<TerminalState>((set) => ({
+export const useTerminalStore = create<TerminalState>((set, get) => ({
   open: false,
   height: defaultTerminalHeight(),
   mode: 'terminal',
+  pendingCommand: null,
   setOpen: (open) => set({ open }),
   setHeight: (height) => set({ height }),
-  setMode: (mode) => set({ mode })
+  setMode: (mode) => set({ mode }),
+  // used by the agent settings to sign in on the provider platform: opens the
+  // terminal (if closed) and runs the interactive login command there
+  runCommand: (command) => set({ pendingCommand: command, mode: 'terminal', open: true }),
+  takePendingCommand: () => {
+    const command = get().pendingCommand
+    if (command) set({ pendingCommand: null })
+    return command
+  }
 }))
 
 // ─── MCP servers (config + connection state, persisted) ───────────────────────
@@ -812,6 +825,39 @@ export const useAgentChatStore = create<AgentChatState>((set) => {
     })
   }
 })
+
+// ─── Configured AI agents (which providers the IDE offers) ────────────────────
+export const ALL_AGENT_PROVIDERS: AgentProviderId[] = ['claude', 'opencode', 'codex', 'cursor']
+
+const AGENT_CONFIG_KEY = 'damnedide_agent_providers'
+
+interface AgentConfigState {
+  configured: AgentProviderId[]
+  addAgent: (id: AgentProviderId) => void
+  removeAgent: (id: AgentProviderId) => void
+}
+
+function loadConfiguredAgents(): AgentProviderId[] {
+  const stored = loadJson<AgentProviderId[] | null>(AGENT_CONFIG_KEY, null)
+  // first run: every supported provider is available in the chat
+  if (!Array.isArray(stored)) return [...ALL_AGENT_PROVIDERS]
+  return stored.filter((id) => (ALL_AGENT_PROVIDERS as string[]).includes(id))
+}
+
+export const useAgentConfigStore = create<AgentConfigState>((set) => ({
+  configured: loadConfiguredAgents(),
+  addAgent: (id) => set((s) => {
+    if (s.configured.includes(id)) return {}
+    const configured = [...s.configured, id]
+    saveJson(AGENT_CONFIG_KEY, configured)
+    return { configured }
+  }),
+  removeAgent: (id) => set((s) => {
+    const configured = s.configured.filter((x) => x !== id)
+    saveJson(AGENT_CONFIG_KEY, configured)
+    return { configured }
+  })
+}))
 
 const RECENT_REPOS_KEY = 'damnedide_recent_repos'
 const RECENT_REPOS_MAX = 5

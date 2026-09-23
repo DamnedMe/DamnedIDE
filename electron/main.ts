@@ -3,7 +3,8 @@ import { join, normalize, extname } from 'path'
 import { readdir, readFile, writeFile, stat, rm, mkdir } from 'fs/promises'
 import { exec } from 'child_process'
 import { GitService } from './services/git/git.service'
-import { WorktreeService } from './services/git/worktree.service'
+import { WorktreeService, cancelScheduledDeletes } from './services/git/worktree.service'
+import { closeExplorerWindowsAt } from './services/process/windows-handles'
 import { DiffService } from './services/git/diff.service'
 import { AdoService } from './services/ado/ado.service'
 import { SqlService, SqlConnectionConfig, buildConnectionString, parseConnectionString } from './services/sql/sql.service'
@@ -124,7 +125,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   const gitService = new GitService()
-  const worktreeService = new WorktreeService()
+  const worktreeService = new WorktreeService({ closeExplorerWindows: closeExplorerWindowsAt })
   const diffService = new DiffService()
   const adoService = new AdoService()
   const sqlService = new SqlService()
@@ -165,6 +166,7 @@ app.on('will-quit', () => {
   mcpService?.disconnectAll()
   agentService?.cancelAll()
   closeAllWatchers()
+  cancelScheduledDeletes()
 })
 function registerIpcHandlers(
   git: GitService,
@@ -458,6 +460,7 @@ function registerIpcHandlers(
   ipcMain.handle('git:merge', (_e, repoPath: string, branch: string) => git.merge(repoPath, branch))
   ipcMain.handle('git:currentBranch', (_e, repoPath: string) => git.currentBranch(repoPath))
   ipcMain.handle('git:gitCommonDir', (_e, repoPath: string) => git.gitCommonDir(repoPath))
+  ipcMain.handle('git:resolveRepoRoot', (_e, dirPath: string) => git.resolveRepoRoot(dirPath))
   ipcMain.handle('git:blame', (_e, repoPath: string, filePath: string) => git.blame(repoPath, filePath))
   ipcMain.handle('git:fileLog', (_e, repoPath: string, filePath: string, count?: number) => git.fileLog(repoPath, filePath, count))
   ipcMain.handle('git:diffFile', (_e, repoPath: string, filePath: string) => git.diffFile(repoPath, filePath))
@@ -559,12 +562,16 @@ function registerIpcHandlers(
 
   // ─── Claude (subscription CLI / Anthropic API) ─────
   ipcMain.handle('ai:status', () => claude.status())
-  ipcMain.handle('ai:test', (_e, backend: 'subscription' | 'api') => claude.test(backend, mainWindow))
   ipcMain.handle('ai:setApiKey', ipc((key: string | null) => { setApiKey(key); return hasApiKey() }))
   ipcMain.handle('ai:hasApiKey', () => hasApiKey())
 
   // ─── Agent chat (multi-provider: claude / opencode / codex / cursor) ───
-  ipcMain.handle('ai:providers', () => agent.providers())
+  // `ai:test` keeps accepting the legacy (backend) signature used by Claude.
+  ipcMain.handle('ai:test', (_e, provider?: AgentProviderId | 'subscription' | 'api', backend?: 'subscription' | 'api') => {
+    if (provider === 'subscription' || provider === 'api') return claude.test(provider, mainWindow)
+    return agent.test((provider as AgentProviderId) || 'claude', mainWindow, backend)
+  })
+  ipcMain.handle('ai:providers', (_e, refresh?: boolean) => agent.providers({ refresh: !!refresh }))
   ipcMain.handle('ai:models', (_e, provider: AgentProviderId) => agent.listModels(provider))
   ipcMain.handle('ai:send', (_e, req: AgentSendRequest) => agent.send(req, mainWindow))
   ipcMain.handle('ai:cancel', (_e, chatKey: string) => { agent.cancel(chatKey) })

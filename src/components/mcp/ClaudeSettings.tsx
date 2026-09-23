@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Sparkles, RefreshCw, Check, X, Loader2, Plug } from 'lucide-react'
-import { useClaudeStore, CLAUDE_MODELS, CLAUDE_EFFORTS, CLAUDE_PERMISSION_MODES } from '../../store'
+import { Sparkles, RefreshCw, Check, X, Loader2, Plug, Trash2, TerminalSquare } from 'lucide-react'
+import { useClaudeStore, useTerminalStore, CLAUDE_MODELS, CLAUDE_EFFORTS, CLAUDE_PERMISSION_MODES } from '../../store'
 
 const label: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: '4px',
@@ -16,7 +16,7 @@ const control: React.CSSProperties = {
 // Claude is not an MCP server: it is the IDE's own AI provider, either through
 // the `claude` CLI (existing subscription login, no key to manage) or through
 // the Anthropic API with a key stored encrypted by the OS keystore.
-export function ClaudeSettings() {
+export function ClaudeSettings({ onRemove }: { onRemove?: () => void } = {}) {
   const claude = useClaudeStore()
   const [auth, setAuth] = useState<ClaudeAuthStatus | null>(null)
   const [checking, setChecking] = useState(false)
@@ -82,7 +82,7 @@ export function ClaudeSettings() {
         <Sparkles size={13} style={{ color: 'var(--accent-color)' }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Claude
+            Claude <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· anche Claude Code</span>
           </div>
           <div style={{
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
@@ -91,6 +91,17 @@ export function ClaudeSettings() {
             {statusText}
           </div>
         </div>
+        <button onClick={() => useTerminalStore.getState().runCommand('claude auth login')}
+          title="accedi con la CLI claude" data-tip-desc="apre il terminale su 'claude auth login' (subscription) e apre il browser"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', height: '22px',
+            background: 'var(--accent-color)', border: 'none', borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-inverse)', cursor: 'pointer',
+            fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+          }}>
+          <TerminalSquare size={10} />
+          accedi
+        </button>
         <button onClick={runTest} disabled={testing} title="prova la connessione con un turno reale"
           data-tip-desc="credenziali presenti non vuol dire funzionanti: manda un prompt minimo su haiku e riporta l'esito"
           style={{
@@ -107,6 +118,14 @@ export function ClaudeSettings() {
           style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}>
           <RefreshCw size={12} style={checking ? { animation: 'spin 1s linear infinite' } : undefined} />
         </button>
+        {onRemove && (
+          <button onClick={onRemove} title="rimuovi agente" data-tip-desc="remove this agent from the IDE configuration"
+            style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
+            <Trash2 size={12} />
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '6px' }}>

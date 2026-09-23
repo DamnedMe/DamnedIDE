@@ -219,8 +219,17 @@ async function installElectronMock(page: Page) {
     Object.defineProperty(window, 'electronAPI', {
       configurable: true,
       value: {
+        platform: 'win32',
         sql,
-        updater: { install: async () => true, onDownloaded: () => () => {} },
+        app: { initialTarget: async () => null, onOpenPath: () => () => {} },
+        updater: {
+          install: async () => true,
+          state: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
+          check: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
+          onState: () => () => {},
+          onDownloaded: () => () => {}
+        },
+        fs: { watch: async () => {}, unwatch: async () => {}, onChanged: () => () => {} },
         window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
         dialog: {
           openFolder: async () => null,

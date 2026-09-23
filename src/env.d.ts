@@ -53,6 +53,11 @@ interface AgentProviderInfo {
   models: { id: string; label: string }[]
   efforts: string[]
   permissionModes: string[]
+  loggedIn?: boolean
+  loginCommand?: string
+  supportsApiKey?: boolean
+  installHint?: string
+  docsUrl?: string
 }
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
@@ -90,8 +95,8 @@ interface Window {
     platform: string
     ai: {
       status: () => Promise<ClaudeAuthStatus>
-      test: (backend: ClaudeBackend) => Promise<ClaudeResult>
-      providers: () => Promise<AgentProviderInfo[]>
+      test: (provider?: AgentProviderId | ClaudeBackend, backend?: ClaudeBackend) => Promise<ClaudeResult>
+      providers: (refresh?: boolean) => Promise<AgentProviderInfo[]>
       models: (provider: AgentProviderId) => Promise<{ id: string; label: string }[]>
       send: (req: AgentSendRequest) => Promise<ClaudeResult>
       cancel: (chatKey: string) => Promise<void>
@@ -128,6 +133,7 @@ interface Window {
       merge: (repoPath: string, branch: string) => Promise<{ ok: boolean; message: string; conflicts: string[] }>
       currentBranch: (repoPath: string) => Promise<string>
       gitCommonDir: (repoPath: string) => Promise<string>
+      resolveRepoRoot: (dirPath: string) => Promise<string | null>
       blame: (repoPath: string, filePath: string) => Promise<{ hash: string; author: string; date: string; line: string }[]>
       fileLog: (repoPath: string, filePath: string, count?: number) => Promise<import('./types/git').CommitInfo[]>
       diffFile: (repoPath: string, filePath: string) => Promise<string>
@@ -135,7 +141,7 @@ interface Window {
     worktree: {
       list: (repoPath: string) => Promise<WorktreeEntry[]>
       add: (repoPath: string, branch: string, path: string) => Promise<void>
-      remove: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; warning?: string; error?: string }>
+      remove: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; warning?: string; trashedPath?: string; error?: string }>
       prune: (repoPath: string) => Promise<void>
     }
     diff: {

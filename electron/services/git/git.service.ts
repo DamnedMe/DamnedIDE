@@ -267,6 +267,21 @@ export class GitService {
     return out.trim()
   }
 
+  /**
+   * Repository root that contains `dirPath` (a subfolder of the working tree
+   * resolves to the root; a linked worktree resolves to itself). Returns null
+   * when the folder is not inside a git repository, so the UI can say so
+   * instead of failing later with "not a git repository".
+   */
+  async resolveRepoRoot(dirPath: string): Promise<string | null> {
+    try {
+      const out = await this.getGit(dirPath).raw(['rev-parse', '--show-toplevel'])
+      return out.trim() || null
+    } catch {
+      return null
+    }
+  }
+
   async blame(repoPath: string, filePath: string): Promise<{ hash: string; author: string; date: string; line: string }[]> {
     const git = this.getGit(repoPath)
     try {

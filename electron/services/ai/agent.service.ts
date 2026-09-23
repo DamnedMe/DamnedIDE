@@ -29,6 +29,15 @@ export interface AgentProviderInfo {
   models: { id: string; label: string }[]
   efforts: string[]
   permissionModes: string[]
+  // true/false when the CLI can report its auth state (undefined if unknown)
+  loggedIn?: boolean
+  // command to run in the IDE terminal to sign in on the provider platform
+  loginCommand?: string
+  // the IDE can store an API key for this provider (Claude/Anthropic)
+  supportsApiKey?: boolean
+  // shown when the CLI is missing
+  installHint?: string
+  docsUrl?: string
 }
 
 // One event decoded from a provider's stream. `delta` is appended to the answer,
@@ -58,6 +67,12 @@ interface CliSpec {
   // matters on Windows, where we launch the CLI through the shell).
   promptViaStdin: boolean
   parse: (line: string) => AgentEvent | null
+  // sign-in command typed into the IDE terminal (interactive OAuth/TUI)
+  loginCommand: string
+  installHint: string
+  docsUrl: string
+  // the CLI can report whether credentials are configured
+  probeAuth?: (run: (args: string[]) => Promise<string>) => Promise<{ loggedIn: boolean; detail: string }>
 }
 
 const OPENCODE_MODELS: { id: string; label: string }[] = [
@@ -162,7 +177,20 @@ const CLI_SPECS: CliSpec[] = [
       return args
     },
     promptViaStdin: true,
-    parse: parseOpencode
+    parse: parseOpencode,
+    loginCommand: 'opencode auth login',
+    installHint: 'npm install -g opencode-ai',
+    docsUrl: 'https://opencode.ai/docs/',
+    // `opencode auth list` prints the configured credentials (ANSI colored)
+    probeAuth: async (run) => {
+      const raw = await run(['auth', 'list'])
+      const clean = raw.replace(/\x1b\[[0-9;]*m/g, '')
+      const count = Number((clean.match(/—\s*(\d+)\s+credentials?/i) || [])[1] ?? NaN)
+      const credentials = Number.isFinite(count) ? count : (clean.match(/•/g) || []).length
+      return credentials > 0
+        ? { loggedIn: true, detail: `${credentials} provider configurati` }
+        : { loggedIn: false, detail: 'nessun provider configurato — accedi per usarli' }
+    }
   },
   {
     id: 'codex',
@@ -182,7 +210,10 @@ const CLI_SPECS: CliSpec[] = [
       return args
     },
     promptViaStdin: true,
-    parse: parseGeneric
+    parse: parseGeneric,
+    loginCommand: 'codex login',
+    installHint: 'npm install -g @openai/codex',
+    docsUrl: 'https://github.com/openai/codex'
   },
   {
     id: 'cursor',
@@ -199,7 +230,10 @@ const CLI_SPECS: CliSpec[] = [
       return args
     },
     promptViaStdin: true,
-    parse: parseGeneric
+    parse: parseGeneric,
+    loginCommand: 'cursor-agent login',
+    installHint: 'installa Cursor Agent da cursor.com/cli',
+    docsUrl: 'https://cursor.com/cli'
   }
 ]
 
@@ -244,7 +278,8 @@ export class AgentService {
     return result
   }
 
-  async providers(): Promise<AgentProviderInfo[]> {
+  async providers(opts: { refresh?: boolean } = {}): Promise<AgentProviderInfo[]> {
+    if (opts.refresh) this.available.clear()
     const claudeStatus = await this.claude.status()
     const claudeAvailable = claudeStatus.cli || claudeStatus.hasApiKey
     const claudeDetail = !claudeStatus.cli
@@ -258,6 +293,11 @@ export class AgentService {
       label: 'Claude',
       available: claudeAvailable,
       detail: claudeDetail,
+      loggedIn: claudeStatus.cli ? claudeStatus.loggedIn : undefined,
+      loginCommand: 'claude auth login',
+      supportsApiKey: true,
+      installHint: 'npm install -g @anthropic-ai/claude-code',
+      docsUrl: 'https://claude.com/claude-code',
       models: [
         { id: 'claude-opus-5', label: 'Opus 5' },
         { id: 'claude-opus-4-8', label: 'Opus 4.8' },
@@ -272,17 +312,44 @@ export class AgentService {
 
     for (const spec of CLI_SPECS) {
       const probe = await this.probe(spec)
+      let loggedIn: boolean | undefined
+      let detail = probe.detail
+      if (probe.available && spec.probeAuth) {
+        const auth = await spec.probeAuth((args) => this.runCliCapture(spec, args)).catch(() => null)
+        if (auth) { loggedIn = auth.loggedIn; detail = auth.detail }
+      }
       infos.push({
         id: spec.id,
         label: spec.label,
         available: probe.available,
-        detail: probe.detail,
+        detail,
+        loggedIn,
+        loginCommand: spec.loginCommand,
+        installHint: spec.installHint,
+        docsUrl: spec.docsUrl,
         models: spec.models,
         efforts: spec.efforts,
         permissionModes: spec.permissionModes
       })
     }
     return infos
+  }
+
+  /** Cheap real round trip that proves the provider is authenticated. */
+  async test(provider: AgentProviderId, win: BrowserWindow | null, backend?: 'subscription' | 'api'): Promise<ClaudeResult> {
+    if (provider === 'claude') return this.claude.test(backend || 'subscription', win)
+    // no model/effort: the CLI uses its own default, which is what the user set up
+    return this.send({ chatKey: '__test__', provider, prompt: 'Rispondi solo con: ok' }, win)
+  }
+
+  /** Runs a short CLI command capturing stdout+stderr (auth probes, status). */
+  private runCliCapture(spec: CliSpec, args: string[]): Promise<string> {
+    const useShell = process.platform === 'win32'
+    return new Promise((resolve) => {
+      execFile(useShell ? spec.command : resolveCommand(spec.command), args,
+        { windowsHide: true, timeout: 15000, shell: useShell, maxBuffer: 4 * 1024 * 1024 },
+        (_err, stdout, stderr) => resolve(`${stdout || ''}${stderr || ''}`))
+    })
   }
 
   // dynamic model catalog for providers that can enumerate it (opencode)

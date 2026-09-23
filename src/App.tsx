@@ -13,7 +13,7 @@ import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ToastHost } from './components/layout/ToastHost'
 import { TooltipHost } from './components/layout/TooltipHost'
 import { RecentReposDialog } from './components/layout/RecentReposDialog'
-import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore } from './store'
+import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from './components/editor/monaco-theme'
@@ -54,6 +54,7 @@ export default function App() {
   const recentRepos = useRecentReposStore(s => s.repos)
   const addRepo = useRecentReposStore(s => s.addRepo)
   const clearRepos = useRecentReposStore(s => s.clearRepos)
+  const showToast = useToastStore(s => s.showToast)
   const [updateReady, setUpdateReady] = useState(false)
 
   const detachedPanel = useMemo<PanelId | null>(() => {
@@ -131,9 +132,21 @@ export default function App() {
     setRepoPath(path)
   }
 
+  // Opening a folder resolves its git root first (a subfolder of a working tree
+  // resolves to the root) and says so when the folder is not in a repository,
+  // instead of letting the worktree operations fail later.
+  const openRepo = async (path: string) => {
+    const root = await window.electronAPI.git.resolveRepoRoot(path).catch(() => null)
+    if (!root) {
+      showToast(`"${path}" non è un repository git: scegli la cartella che contiene .git`, 'error')
+      return
+    }
+    handleRepoSelected(root)
+  }
+
   const handleOpenFolder = async () => {
     const p = await window.electronAPI.dialog.openFolder()
-    if (p) handleRepoSelected(p)
+    if (p) await openRepo(p)
   }
 
   // Open a folder / file handed over by the OS ("Open with DamnedIDE"): a
@@ -141,7 +154,7 @@ export default function App() {
   // into the rendered preview).
   const handleOpenTarget = (target: { path: string; isDirectory: boolean }) => {
     if (target.isDirectory) {
-      handleRepoSelected(target.path)
+      void openRepo(target.path)
       setActivePanel('worktree')
       return
     }
@@ -215,7 +228,7 @@ export default function App() {
   const renderPanel = (panel: PanelId) => {
     switch (panel) {
       case 'worktree':
-        return <WorktreePanel repoPath={repoPath} onRepoSelected={handleRepoSelected} />
+        return <WorktreePanel repoPath={repoPath} onRepoSelected={openRepo} />
       case 'git':
         return <GitPanel repoPath={repoPath} />
       case 'ado':
@@ -293,7 +306,7 @@ export default function App() {
       {showRecent && !detachedPanel && (
         <RecentReposDialog
           repos={recentRepos}
-          onOpenRepo={(p) => { handleRepoSelected(p); setShowRecent(false) }}
+          onOpenRepo={(p) => { void openRepo(p); setShowRecent(false) }}
           onOpenFolder={async () => { await handleOpenFolder(); setShowRecent(false) }}
           onSkip={() => setShowRecent(false)}
           onClear={() => { clearRepos(); setShowRecent(false) }}

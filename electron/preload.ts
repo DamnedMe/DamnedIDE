@@ -206,7 +206,8 @@ const electronAPI = {
     }
   },
   clipboard: {
-    write: (text: string) => ipcRenderer.send('clipboard:write', text)
+    write: (text: string) => ipcRenderer.send('clipboard:write', text),
+    read: (): Promise<string> => ipcRenderer.invoke('clipboard:read')
   },
   process: {
     start: (cwd: string, command: string, args: string[]) => ipcRenderer.invoke('process:start', cwd, command, args),

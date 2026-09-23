@@ -101,6 +101,32 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     term.open(termRef.current)
     fit.fit()
 
+    // Clipboard: xterm does not map Ctrl+V by default (it would send ^V to the
+    // shell), which breaks pasting an API key into an agent CLI prompt.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown') return true
+      const key = e.key.toLowerCase()
+      const isPaste = ((e.ctrlKey || e.metaKey) && key === 'v') || (e.shiftKey && e.key === 'Insert')
+      if (isPaste) {
+        e.preventDefault()
+        window.electronAPI.clipboard.read()
+          .then((text) => { if (text) { try { term.paste(text) } catch { /* disposed */ } } })
+          .catch(() => { /* clipboard unavailable */ })
+        return false
+      }
+      // Ctrl+Shift+C copies the selection (plain Ctrl+C must stay SIGINT)
+      const isCopy = (e.ctrlKey || e.metaKey) && e.shiftKey && key === 'c'
+      if (isCopy) {
+        const selection = term.getSelection()
+        if (selection) {
+          e.preventDefault()
+          window.electronAPI.clipboard.write(selection)
+          return false
+        }
+      }
+      return true
+    })
+
     // Real PTY (ConPTY): the shell echoes, handles backspace/arrows and renders TUI
     // apps natively, so input is passed straight through to the pty and output is
     // written straight from the pty.

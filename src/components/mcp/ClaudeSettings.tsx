@@ -16,7 +16,12 @@ const control: React.CSSProperties = {
 // Claude is not an MCP server: it is the IDE's own AI provider, either through
 // the `claude` CLI (existing subscription login, no key to manage) or through
 // the Anthropic API with a key stored encrypted by the OS keystore.
-export function ClaudeSettings({ onRemove }: { onRemove?: () => void } = {}) {
+export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: {
+  onRemove?: () => void
+  // bumped by the parent ("aggiorna" / login watch) to re-read the auth state
+  refreshSignal?: number
+  onLoginStarted?: () => void
+} = {}) {
   const claude = useClaudeStore()
   const [auth, setAuth] = useState<ClaudeAuthStatus | null>(null)
   const [checking, setChecking] = useState(false)
@@ -31,7 +36,7 @@ export function ClaudeSettings({ onRemove }: { onRemove?: () => void } = {}) {
     window.electronAPI.ai.status().then(setAuth).catch(() => setAuth(null)).finally(() => setChecking(false))
   }
 
-  useEffect(refresh, [])
+  useEffect(refresh, [refreshSignal])
 
   // presence of credentials ≠ working credentials: `claude auth status` and an
   // MCP tools/list both succeed on an expired token. One cheap real turn is the
@@ -91,7 +96,7 @@ export function ClaudeSettings({ onRemove }: { onRemove?: () => void } = {}) {
             {statusText}
           </div>
         </div>
-        <button onClick={() => useTerminalStore.getState().runCommand('claude auth login')}
+        <button onClick={() => { useTerminalStore.getState().runCommand('claude auth login'); onLoginStarted?.() }}
           title="accedi con la CLI claude" data-tip-desc="apre il terminale su 'claude auth login' (subscription) e apre il browser"
           style={{
             display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', height: '22px',

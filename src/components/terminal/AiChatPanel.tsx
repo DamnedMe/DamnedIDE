@@ -58,9 +58,9 @@ export function AiChatPanel() {
   const providerModels = active ? (models[active.provider] || providerInfo?.models || []) : []
 
   // ─── load providers + availability ──────────────────────────────────────────
-  const loadProviders = useCallback(async () => {
+  const loadProviders = useCallback(async (refresh = false) => {
     try {
-      const list = await window.electronAPI.ai.providers()
+      const list = await window.electronAPI.ai.providers(refresh)
       setProviders(list)
       setModels(prev => {
         const next = { ...prev }
@@ -70,10 +70,12 @@ export function AiChatPanel() {
     } catch { /* main not ready */ }
   }, [])
 
+  // re-read the providers when the configured agents change (add/remove/login)
+  const configuredKey = configuredAgents.join(',')
   useEffect(() => {
-    loadProviders()
+    void loadProviders(true)
     window.electronAPI.ai.status().then(setAuth).catch(() => setAuth(null))
-  }, [loadProviders])
+  }, [loadProviders, configuredKey])
 
   // dynamic catalog for opencode (its `models` command lists the configured ones)
   useEffect(() => {

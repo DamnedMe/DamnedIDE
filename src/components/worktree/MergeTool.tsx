@@ -1,62 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { X, ChevronUp, ChevronDown, Save, Loader2, GitMerge, ArrowRight } from 'lucide-react'
+import { X, ChevronUp, ChevronDown, Save, Loader2, GitMerge, Check, ArrowRight, Columns2, FileDiff } from 'lucide-react'
 import { useUIStore, useSettingsStore } from '../../store'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../editor/monaco-theme'
-import { detectLangForMerge } from './merge-utils'
+import {
+  detectLangForMerge, parseConflicts, applyChoices, unresolvedCount,
+  type ConflictBlock, type MergeSide
+} from './merge-utils'
 
 interface MergeToolProps {
   repoPath: string
   filePath: string
   onClose: () => void
   onResolved: () => void
-}
-
-interface ConflictBlock {
-  index: number
-  startLine: number // 1-based line of '<<<<<<<'
-  endLine: number // 1-based line of '>>>>>>>'
-  ours: string[]
-  theirs: string[]
-}
-
-const MARKER_START = '<<<<<<<'
-const MARKER_SEP = '======='
-const MARKER_END = '>>>>>>>'
-
-function parseConflicts(text: string): ConflictBlock[] {
-  const lines = text.split('\n')
-  const blocks: ConflictBlock[] = []
-  let pendingStart = -1
-  let pendingSep = -1
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (line.startsWith(MARKER_START)) {
-      pendingStart = i
-      pendingSep = -1
-    } else if (line.startsWith(MARKER_SEP) && pendingStart >= 0) {
-      pendingSep = i
-    } else if (line.startsWith(MARKER_END) && pendingStart >= 0 && pendingSep >= 0) {
-      blocks.push({
-        index: blocks.length,
-        startLine: pendingStart + 1,
-        endLine: i + 1,
-        ours: lines.slice(pendingStart + 1, pendingSep),
-        theirs: lines.slice(pendingSep + 1, i)
-      })
-      pendingStart = -1
-      pendingSep = -1
-    }
-  }
-  return blocks
-}
-
-function resolveBlock(text: string, block: ConflictBlock, choice: 'ours' | 'theirs' | 'both'): string {
-  const lines = text.split('\n')
-  const chosen = choice === 'ours' ? block.ours : choice === 'theirs' ? block.theirs : [...block.ours, ...block.theirs]
-  const head = lines.slice(0, block.startLine - 1)
-  const tail = lines.slice(block.endLine)
-  return [...head, ...chosen, ...tail].join('\n')
 }
 
 function applyEditorTheme(monaco: typeof import('monaco-editor')) {
@@ -67,34 +23,28 @@ function applyEditorTheme(monaco: typeof import('monaco-editor')) {
   monaco.editor.setTheme(theme === 'dark' ? THEME_DARK : THEME_LIGHT)
 }
 
-// 3-way merge tool for a conflicted file, VS-style: ours | theirs read-only on top,
-// editable result below with per-conflict "take ours/theirs/both" actions.
+// Visual-Studio style conflict editor: every conflict is shown as a hunk with the
+// two sides side by side, and clicking a side takes it (click again to undo). The
+// merged result is built live on the right and stays editable for manual fixes.
 export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeToolProps) {
   const theme = useUIStore(s => s.theme)
-  const [ours, setOurs] = useState('')
-  const [theirs, setTheirs] = useState('')
-  const [result, setResult] = useState('')
+  const [original, setOriginal] = useState('')
+  const [choices, setChoices] = useState<Record<number, MergeSide | undefined>>({})
+  // manual edits in the result pane take precedence until a choice changes
+  const [manual, setManual] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [active, setActive] = useState(0)
-  const resultEditorRef = useRef<any>(null)
-
-  const conflicts = useMemo(() => parseConflicts(result), [result])
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const [o, t, w] = await Promise.all([
-          window.electronAPI.git.showRef(repoPath, filePath, ':2').catch(() => ''),
-          window.electronAPI.git.showRef(repoPath, filePath, ':3').catch(() => ''),
-          window.electronAPI.fs.readFile(`${repoPath}/${filePath}`).catch(() => '')
-        ])
+        const conflicted = await window.electronAPI.fs.readFile(`${repoPath}/${filePath}`).catch(() => '')
         if (cancelled) return
-        setOurs(o)
-        setTheirs(t)
-        setResult(w)
+        setOriginal(conflicted)
       } catch (e) {
         setError((e as Error).message)
       } finally {
@@ -104,33 +54,36 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
     return () => { cancelled = true }
   }, [repoPath, filePath])
 
-  const revealConflict = (idx: number) => {
-    setActive(idx)
-    const block = conflicts[idx]
-    if (block && resultEditorRef.current) {
-      try { resultEditorRef.current.revealLineInCenter(block.startLine) } catch { /* ignore */ }
-    }
+  const blocks = useMemo(() => parseConflicts(original), [original])
+  const merged = useMemo(
+    () => (manual !== null ? manual : applyChoices(original, blocks, choices)),
+    [manual, original, blocks, choices]
+  )
+  const unresolved = unresolvedCount(blocks, choices)
+
+  const choose = (index: number, side: MergeSide) => {
+    setChoices(prev => ({ ...prev, [index]: prev[index] === side ? undefined : side }))
+    setManual(null)
   }
 
-  const applyToBlock = (idx: number, choice: 'ours' | 'theirs' | 'both') => {
-    const block = conflicts[idx]
-    if (!block) return
-    setResult(resolveBlock(result, block, choice))
+  const applyToAll = (side: MergeSide) => {
+    const next: Record<number, MergeSide | undefined> = {}
+    for (const block of blocks) next[block.index] = side
+    setChoices(next)
+    setManual(null)
   }
 
-  const applyToAll = (choice: 'ours' | 'theirs' | 'both') => {
-    let text = result
-    for (const block of [...conflicts].reverse()) {
-      text = resolveBlock(text, block, choice)
-    }
-    setResult(text)
+  const reveal = (index: number) => {
+    const clamped = Math.max(0, Math.min(blocks.length - 1, index))
+    setActive(clamped)
+    cardRefs.current[clamped]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }
 
   const handleSave = async () => {
     if (saving) return
     setSaving(true)
     try {
-      await window.electronAPI.fs.writeFile(`${repoPath}/${filePath}`, result)
+      await window.electronAPI.fs.writeFile(`${repoPath}/${filePath}`, merged)
       // staging the file marks the conflict as resolved in git
       await window.electronAPI.git.stage(repoPath, [filePath])
       onResolved()
@@ -141,33 +94,69 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
     }
   }
 
+  // Ctrl+S saves, like everywhere else in the IDE
+  const saveRef = useRef(handleSave)
+  saveRef.current = handleSave
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        e.stopPropagation()
+        saveRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+
   const lang = detectLangForMerge(filePath)
   const editorTheme = theme === 'dark' ? THEME_DARK : THEME_LIGHT
-  const readOnlyOptions = {
-    fontSize: 12.5,
-    fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
-    readOnly: true,
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    automaticLayout: true,
-    lineNumbers: 'on' as const,
-    renderWhitespace: 'selection' as const,
-    wordWrap: 'off' as const,
-    stickyScroll: { enabled: true, maxLineCount: 3 },
-    scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 }
-  }
 
-  const paneLabel = (label: string, color: string) => (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px',
-      fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700,
-      color, textTransform: 'uppercase', letterSpacing: '0.5px',
-      fontFamily: 'var(--font-mono)', borderBottom: '1px solid var(--border-subtle)',
-      background: 'var(--bg-primary)', flexShrink: 0
-    }}>
-      {label}
-    </div>
-  )
+  const sidePane = (
+    block: ConflictBlock,
+    side: 'ours' | 'theirs',
+    label: string,
+    color: string,
+    lines: string[],
+    startLine: number
+  ) => {
+    const choice = choices[block.index]
+    // with "both" both sides are taken, so neither is dimmed
+    const selected = choice === side || choice === 'both'
+    const dimmed = choice !== undefined && choice !== 'both' && choice !== side
+    return (
+      <div
+        onClick={() => choose(block.index, side)}
+        title={`clicca per prendere questa versione (${label})`}
+        data-tip-desc={selected ? 'click again to leave this conflict unresolved' : 'take this side for this conflict'}
+        style={{
+          flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+          border: `1px solid ${selected ? color : 'var(--border-color)'}`,
+          borderRadius: 'var(--radius-sm)', overflow: 'hidden', cursor: 'pointer',
+          background: selected ? 'var(--bg-active)' : 'var(--bg-card)',
+          opacity: dimmed ? 0.45 : 1,
+          transition: 'opacity 0.12s ease, border-color 0.12s ease'
+        }}
+      >
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '5px', padding: '2px 8px',
+          fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', fontWeight: 700, color,
+          fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.4px',
+          borderBottom: `1px solid ${selected ? color : 'var(--border-subtle)'}`,
+          background: selected ? 'var(--bg-subtle)' : 'transparent', flexShrink: 0
+        }}>
+          {selected ? <Check size={10} /> : <ArrowRight size={10} style={{ opacity: 0.5 }} />}
+          {label}
+          <span style={{ marginLeft: 'auto', fontWeight: 500, color: 'var(--text-disabled)' }}>
+            {lines.length === 0 ? 'vuoto' : `${lines.length} righe`}
+          </span>
+        </div>
+        <div style={{ maxHeight: '190px', overflow: 'auto', padding: '3px 0' }}>
+          <CodeLines lines={lines} startLine={startLine} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -176,7 +165,7 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
       zIndex: 300, backdropFilter: 'blur(2px)'
     }}>
       <div style={{
-        width: '94%', height: '92%', display: 'flex', flexDirection: 'column',
+        width: '96%', height: '94%', display: 'flex', flexDirection: 'column',
         background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
         borderRadius: 'var(--radius-lg)', overflow: 'hidden',
         fontFamily: 'var(--font-mono)'
@@ -198,11 +187,11 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
             {!loading && (
               <span style={{
                 padding: '1px 8px', borderRadius: 'var(--radius-sm)',
-                background: conflicts.length > 0 ? 'var(--error-bg)' : 'var(--success-bg)',
-                color: conflicts.length > 0 ? 'var(--error-color)' : 'var(--success-color)',
+                background: unresolved > 0 ? 'var(--error-bg)' : 'var(--success-bg)',
+                color: unresolved > 0 ? 'var(--error-color)' : 'var(--success-color)',
                 fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, flexShrink: 0
               }}>
-                {conflicts.length > 0 ? `${conflicts.length} conflicts` : 'resolved'}
+                {unresolved > 0 ? `${unresolved} conflitti` : 'risolto'}
               </span>
             )}
           </div>
@@ -219,122 +208,149 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
           </button>
         </div>
 
-        {/* Toolbar: take-all + save */}
+        {/* Toolbar */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 10px',
           borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)',
           flexShrink: 0, flexWrap: 'wrap'
         }}>
-          <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>all conflicts:</span>
-          <ToolBtn label="take ours" title="resolve every conflict with the current side (HEAD)" data-tip-desc="accept the current (HEAD) version for every conflict" onClick={() => applyToAll('ours')} color="var(--accent-color)" />
-          <ToolBtn label="take theirs" title="resolve every conflict with the incoming side" data-tip-desc="accept the incoming version for every conflict" onClick={() => applyToAll('theirs')} color="var(--warning-color)" />
-          <ToolBtn label="take both" title="keep both sides in order (current then incoming)" data-tip-desc="keep both versions in order for every conflict" onClick={() => applyToAll('both')} color="var(--success-color)" />
+          {blocks.length > 0 && (
+            <>
+              <button onClick={() => reveal(active - 1)} title="conflitto precedente" data-tip-desc="go to the previous conflict" style={navBtnStyle}>
+                <ChevronUp size={11} />
+              </button>
+              <button onClick={() => reveal(active + 1)} title="conflitto successivo" data-tip-desc="go to the next conflict" style={navBtnStyle}>
+                <ChevronDown size={11} />
+              </button>
+              <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
+                {blocks.length > 0 ? `${active + 1}/${blocks.length}` : ''}
+              </span>
+              <span style={{ width: '1px', height: '14px', background: 'var(--border-subtle)' }} />
+              <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>tutti:</span>
+              <ToolBtn label="prendi sx" title="risolvi tutti con la versione di sinistra (HEAD)" data-tip-desc="accept the current (HEAD) version for every conflict" onClick={() => applyToAll('ours')} color="var(--accent-color)" />
+              <ToolBtn label="prendi dx" title="risolvi tutti con la versione di destra (in arrivo)" data-tip-desc="accept the incoming version for every conflict" onClick={() => applyToAll('theirs')} color="var(--warning-color)" />
+              <ToolBtn label="entrambe" title="tieni entrambe le versioni (prima sx, poi dx)" data-tip-desc="keep both versions in order for every conflict" onClick={() => applyToAll('both')} color="var(--success-color)" />
+            </>
+          )}
           <div style={{ flex: 1 }} />
           <button onClick={handleSave} disabled={saving || loading}
-            title="write the result and mark the conflict resolved" data-tip-desc="save the resolved file and stage it"
+            title="scrivi il risultato e marca il conflitto come risolto" data-tip-desc="save the resolved file and stage it (Ctrl+S)"
             style={{
               display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 14px', height: '26px',
-              background: conflicts.length > 0 ? 'var(--accent-color)' : 'var(--success-color)',
+              background: unresolved > 0 ? 'var(--accent-color)' : 'var(--success-color)',
               border: 'none', borderRadius: 'var(--radius-sm)',
               color: 'var(--text-inverse)', cursor: saving || loading ? 'not-allowed' : 'pointer',
               fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600,
               opacity: saving || loading ? 0.6 : 1
             }}>
             {saving ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={11} />}
-            {saving ? 'saving' : 'save & resolve'}
+            {saving ? 'salvo…' : 'salva e risolvi'}
           </button>
         </div>
 
-        {/* Ours | Theirs */}
-        <div style={{ flex: '0 0 38%', display: 'flex', minHeight: 0, borderBottom: '1px solid var(--border-color)' }}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, borderRight: '1px solid var(--border-color)' }}>
-            {paneLabel('ours — current (HEAD)', 'var(--accent-color)')}
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <Editor height="100%" language={lang} theme={editorTheme}
-                value={ours} options={readOnlyOptions} onMount={(_e, monaco) => applyEditorTheme(monaco)} />
+        {/* Conflicts + result */}
+        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+          <div style={{ flex: '1 1 56%', minWidth: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-color)' }}>
+            <PaneLabel icon={<Columns2 size={11} />} text="conflitti — clicca la modifica da prendere" color="var(--text-secondary)" />
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {loading && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px' }}>
+                  <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-color)' }} />
+                </div>
+              )}
+              {!loading && blocks.length === 0 && (
+                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--success-color)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
+                  nessun conflitto da risolvere — puoi salvare direttamente
+                </div>
+              )}
+              {blocks.map(block => {
+                const choice = choices[block.index]
+                const isActive = block.index === active
+                const statusColor = choice === 'ours' ? 'var(--accent-color)' : choice === 'theirs' ? 'var(--warning-color)' : choice === 'both' ? 'var(--success-color)' : 'var(--error-color)'
+                const statusLabel = choice === 'ours' ? 'sx' : choice === 'theirs' ? 'dx' : choice === 'both' ? 'entrambe' : 'non risolto'
+                return (
+                  <div key={block.index}
+                    ref={(el) => { cardRefs.current[block.index] = el }}
+                    onClick={() => setActive(block.index)}
+                    style={{
+                      border: `1px solid ${isActive ? 'var(--accent-color)' : 'var(--border-color)'}`,
+                      borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)',
+                      display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden'
+                    }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 8px',
+                      borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-subtle)'
+                    }}>
+                      <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        #{block.index + 1}
+                      </span>
+                      <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-disabled)' }}>
+                        righe {block.startLine}–{block.endLine}
+                      </span>
+                      <span style={{
+                        marginLeft: 'auto', padding: '1px 7px', borderRadius: 'var(--radius-sm)',
+                        border: `1px solid ${statusColor}`, color: statusColor,
+                        fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', fontWeight: 700
+                      }}>
+                        {statusLabel}
+                      </span>
+                      <button onClick={(e) => { e.stopPropagation(); choose(block.index, 'both') }}
+                        title="tieni entrambe le versioni" data-tip-desc="keep both sides for this conflict"
+                        style={{ ...chipBtn, width: 'auto', padding: '0 6px', color: 'var(--success-color)', border: '1px solid var(--success-color)' }}>
+                        entrambe
+                      </button>
+                      {choice && (
+                        <button onClick={(e) => { e.stopPropagation(); choose(block.index, choice) }}
+                          title="annulla la scelta" data-tip-desc="leave this conflict unresolved"
+                          style={{ ...chipBtn, width: 'auto', padding: '0 6px', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}>
+                          annulla
+                        </button>
+                      )}
+                    </div>
+
+                    {block.contextBefore.length > 0 && (
+                      <div style={{ padding: '2px 0', borderBottom: '1px solid var(--border-subtle)', opacity: 0.45 }}>
+                        <CodeLines lines={block.contextBefore} startLine={block.startLine - block.contextBefore.length} />
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '8px', padding: '8px' }}>
+                      {sidePane(block, 'ours', 'sinistra · HEAD', 'var(--accent-color)', block.ours, block.oursStart)}
+                      {sidePane(block, 'theirs', 'destra · in arrivo', 'var(--warning-color)', block.theirs, block.theirsStart)}
+                    </div>
+
+                    {block.contextAfter.length > 0 && (
+                      <div style={{ padding: '2px 0', borderTop: '1px solid var(--border-subtle)', opacity: 0.45 }}>
+                        <CodeLines lines={block.contextAfter} startLine={block.endLine + 1} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-            {paneLabel('theirs — incoming', 'var(--warning-color)')}
+
+          <div style={{ flex: '1 1 44%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <PaneLabel icon={<FileDiff size={11} />} text={manual !== null ? 'risultato — modificato a mano' : 'risultato'} color="var(--text-secondary)" />
             <div style={{ flex: 1, minHeight: 0 }}>
               <Editor height="100%" language={lang} theme={editorTheme}
-                value={theirs} options={readOnlyOptions} onMount={(_e, monaco) => applyEditorTheme(monaco)} />
+                value={merged}
+                onChange={(v) => setManual(v || '')}
+                onMount={(_e, monaco) => applyEditorTheme(monaco)}
+                options={{
+                  fontSize: 12.5,
+                  fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  lineNumbers: 'on',
+                  renderWhitespace: 'selection',
+                  wordWrap: 'off',
+                  stickyScroll: { enabled: true, maxLineCount: 3 },
+                  scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 }
+                }}
+              />
             </div>
-          </div>
-        </div>
-
-        {/* Conflicts navigator */}
-        {conflicts.length > 0 && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px',
-            background: 'var(--error-bg)', borderBottom: '1px solid var(--error-color)',
-            flexShrink: 0, flexWrap: 'wrap'
-          }}>
-            <button onClick={() => revealConflict(Math.max(0, active - 1))} title="previous conflict" data-tip-desc="go to the previous conflict"
-              style={navBtnStyle}>
-              <ChevronUp size={11} />
-            </button>
-            <button onClick={() => revealConflict(Math.min(conflicts.length - 1, active + 1))} title="next conflict" data-tip-desc="go to the next conflict"
-              style={navBtnStyle}>
-              <ChevronDown size={11} />
-            </button>
-            {conflicts.map((c) => (
-              <div key={c.index} style={{
-                display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 4px',
-                borderRadius: 'var(--radius-sm)',
-                background: c.index === active ? 'var(--bg-active)' : 'transparent',
-                border: `1px solid ${c.index === active ? 'var(--error-color)' : 'var(--border-color)'}`,
-                cursor: 'pointer'
-              }}
-                onClick={() => revealConflict(c.index)}
-                title={`conflict #${c.index + 1} — lines ${c.startLine}-${c.endLine}`} data-tip-desc="go to this conflict block">
-                <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--error-color)', fontWeight: 700 }}>
-                  #{c.index + 1}
-                </span>
-                <button onClick={(e) => { e.stopPropagation(); applyToBlock(c.index, 'ours') }}
-                  title="use the current side for this conflict" data-tip-desc="accept the current (HEAD) version for this conflict"
-                  style={{ ...chipBtn, color: 'var(--accent-color)', border: '1px solid var(--accent-color)' }}>
-                  O
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); applyToBlock(c.index, 'theirs') }}
-                  title="use the incoming side for this conflict" data-tip-desc="accept the incoming version for this conflict"
-                  style={{ ...chipBtn, color: 'var(--warning-color)', border: '1px solid var(--warning-color)' }}>
-                  T
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); applyToBlock(c.index, 'both') }}
-                  title="keep both sides for this conflict" data-tip-desc="keep both versions in order for this conflict"
-                  style={{ ...chipBtn, color: 'var(--success-color)', border: '1px solid var(--success-color)' }}>
-                  B
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Result */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          {paneLabel('result — edit freely, then save', 'var(--text-secondary)')}
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <Editor height="100%" language={lang} theme={editorTheme}
-              value={result}
-              onChange={(v) => setResult(v || '')}
-              onMount={(editor, monaco) => {
-                applyEditorTheme(monaco)
-                resultEditorRef.current = editor
-              }}
-              options={{
-                fontSize: 12.5,
-                fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                lineNumbers: 'on',
-                renderWhitespace: 'selection',
-                wordWrap: 'off',
-                stickyScroll: { enabled: true, maxLineCount: 3 },
-                scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 }
-              }}
-            />
           </div>
         </div>
 
@@ -351,6 +367,48 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
   )
 }
 
+function CodeLines({ lines, startLine }: { lines: string[]; startLine: number }) {
+  if (lines.length === 0) {
+    return <div style={{ padding: '4px 10px', color: 'var(--text-disabled)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>(vuoto)</div>
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {lines.map((line, i) => (
+        <div key={i} style={{ display: 'flex', minHeight: '17px' }}>
+          <span style={{
+            width: '42px', flexShrink: 0, textAlign: 'right', paddingRight: '8px',
+            color: 'var(--text-disabled)', userSelect: 'none',
+            fontSize: 'calc(9px * var(--ui-text-scale, 1))'
+          }}>
+            {startLine + i}
+          </span>
+          <span style={{
+            whiteSpace: 'pre', color: 'var(--text-primary)',
+            fontSize: 'calc(11px * var(--ui-text-scale, 1))', paddingRight: '8px'
+          }}>
+            {line || ' '}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PaneLabel({ icon, text, color }: { icon: React.ReactNode; text: string; color: string }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px',
+      fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700,
+      color, textTransform: 'uppercase', letterSpacing: '0.5px',
+      fontFamily: 'var(--font-mono)', borderBottom: '1px solid var(--border-subtle)',
+      background: 'var(--bg-primary)', flexShrink: 0
+    }}>
+      {icon}
+      {text}
+    </div>
+  )
+}
+
 const navBtnStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   width: '20px', height: '20px', background: 'transparent',
@@ -361,7 +419,8 @@ const navBtnStyle: React.CSSProperties = {
 const chipBtn: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   width: '18px', height: '18px', padding: 0, background: 'transparent',
-  borderRadius: '3px', cursor: 'pointer', fontSize: '9px', fontWeight: 700
+  borderRadius: '3px', cursor: 'pointer', fontSize: '9px', fontWeight: 700,
+  fontFamily: 'var(--font-mono)'
 }
 
 function ToolBtn(props: { label: string; title: string; onClick: () => void; color: string; 'data-tip-desc'?: string }) {
@@ -371,7 +430,7 @@ function ToolBtn(props: { label: string; title: string; onClick: () => void; col
       display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', height: '22px',
       background: 'var(--bg-card)', border: `1px solid ${color}`,
       borderRadius: 'var(--radius-sm)', color, cursor: 'pointer',
-      fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600
+      fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)'
     }}
       onMouseEnter={(e) => { e.currentTarget.style.background = color; e.currentTarget.style.color = 'var(--text-inverse)' }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-card)'; e.currentTarget.style.color = color }}>

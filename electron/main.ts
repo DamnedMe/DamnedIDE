@@ -315,6 +315,8 @@ function registerIpcHandlers(
     clipboard.writeText(text)
   })
 
+  ipcMain.handle('clipboard:read', () => clipboard.readText())
+
   ipcMain.handle('fs:removeDir', async (_e, dirPath: string) => {
     await rm(dirPath, { recursive: true, force: true })
   })

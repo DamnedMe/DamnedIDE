@@ -244,6 +244,7 @@ interface Window {
     }
     clipboard: {
       write: (text: string) => void
+      read: () => Promise<string>
     }
     process: {
       start: (cwd: string, command: string, args: string[]) => Promise<string>

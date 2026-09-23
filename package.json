@@ -23,6 +23,7 @@
     "test:git-discard": "node --experimental-strip-types scripts/git-discard.check.ts",
     "test:worktree-remove": "node --experimental-strip-types scripts/worktree-remove.check.ts",
     "test:worktree-add": "node --experimental-strip-types scripts/worktree-add.check.ts",
+    "test:merge-utils": "node --experimental-strip-types scripts/merge-utils.check.ts",
     "test:explorer-close": "node --experimental-strip-types scripts/explorer-close.check.ts",
     "test:fs-watch": "node --experimental-strip-types scripts/fs-watch.check.ts",
     "test:open-target": "node --experimental-strip-types scripts/open-target.check.ts",

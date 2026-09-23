@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bot, Plus, Trash2, Loader2, Check, AlertCircle, RefreshCw, ExternalLink, TerminalSquare } from 'lucide-react'
 import { Modal } from '../layout/Modal'
 import { useAgentConfigStore, useClaudeStore, useToastStore, useTerminalStore, ALL_AGENT_PROVIDERS } from '../../store'
@@ -16,20 +16,48 @@ export function AgentSettings() {
   const [results, setResults] = useState<Record<string, { ok: boolean; msg: string }>>({})
   const [removeTarget, setRemoveTarget] = useState<AgentProviderId | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  // bumped on every load so the provider cards (Claude has its own state) re-read
+  const [refreshTick, setRefreshTick] = useState(0)
+  const pollRef = useRef<number | null>(null)
   const showToast = useToastStore(s => s.showToast)
 
-  const load = async (refresh = false) => {
+  const load = async (refresh = false): Promise<AgentProviderInfo[]> => {
     setLoading(true)
     try {
-      setProviders(await window.electronAPI.ai.providers(refresh))
+      const list = await window.electronAPI.ai.providers(refresh)
+      setProviders(list)
+      setRefreshTick(t => t + 1)
+      return list
     } catch {
       showToast('impossibile leggere lo stato degli agenti', 'error')
+      return []
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { load(false) }, [])
+  useEffect(() => {
+    load(false)
+    return () => { if (pollRef.current) window.clearInterval(pollRef.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // After a login command is launched the credentials appear when the user
+  // finishes in the terminal: poll until a configured agent is authenticated
+  // (or ~40s), so the card updates by itself.
+  const startLoginWatch = () => {
+    if (pollRef.current) window.clearInterval(pollRef.current)
+    let attempts = 0
+    const stop = () => {
+      if (pollRef.current) window.clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    pollRef.current = window.setInterval(async () => {
+      attempts++
+      const list = await load(true)
+      if (list.some(p => configured.includes(p.id) && p.loggedIn === true) || attempts >= 10) stop()
+    }, 4000)
+  }
 
   const info = (id: AgentProviderId): AgentProviderInfo | undefined => providers.find(p => p.id === id)
   const label = (id: AgentProviderId): string => info(id)?.label || id
@@ -39,6 +67,7 @@ export function AgentSettings() {
     // the provider CLI runs its own OAuth/TUI: give it the IDE terminal
     useTerminalStore.getState().runCommand(p.loginCommand)
     showToast(`completa l'accesso a ${p.label} nel terminale`, 'info')
+    startLoginWatch()
   }
 
   const test = async (p: AgentProviderInfo) => {
@@ -71,7 +100,16 @@ export function AgentSettings() {
   const availableToAdd = ALL_AGENT_PROVIDERS.filter(id => !configured.includes(id))
 
   const renderAgent = (id: AgentProviderId) => {
-    if (id === 'claude') return <ClaudeSettings onRemove={() => setRemoveTarget('claude')} />
+    if (id === 'claude') {
+      return (
+        <ClaudeSettings
+          key={id}
+          onRemove={() => setRemoveTarget('claude')}
+          refreshSignal={refreshTick}
+          onLoginStarted={startLoginWatch}
+        />
+      )
+    }
 
     const p = info(id)
     const ready = !!p?.available && p?.loggedIn !== false

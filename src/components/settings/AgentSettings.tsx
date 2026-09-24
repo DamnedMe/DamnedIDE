@@ -14,6 +14,7 @@ export function AgentSettings() {
   const [models, setModels] = useState<Record<string, { id: string; label: string }[]>>({})
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState<string | null>(null)
+  const [testElapsed, setTestElapsed] = useState(0)
   const [results, setResults] = useState<Record<string, { ok: boolean; msg: string }>>({})
   const [removeTarget, setRemoveTarget] = useState<AgentProviderId | null>(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -45,26 +46,41 @@ export function AgentSettings() {
 
   // After a login command is launched the credentials appear when the user
   // finishes in the terminal: poll until a configured agent is authenticated
-  // (or ~40s), so the card updates by itself.
+  // (or ~2 min), so the card updates by itself. One probe at a time: opencode
+  // needs a few seconds to answer and overlapping polls pile up.
   const startLoginWatch = () => {
     if (pollRef.current) window.clearInterval(pollRef.current)
     let attempts = 0
+    let busy = false
     const stop = () => {
       if (pollRef.current) window.clearInterval(pollRef.current)
       pollRef.current = null
     }
     pollRef.current = window.setInterval(async () => {
+      if (busy) return
+      busy = true
       attempts++
-      const list = await load(true)
-      if (list.some(p => configured.includes(p.id) && p.loggedIn === true) || attempts >= 10) stop()
-    }, 4000)
+      try {
+        const list = await load(true)
+        if (list.some(p => configured.includes(p.id) && p.loggedIn === true) || attempts >= 24) stop()
+      } finally {
+        busy = false
+      }
+    }, 5000)
   }
 
   const info = (id: AgentProviderId): AgentProviderInfo | undefined => providers.find(p => p.id === id)
   const label = (id: AgentProviderId): string => info(id)?.label || id
   // catalog per provider: opencode enumerates the models it is actually configured for
   const providerModels = (id: AgentProviderId): { id: string; label: string }[] => models[id] || info(id)?.models || []
-  const selectedModel = (id: AgentProviderId): string => agentModels[id] || providerModels(id)[0]?.id || ''
+  // a persisted model can disappear from the catalog (renamed provider): never
+  // keep testing something that is no longer offered
+  const selectedModel = (id: AgentProviderId): string => {
+    const list = providerModels(id)
+    const saved = agentModels[id]
+    if (saved && list.some(m => m.id === saved)) return saved
+    return list[0]?.id || ''
+  }
 
   useEffect(() => {
     window.electronAPI.ai.models('opencode')
@@ -82,6 +98,11 @@ export function AgentSettings() {
 
   const test = async (p: AgentProviderInfo) => {
     setTesting(p.id)
+    setTestElapsed(0)
+    const started = Date.now()
+    // a provider can retry for a long time before reporting the error: show the
+    // elapsed time so a slow verifica is not mistaken for a stuck one
+    const tick = window.setInterval(() => setTestElapsed(Math.round((Date.now() - started) / 1000)), 1000)
     try {
       const res = await window.electronAPI.ai.test(
         p.id,
@@ -98,6 +119,7 @@ export function AgentSettings() {
     } catch (e) {
       setResults(prev => ({ ...prev, [p.id]: { ok: false, msg: (e as Error).message } }))
     } finally {
+      window.clearInterval(tick)
       setTesting(null)
     }
   }
@@ -198,7 +220,7 @@ export function AgentSettings() {
             title="prova un turno reale" data-tip-desc="manda un prompt minimo all'agente e riporta l'esito"
             style={actionBtn(!!p?.available && testing !== id, 'var(--text-secondary)')}>
             {testing === id ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={11} />}
-            verifica
+            {testing === id ? `verifica ${testElapsed}s` : 'verifica'}
           </button>
         </div>
 

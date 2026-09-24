@@ -2,10 +2,14 @@ import { ConnectionPool } from 'mssql'
 import type { config as sqlConfig, IResult, Request } from 'mssql'
 import { parseSqlConnectionString } from '@tediousjs/connection-string'
 import net from 'net'
-import { execSync } from 'child_process'
+import { execSync, spawn } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { BrowserWindow } from 'electron'
+import { resolveCommand } from '../process/resolve-command'
 import { connectPoolWithRetry, normalizeSqlConnectionConfig, parseSqlServerTarget, sqlTimeoutMilliseconds, validatePlatformSqlConfig } from '../../../src/shared/sqlConnection'
+import { buildBackupStatement, dataTierArgs, type BackupOptions, type DataTierAction } from '../../../src/shared/sqlBackup'
 
 export type SqlAuthType =
   | 'windows'
@@ -215,6 +219,8 @@ export function parseConnectionString(cs: string): SqlConnectionConfig {
 
 // ─── Existing helpers (LocalDB, type detection, table extraction) ──────────
 
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function sniffType(v: unknown): string {
   if (v === null || v === undefined) return 'other'
   if (v instanceof Date) return 'date'
@@ -222,6 +228,9 @@ function sniffType(v: unknown): string {
   if (typeof v === 'boolean') return 'boolean'
   if (typeof v === 'bigint') return 'bigint'
   if (Buffer.isBuffer(v)) return 'binary'
+  // uniqueidentifier comes back as a string: recognizing it lets the grid offer
+  // the GUID generator on those columns
+  if (typeof v === 'string' && GUID_RE.test(v)) return 'guid'
   return 'string'
 }
 
@@ -377,6 +386,37 @@ function resolveLocalDbPipe(server: string): string | null {
   }
 }
 
+// ─── SqlPackage (DacFx) for data-tier applications ─────────────────────────
+// Extract/Export of a data-tier application cannot be done in T-SQL: they are
+// produced by SqlPackage (ships with SSMS/VS or installable as a dotnet tool).
+const SQLPACKAGE_CANDIDATES = [
+  join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Microsoft SQL Server', '170', 'DAC', 'bin', 'SqlPackage.exe'),
+  join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Microsoft SQL Server', '160', 'DAC', 'bin', 'SqlPackage.exe'),
+  join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Microsoft SQL Server', '150', 'DAC', 'bin', 'SqlPackage.exe'),
+  join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Microsoft SQL Server', '140', 'DAC', 'bin', 'SqlPackage.exe'),
+  join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Microsoft SQL Server', '130', 'DAC', 'bin', 'SqlPackage.exe'),
+  join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft SQL Server', '150', 'DAC', 'bin', 'SqlPackage.exe'),
+  join(process.env['USERPROFILE'] || '', '.dotnet', 'tools', 'sqlpackage.exe'),
+  join(process.env['HOME'] || '', '.dotnet', 'tools', 'sqlpackage')
+]
+
+export const SQLPACKAGE_INSTALL_HINT = 'dotnet tool install -g microsoft.sqlpackage'
+
+function findSqlPackage(): string | null {
+  const resolved = resolveCommand('sqlpackage')
+  if (resolved !== 'sqlpackage' && existsSync(resolved)) return resolved
+  for (const candidate of SQLPACKAGE_CANDIDATES) {
+    if (candidate && existsSync(candidate)) return candidate
+  }
+  try {
+    const which = execSync(process.platform === 'win32' ? 'where sqlpackage' : 'which sqlpackage',
+      { encoding: 'utf8', windowsHide: true })
+    const first = which.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0]
+    if (first && existsSync(first)) return first
+  } catch { /* not on PATH */ }
+  return null
+}
+
 // ─── Service ────────────────────────────────────────────────────────────────
 
 function authOptions(config: SqlConnectionConfig): { type: string; options?: Record<string, string> } {
@@ -414,6 +454,7 @@ export class SqlService {
   private connections: Map<string, { pool: ConnectionPool; config: SqlConnectionConfig }> = new Map()
   private counter: number = 0
   private activeRequests: Map<string, Request> = new Map()
+  private dataTierRun: ChildProcess | null = null
 
   private getPool(connectionId: string): ConnectionPool {
     const entry = this.connections.get(connectionId)
@@ -521,6 +562,116 @@ export class SqlService {
     } finally {
       try { await pool?.close() } catch { /* ignore */ }
     }
+  }
+
+  // ─── Backup / data-tier applications ────────────────────────────────────
+
+  /** SQL Server's own default backup directory (the .bak is written server-side). */
+  async defaultBackupDirectory(connectionId: string, database: string): Promise<string | null> {
+    const entry = this.connections.get(connectionId)
+    if (!entry) return null
+    try {
+      const r = await entry.pool.request().query(
+        "SELECT CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(4000)) AS backupPath, " +
+        "CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(4000)) AS dataPath"
+      )
+      const row = (r.recordset?.[0] || {}) as { backupPath?: string | null; dataPath?: string | null }
+      return row.backupPath || row.dataPath || null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Runs BACKUP DATABASE ... TO DISK. The target path is on the SQL Server
+   * machine, not on this client. Uses a long request timeout (a backup can take
+   * far longer than the pool's default).
+   */
+  async backupDatabase(connectionId: string, database: string, options: BackupOptions): Promise<{ ok: boolean; error?: string; elapsedMs?: number }> {
+    const entry = this.connections.get(connectionId)
+    if (!entry) return { ok: false, error: 'Connessione non trovata' }
+    const started = Date.now()
+    // dedicated pool: a backup runs far longer than the shared pool's default
+    // request timeout (30s) and must not change the user's session settings
+    const pool = new ConnectionPool({ ...this.buildPoolConfig(entry.config), requestTimeout: 6 * 60 * 60 * 1000 })
+    try {
+      await pool.connect()
+      await pool.request().batch(buildBackupStatement(database, options))
+      return { ok: true, elapsedMs: Date.now() - started }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    } finally {
+      try { await pool.close() } catch { /* ignore */ }
+    }
+  }
+
+  sqlPackageInfo(): { found: boolean; path?: string; hint: string } {
+    const path = findSqlPackage()
+    return { found: !!path, path: path || undefined, hint: SQLPACKAGE_INSTALL_HINT }
+  }
+
+  /**
+   * Extract (.dacpac, schema only) or Export (.bacpac, schema + data) of a
+   * data-tier application through SqlPackage, streaming its output to the
+   * renderer. Only one run at a time.
+   */
+  dataTier(
+    connectionId: string,
+    database: string,
+    action: DataTierAction,
+    targetFile: string,
+    win: BrowserWindow | null
+  ): Promise<{ ok: boolean; error?: string; output?: string }> {
+    if (this.dataTierRun) return Promise.resolve({ ok: false, error: "un'altra operazione data-tier è già in corso" })
+    const entry = this.connections.get(connectionId)
+    if (!entry) return Promise.resolve({ ok: false, error: 'Connessione non trovata' })
+    const exe = findSqlPackage()
+    if (!exe) return Promise.resolve({ ok: false, error: 'SqlPackage non trovato', output: SQLPACKAGE_INSTALL_HINT })
+
+    const connectionString = buildConnectionString({ ...entry.config, database })
+    const args = dataTierArgs(action, connectionString, targetFile)
+    const emit = (line: string) => {
+      for (const w of win ? [win] : BrowserWindow.getAllWindows()) {
+        try { w.webContents.send('sql:datatier:log', { action, line }) } catch { /* closed */ }
+      }
+    }
+
+    return new Promise((resolve) => {
+      let proc: ChildProcess
+      try {
+        proc = spawn(exe, args, { windowsHide: true, env: { ...process.env } })
+      } catch (e) {
+        resolve({ ok: false, error: (e as Error).message })
+        return
+      }
+      this.dataTierRun = proc
+      let output = ''
+      const onData = (chunk: Buffer) => {
+        const text = chunk.toString()
+        output += text
+        for (const raw of text.split(/\r?\n/)) {
+          const line = raw.trim()
+          if (line) emit(line)
+        }
+      }
+      proc.stdout?.on('data', onData)
+      proc.stderr?.on('data', onData)
+      proc.on('error', (e) => {
+        this.dataTierRun = null
+        resolve({ ok: false, error: e.message, output })
+      })
+      proc.on('exit', (code) => {
+        this.dataTierRun = null
+        if (code === 0) resolve({ ok: true, output })
+        else resolve({ ok: false, error: `SqlPackage terminato con codice ${code ?? '?'}`, output })
+      })
+    })
+  }
+
+  cancelDataTier(): void {
+    const proc = this.dataTierRun
+    this.dataTierRun = null
+    try { proc?.kill() } catch { /* already dead */ }
   }
 
   async getServerInfo(connectionId: string): Promise<{ version: string; server: string; database: string }> {

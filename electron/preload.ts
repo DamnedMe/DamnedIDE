@@ -126,7 +126,19 @@ const electronAPI = {
     workspaceLoad: () => ipcRenderer.invoke('sql:workspaceLoad'),
     workspaceSave: (workspace: import('../src/types/sql').SqlWorkspaceState) => ipcRenderer.invoke('sql:workspaceSave', workspace),
     buildConnectionString: (config: SqlConnectionConfig) => ipcRenderer.invoke('sql:buildConnectionString', config),
-    parseConnectionString: (cs: string) => ipcRenderer.invoke('sql:parseConnectionString', cs)
+    parseConnectionString: (cs: string) => ipcRenderer.invoke('sql:parseConnectionString', cs),
+    defaultBackupDir: (connectionId: string, database: string): Promise<string | null> => ipcRenderer.invoke('sql:defaultBackupDir', connectionId, database),
+    backup: (connectionId: string, database: string, options: { path: string; compress: boolean; copyOnly: boolean; init: boolean }): Promise<{ ok: boolean; error?: string; elapsedMs?: number }> =>
+      ipcRenderer.invoke('sql:backup', connectionId, database, options),
+    sqlPackageInfo: (): Promise<{ found: boolean; path?: string; hint: string }> => ipcRenderer.invoke('sql:sqlPackageInfo'),
+    dataTier: (connectionId: string, database: string, action: 'extract' | 'export', targetFile: string): Promise<{ ok: boolean; error?: string; output?: string }> =>
+      ipcRenderer.invoke('sql:dataTier', connectionId, database, action, targetFile),
+    dataTierCancel: (): Promise<void> => ipcRenderer.invoke('sql:dataTierCancel'),
+    onDataTierLog: (cb: (payload: { action: string; line: string }) => void) => {
+      const l = (_e: unknown, p: { action: string; line: string }) => cb(p)
+      ipcRenderer.on('sql:datatier:log', l)
+      return () => ipcRenderer.removeListener('sql:datatier:log', l)
+    }
   },
   roslyn: {
     ensure: (rootPath: string) => ipcRenderer.invoke('roslyn:ensure', rootPath),
@@ -138,6 +150,8 @@ const electronAPI = {
   },
   dialog: {
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+    saveFile: (defaultName: string, filters: { name: string; extensions: string[] }[]): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:saveFile', defaultName, filters),
     saveSqlQuery: (defaultName: string, content: string) => ipcRenderer.invoke('dialog:saveSqlQuery', defaultName, content)
   },
   fs: {

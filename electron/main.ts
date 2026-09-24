@@ -244,6 +244,15 @@ function registerIpcHandlers(
   ipcMain.handle('sql:buildConnectionString', ipc((config: SqlConnectionConfig) => buildConnectionString(config)))
   ipcMain.handle('sql:parseConnectionString', ipc((cs: string) => parseConnectionString(cs)))
 
+  // ─── SQL backup / data-tier applications ───────────────────────────────
+  ipcMain.handle('sql:defaultBackupDir', ipc((connectionId: string, database: string) => sql.defaultBackupDirectory(connectionId, database)))
+  ipcMain.handle('sql:backup', ipc((connectionId: string, database: string, options: { path: string; compress: boolean; copyOnly: boolean; init: boolean }) =>
+    sql.backupDatabase(connectionId, database, options)))
+  ipcMain.handle('sql:sqlPackageInfo', () => sql.sqlPackageInfo())
+  ipcMain.handle('sql:dataTier', ipc((connectionId: string, database: string, action: 'extract' | 'export', targetFile: string) =>
+    sql.dataTier(connectionId, database, action, targetFile, mainWindow)))
+  ipcMain.handle('sql:dataTierCancel', () => { sql.cancelDataTier() })
+
   // ─── Dialog ────────────────────────────────────────
   ipcMain.handle('dialog:openFolder', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
@@ -261,6 +270,15 @@ function registerIpcHandlers(
     if (result.canceled || !result.filePath) return null
     await writeFile(result.filePath, content, 'utf-8')
     return result.filePath
+  })
+
+  ipcMain.handle('dialog:saveFile', async (_e, defaultName: string, filters: { name: string; extensions: string[] }[]) => {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Salva con nome',
+      defaultPath: defaultName,
+      filters
+    })
+    return result.canceled || !result.filePath ? null : result.filePath
   })
 
   // ─── Filesystem ─────────────────────────────────────

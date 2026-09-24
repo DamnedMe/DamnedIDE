@@ -185,6 +185,14 @@ interface Window {
       workspaceSave: (workspace: import('./types/sql').SqlWorkspaceState) => Promise<void>
       buildConnectionString: (config: import('./types/sql').SqlConnectionConfig) => Promise<string>
       parseConnectionString: (cs: string) => Promise<import('./types/sql').SqlConnectionConfig>
+      defaultBackupDir: (connectionId: string, database: string) => Promise<string | null>
+      backup: (connectionId: string, database: string, options: { path: string; compress: boolean; copyOnly: boolean; init: boolean }) =>
+        Promise<{ ok: boolean; error?: string; elapsedMs?: number }>
+      sqlPackageInfo: () => Promise<{ found: boolean; path?: string; hint: string }>
+      dataTier: (connectionId: string, database: string, action: 'extract' | 'export', targetFile: string) =>
+        Promise<{ ok: boolean; error?: string; output?: string }>
+      dataTierCancel: () => Promise<void>
+      onDataTierLog: (cb: (payload: { action: string; line: string }) => void) => () => void
     }
     roslyn: {
       ensure: (rootPath: string) => Promise<boolean>
@@ -196,6 +204,7 @@ interface Window {
     }
     dialog: {
       openFolder: () => Promise<string | null>
+      saveFile: (defaultName: string, filters: { name: string; extensions: string[] }[]) => Promise<string | null>
       saveSqlQuery: (defaultName: string, content: string) => Promise<string | null>
     }
     fs: {

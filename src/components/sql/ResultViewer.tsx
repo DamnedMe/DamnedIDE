@@ -1,9 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { SqlExecutionResult, SqlForeignKeyInfo, SqlQueryResult } from '../../types/sql'
-import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown } from 'lucide-react'
-import { buildDeleteStatement, buildUpdateStatement, parseEditedValue } from './sqlForm'
+import { SqlColumnInfo, SqlExecutionResult, SqlForeignKeyInfo, SqlQueryResult } from '../../types/sql'
+import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown, Plus, Sparkles, CalendarDays, ShieldCheck, Loader2, ClipboardCheck } from 'lucide-react'
+import { buildDeleteStatement, buildInsertEntries, buildInsertStatement, buildUpdateStatement, formatGridDate, newGuid, parseEditedValue } from './sqlForm'
+import { DateTimePicker } from './DateTimePicker'
 import { calculateColumnMetrics, calculateVisibleRange } from './sqlGridUtils'
 import { SqlGridFilter, SqlGridFilterOperator, SqlGridQueryState } from '../../types/sql'
+
+type CellKind = 'guid' | 'date' | 'boolean' | 'number' | 'string'
 
 interface ResultViewerProps {
   execution: SqlExecutionResult | null
@@ -11,10 +14,14 @@ interface ResultViewerProps {
   onJoinRequest?: (fk: SqlForeignKeyInfo) => void
   onFilterRequest?: (col: string, value: unknown) => void
   onClear?: () => void
-  /** executes a statement (UPDATE/DELETE) and refreshes the grid on success */
+  /** executes a statement (UPDATE/DELETE/INSERT) and refreshes the grid on success */
   onExecuteSql?: (query: string) => Promise<boolean>
   /** asks the panel to confirm and run a DELETE statement */
   onDeleteRequest?: (query: string) => void
+  /** real table schema of the result (accurate types, nullability, PK/FK) */
+  columnInfo?: Record<string, SqlColumnInfo>
+  /** checks whether a foreign key value exists in its referenced table */
+  onCheckExists?: (fk: SqlForeignKeyInfo, value: string, colType: string) => Promise<boolean>
   gridQueryState?: SqlGridQueryState | null
   gridQuerySupported?: { supported: boolean; reason?: string }
   onGridQueryStateChange?: (state: SqlGridQueryState) => void
@@ -103,13 +110,16 @@ interface ResultGridRowProps {
   onEditValueChange: (value: string) => void
   onCommitEdit: () => void
   onCancelEdit: () => void
+  cellKind: (col: string) => CellKind
+  onOpenDatePicker: (col: string, rect: DOMRect) => void
 }
 
 const ResultGridRow = memo(function ResultGridRow({
   index, row, rowHeight, totalWidth, selected, visibleColumns, primaryKeys, foreignKeys,
   foreignKeyInfo, pinned, pinnedLeft, scrollLeft, joinStartIndex, editing, editable,
   savingEdit, onFilterRequest, onJoinRequest, formatValue, isDoubleClick, onRowClick,
-  onRowContextMenu, onStartEdit, onEditValueChange, onCommitEdit, onCancelEdit
+  onRowContextMenu, onStartEdit, onEditValueChange, onCommitEdit, onCancelEdit,
+  cellKind, onOpenDatePicker
 }: ResultGridRowProps) {
   return (
     <div
@@ -185,26 +195,48 @@ const ResultGridRow = memo(function ResultGridRow({
             }}
           >
             {isEditingCell ? (
-              <input
-                autoFocus
-                value={editing.value}
-                onChange={(event) => onEditValueChange(event.target.value)}
-                onKeyDown={(event) => {
-                  event.stopPropagation()
-                  if (event.key === 'Enter') onCommitEdit()
-                  if (event.key === 'Escape') onCancelEdit()
-                }}
-                onBlur={onCancelEdit}
-                onClick={(event) => event.stopPropagation()}
-                onDoubleClick={(event) => event.stopPropagation()}
-                spellCheck={false}
-                style={{
-                  position: 'absolute', inset: 0, width: '100%', height: '100%', padding: '0 6px',
-                  boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid var(--accent-color)',
-                  borderRadius: '2px', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
-                  fontSize: 'inherit', outline: 'none'
-                }}
-              />
+              <>
+                <input
+                  autoFocus
+                  value={editing.value}
+                  onChange={(event) => onEditValueChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    event.stopPropagation()
+                    if (event.key === 'Enter') onCommitEdit()
+                    if (event.key === 'Escape') onCancelEdit()
+                  }}
+                  onBlur={onCancelEdit}
+                  onClick={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                  spellCheck={false}
+                  style={{
+                    position: 'absolute', inset: 0, width: '100%', height: '100%', padding: '0 6px',
+                    paddingRight: cellKind(col) === 'date' ? '22px' : '6px',
+                    boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid var(--accent-color)',
+                    borderRadius: '2px', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
+                    fontSize: 'inherit', outline: 'none'
+                  }}
+                />
+                {cellKind(col) === 'date' && (
+                  <button
+                    // do not steal focus: blur would cancel the edit before the click
+                    onMouseDown={(event) => { event.preventDefault(); event.stopPropagation() }}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onOpenDatePicker(col, event.currentTarget.getBoundingClientRect())
+                    }}
+                    title="scegli data e ora" data-tip-desc="open the calendar picker"
+                    style={{
+                      position: 'absolute', right: 1, top: 1, height: 'calc(100% - 2px)', width: '20px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                      background: 'var(--bg-tag)', border: '1px solid var(--accent-color)',
+                      borderRadius: '2px', color: 'var(--accent-color)', cursor: 'pointer', zIndex: 2
+                    }}
+                  >
+                    <CalendarDays size={11} />
+                  </button>
+                )}
+              </>
             ) : (
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{text}</span>
             )}
@@ -214,6 +246,135 @@ const ResultGridRow = memo(function ResultGridRow({
     </div>
   )
 })
+
+interface DraftRowProps {
+  rowHeight: number
+  totalWidth: number
+  visibleColumns: VisibleResultColumn[]
+  pinned: string[]
+  pinnedLeft: Record<string, number>
+  scrollLeft: number
+  joinStartIndex: number
+  draft: Record<string, string>
+  primaryKeys: Set<string>
+  foreignKeys: Set<string>
+  fkInfoMap: Map<string, SqlForeignKeyInfo>
+  fkChecks: Record<string, { state: 'checking' | 'ok' | 'missing' | 'error'; message?: string }>
+  columnTypeLabel: (col: string) => string
+  cellKind: (col: string) => CellKind
+  onValueChange: (col: string, value: string) => void
+  onOpenDatePicker: (col: string, rect: DOMRect) => void
+  onCheckForeignKey: (col: string) => void
+}
+
+// The new-row draft: one typed editor per column, with the GUID generator, the
+// calendar picker and the FK existence check inline. The cell tooltip always
+// shows the real column type/constraints.
+function DraftRow({
+  rowHeight, totalWidth, visibleColumns, pinned, pinnedLeft, scrollLeft, joinStartIndex,
+  draft, primaryKeys, foreignKeys, fkInfoMap, fkChecks, columnTypeLabel, cellKind,
+  onValueChange, onOpenDatePicker, onCheckForeignKey
+}: DraftRowProps) {
+  return (
+    <div style={{
+      position: 'relative', height: rowHeight, width: totalWidth,
+      background: 'var(--success-bg)', borderBottom: '1px solid var(--success-color)'
+    }}>
+      {visibleColumns.map(({ column: col, index: ci, left: columnLeft, width }) => {
+        const kind = cellKind(col)
+        const fk = fkInfoMap.get(col)
+        const check = fkChecks[col]
+        const isPinned = pinned.includes(col)
+        const isPk = primaryKeys.has(col)
+        const accentBg = isPk ? PK_BG : foreignKeys.has(col) ? FK_BG : 'transparent'
+        const typeLabel = columnTypeLabel(col)
+        return (
+          <div
+            key={col}
+            title={`${col} · ${typeLabel}`}
+            data-tip-desc="column type and constraints"
+            style={{
+              position: 'absolute', top: 0,
+              left: isPinned ? scrollLeft + (pinnedLeft[col] || 0) : columnLeft,
+              width, minWidth: width, maxWidth: width, height: rowHeight, boxSizing: 'border-box',
+              padding: '1px 3px', display: 'flex', alignItems: 'center', gap: '3px',
+              borderLeft: ci === joinStartIndex ? JOIN_DIVIDER : undefined,
+              borderRight: isPinned ? '1px solid var(--border-color)' : '1px solid var(--border-subtle)',
+              background: isPinned ? (accentBg === 'transparent' ? 'var(--bg-card)' : accentBg) : accentBg,
+              zIndex: isPinned ? 3 : undefined,
+              boxShadow: isPinned ? '2px 0 0 0 var(--border-color)' : undefined
+            }}
+          >
+            <input
+              value={draft[col] ?? ''}
+              onChange={(e) => onValueChange(col, e.target.value)}
+              placeholder={kind === 'date' ? 'gg/mm/aaaa' : 'default'}
+              spellCheck={false}
+              title={`${col} · ${typeLabel}`}
+              data-tip-desc="column type and constraints"
+              style={{
+                flex: 1, minWidth: 0, height: 'calc(100% - 4px)', padding: '0 5px',
+                background: 'var(--bg-input)', border: '1px solid var(--border-color)',
+                borderRadius: '2px', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
+                fontSize: 'inherit', outline: 'none'
+              }}
+            />
+            {kind === 'guid' && (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onValueChange(col, newGuid())}
+                title="genera un nuovo GUID (NEWID())" data-tip-desc="generate a new GUID"
+                style={draftActionBtn('var(--accent-color)')}>
+                <Sparkles size={10} />
+              </button>
+            )}
+            {kind === 'date' && (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => onOpenDatePicker(col, e.currentTarget.getBoundingClientRect())}
+                title="scegli data e ora" data-tip-desc="open the calendar picker"
+                style={draftActionBtn('var(--accent-color)')}>
+                <CalendarDays size={10} />
+              </button>
+            )}
+            {fk && (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onCheckForeignKey(col)}
+                title={check?.message || `verifica che il valore esista in ${fk.referencedTable}.${fk.referencedColumn}`}
+                data-tip-desc="check the value exists in the referenced table before inserting"
+                style={draftActionBtn(
+                  check?.state === 'missing' || check?.state === 'error' ? 'var(--error-color)'
+                    : check?.state === 'ok' ? 'var(--success-color)' : FK_COLOR
+                )}>
+                {check?.state === 'checking'
+                  ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} />
+                  : <ShieldCheck size={10} />}
+              </button>
+            )}
+            {(check?.state === 'ok' || check?.state === 'missing' || check?.state === 'error') && (
+              <span
+                title={check.message}
+                data-tip-desc={check.message || ''}
+                style={{ display: 'flex', alignItems: 'center', flexShrink: 0, color: check.state === 'ok' ? 'var(--success-color)' : 'var(--error-color)' }}>
+                {check.state === 'ok' ? <Check size={10} /> : <X size={10} />}
+              </span>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function draftActionBtn(color: string): React.CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: '18px', height: 'calc(100% - 4px)', padding: 0,
+    background: 'var(--bg-tag)', border: `1px solid ${color}`, borderRadius: '2px',
+    color, cursor: 'pointer'
+  }
+}
 
 function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }: {
   column: string
@@ -274,7 +435,7 @@ const tinyGridButton: React.CSSProperties = {
   color: 'var(--text-secondary)', borderRadius: 3, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9
 }
 
-export function ResultViewer({ execution, getResultTableName, onJoinRequest, onFilterRequest, onClear, onExecuteSql, onDeleteRequest, gridQueryState, gridQuerySupported, onGridQueryStateChange }: ResultViewerProps) {
+export function ResultViewer({ execution, getResultTableName, onJoinRequest, onFilterRequest, onClear, onExecuteSql, onDeleteRequest, columnInfo, onCheckExists, gridQueryState, gridQuerySupported, onGridQueryStateChange }: ResultViewerProps) {
   const [activeSet, setActiveSet] = useState(0)
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE)
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
@@ -288,6 +449,12 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; row: number } | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [filterEditor, setFilterEditor] = useState<{ column: string; x: number; y: number } | null>(null)
+  // insert row: the draft values, the review dialog and the per-column FK checks
+  const [draft, setDraft] = useState<Record<string, string> | null>(null)
+  const [insertPreview, setInsertPreview] = useState<string | null>(null)
+  const [inserting, setInserting] = useState(false)
+  const [datePicker, setDatePicker] = useState<{ col: string; x: number; y: number; target: 'draft' | 'edit' } | null>(null)
+  const [fkChecks, setFkChecks] = useState<Record<string, { state: 'checking' | 'ok' | 'missing' | 'error'; message?: string }>>({})
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
   const rafRef = useRef<number | null>(null)
@@ -310,6 +477,10 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     setScrollLeft(0)
     setEditing(null)
     setRowMenu(null)
+    setDraft(null)
+    setInsertPreview(null)
+    setDatePicker(null)
+    setFkChecks({})
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0
       scrollRef.current.scrollLeft = 0
@@ -581,7 +752,88 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   )
 
   const editable = primaryKeys.size > 0 && !!getResultTableName?.() && !!onExecuteSql
+  // a new row needs a table to insert into and a way to run the statement
+  const insertable = !!getResultTableName?.() && !!onExecuteSql && columns.length > 0
   const resultTableName = useCallback((): string | undefined => getResultTableName?.(), [getResultTableName])
+
+  // ─── Insert row ──────────────────────────────────────────────────────────
+  const cellKind = useCallback((col: string): CellKind => {
+    const real = (columnInfo?.[col]?.type || '').toLowerCase()
+    if (real.includes('uniqueidentifier')) return 'guid'
+    if (real.includes('date') || real.includes('time')) return 'date'
+    if (real === 'bit' || real.includes('boolean')) return 'boolean'
+    if (/int|decimal|numeric|float|real|money/.test(real)) return 'number'
+    const sniffed = colTypes[col]
+    if (sniffed === 'date') return 'date'
+    if (sniffed === 'number' || sniffed === 'bigint') return 'number'
+    if (sniffed === 'boolean') return 'boolean'
+    if (sniffed === 'guid') return 'guid'
+    return 'string'
+  }, [columnInfo, colTypes])
+
+  // tooltip shown on every insert cell: real type, nullability and key role
+  const columnTypeLabel = useCallback((col: string): string => {
+    const info = columnInfo?.[col]
+    if (info) {
+      const len = info.maxLength && info.maxLength > 0 ? `(${info.maxLength === -1 ? 'max' : info.maxLength})` : ''
+      const flags = [
+        info.isPrimaryKey ? 'PK' : '',
+        info.isForeignKey ? 'FK' : '',
+        info.nullable ? 'NULL' : 'NOT NULL',
+        info.defaultValue ? `default ${info.defaultValue}` : ''
+      ].filter(Boolean).join(' · ')
+      return `${info.type}${len}${flags ? ` · ${flags}` : ''}`
+    }
+    return colTypes[col] || 'tipo non noto'
+  }, [columnInfo, colTypes])
+
+  const startDraft = () => {
+    setDraft(prev => prev ? null : {})
+    setFkChecks({})
+    setDatePicker(null)
+  }
+
+  const setDraftValue = useCallback((col: string, value: string) => {
+    setDraft(prev => ({ ...(prev || {}), [col]: value }))
+  }, [])
+
+  const draftEntries = useMemo(
+    () => (draft ? buildInsertEntries(columns, draft, colTypes) : []),
+    [draft, columns, colTypes]
+  )
+  const draftStatement = useMemo(
+    () => (draft ? buildInsertStatement(getResultTableName?.() || '', draftEntries) : null),
+    [draft, draftEntries, getResultTableName]
+  )
+
+  const checkForeignKey = async (col: string) => {
+    const fk = fkInfoMap.get(col)
+    const value = draft?.[col]?.trim()
+    if (!fk || !value || !onCheckExists) return
+    setFkChecks(prev => ({ ...prev, [col]: { state: 'checking' } }))
+    try {
+      const exists = await onCheckExists(fk, value, colTypes[col] || 'string')
+      setFkChecks(prev => ({
+        ...prev,
+        [col]: exists
+          ? { state: 'ok', message: `trovato in ${fk.referencedTable}.${fk.referencedColumn}` }
+          : { state: 'missing', message: `nessun record in ${fk.referencedTable} con ${fk.referencedColumn} = ${value}` }
+      }))
+    } catch (e) {
+      setFkChecks(prev => ({ ...prev, [col]: { state: 'error', message: (e as Error).message } }))
+    }
+  }
+
+  const runInsert = async () => {
+    if (!insertPreview || !onExecuteSql || inserting) return
+    setInserting(true)
+    try {
+      const ok = await onExecuteSql(insertPreview)
+      if (ok) { setInsertPreview(null); setDraft(null) }
+    } finally {
+      setInserting(false)
+    }
+  }
 
   const toggleRow = useCallback((index: number) => {
     setSelectedRows(previous => {
@@ -626,14 +878,14 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
 
   const cancelEdit = useCallback(() => setEditing(null), [])
 
-  const commitEdit = useCallback(async () => {
+  const commitEditWith = useCallback(async (col: string, value: string) => {
     if (!editing || !result || !onExecuteSql) return
     const table = resultTableName()
     if (!table) return
     const raw = rows[editing.row]
     if (!raw) return
-    const newValue = parseEditedValue(editing.value, colTypes, editing.col)
-    const update = buildUpdateStatement(table, columns, raw, editing.col, newValue, colTypes, [...primaryKeys])
+    const newValue = parseEditedValue(value, colTypes, col)
+    const update = buildUpdateStatement(table, columns, raw, col, newValue, colTypes, [...primaryKeys])
     if (!update) return
     setSavingEdit(true)
     try {
@@ -643,6 +895,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
       setSavingEdit(false)
     }
   }, [colTypes, columns, editing, onExecuteSql, primaryKeys, result, resultTableName, rows])
+
+  const commitEdit = useCallback(() => {
+    if (!editing) return
+    void commitEditWith(editing.col, editing.value)
+  }, [commitEditWith, editing])
 
   const btnStyle = {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -777,6 +1034,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               <Pencil size={8} /> double-click to edit · right-click row to delete
             </span>
           )}
+          {draft && (
+            <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--success-color)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <Plus size={8} /> nuova riga: cella vuota = valore di default · “NULL” = nullo
+            </span>
+          )}
           {results.length > 1 && (
             <span style={{ display: 'flex', gap: '2px' }}>
               {results.map((r, i) => (
@@ -821,6 +1083,42 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
             <ZoomIn size={10} />
           </button>
+          {insertable && (
+            <button
+              onClick={startDraft}
+              title={draft ? 'annulla la nuova riga' : 'inserisci una nuova riga'}
+              data-tip-desc="add an editable row to insert into the table"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '4px',
+                padding: '2px 8px', marginLeft: '6px', height: '18px',
+                background: draft ? 'var(--warning-bg)' : 'transparent',
+                border: `1px solid ${draft ? 'var(--warning-color)' : 'var(--success-color)'}`,
+                borderRadius: 'var(--radius-sm)', color: draft ? 'var(--warning-color)' : 'var(--success-color)',
+                cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+              }}
+              onMouseEnter={(e) => { if (!draft) { e.currentTarget.style.background = 'var(--success-color)'; e.currentTarget.style.color = 'var(--text-inverse)' } }}
+              onMouseLeave={(e) => { if (!draft) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--success-color)' } }}>
+              {draft ? <X size={9} /> : <Plus size={9} />} {draft ? 'annulla riga' : 'nuova riga'}
+            </button>
+          )}
+          {draft && (
+            <button
+              onClick={() => draftStatement && setInsertPreview(draftStatement)}
+              disabled={!draftStatement}
+              title="rivedi e conferma l'INSERT" data-tip-desc="review the INSERT statement before running it"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '4px',
+                padding: '2px 8px', marginLeft: '4px', height: '18px',
+                background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
+                borderRadius: 'var(--radius-sm)', color: 'var(--accent-color)',
+                cursor: draftStatement ? 'pointer' : 'not-allowed', opacity: draftStatement ? 1 : 0.5,
+                fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+              }}
+              onMouseEnter={(e) => { if (draftStatement) { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--text-inverse)' } }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent-bg)'; e.currentTarget.style.color = 'var(--accent-color)' }}>
+              <ClipboardCheck size={9} /> rivedi insert{draftEntries.length > 0 ? ` (${draftEntries.length})` : ''}
+            </button>
+          )}
           <button
             onClick={exportCsv}
             title={selectedRows.size > 0 ? `export ${selectedRows.size} selected rows` : 'export all rows to csv'}
@@ -1038,6 +1336,29 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             </div>
           </div>
 
+          {/* Insert draft row: in flow under the sticky header, above the data */}
+          {draft && (
+            <DraftRow
+              rowHeight={rowHeight}
+              totalWidth={totalWidth}
+              visibleColumns={visibleColumns}
+              pinned={pinned}
+              pinnedLeft={columnMetrics.pinnedLeft}
+              scrollLeft={scrollLeft}
+              joinStartIndex={joinStartIndex}
+              draft={draft}
+              primaryKeys={primaryKeys}
+              foreignKeys={foreignKeys}
+              fkInfoMap={fkInfoMap}
+              fkChecks={fkChecks}
+              columnTypeLabel={columnTypeLabel}
+              cellKind={cellKind}
+              onValueChange={setDraftValue}
+              onOpenDatePicker={(col, rect) => setDatePicker({ col, x: rect.left, y: rect.bottom + 4, target: 'draft' })}
+              onCheckForeignKey={checkForeignKey}
+            />
+          )}
+
           {/* Virtualized body */}
           <div data-result-body style={{ height: rows.length * rowHeight, width: totalWidth, position: 'relative' }}>
             {visibleRows.map(({ index, row }) => (
@@ -1069,6 +1390,8 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                 onEditValueChange={changeEditingValue}
                 onCommitEdit={commitEdit}
                 onCancelEdit={cancelEdit}
+                cellKind={cellKind}
+                onOpenDatePicker={(col, rect) => setDatePicker({ col, x: rect.left, y: rect.bottom + 4, target: 'edit' })}
               />
             ))}
           </div>
@@ -1086,6 +1409,76 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         />
       )}
       {renderRowMenu()}
+
+      {datePicker && (
+        <DateTimePicker
+          x={datePicker.x}
+          y={datePicker.y}
+          allowNull
+          value={datePicker.target === 'draft' ? (draft?.[datePicker.col] || '') : (editing?.value || '')}
+          onChange={(text) => {
+            if (datePicker.target === 'draft') setDraftValue(datePicker.col, text)
+            else void commitEditWith(datePicker.col, text)
+            setDatePicker(null)
+          }}
+          onClose={() => setDatePicker(null)}
+        />
+      )}
+
+      {insertPreview && (
+        <div
+          role="dialog"
+          aria-label="review insert"
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !inserting) setInsertPreview(null) }}
+          style={{
+            position: 'fixed', inset: 0, background: 'var(--bg-overlay)', zIndex: 350,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
+          }}
+        >
+          <div style={{
+            width: '620px', maxWidth: '94vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+            background: 'var(--bg-primary)', border: '1px solid var(--accent-color)',
+            borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)', overflow: 'hidden'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
+              <ClipboardCheck size={14} style={{ color: 'var(--accent-color)' }} />
+              <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
+                conferma inserimento
+              </span>
+              <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
+                {draftEntries.length} colonne · {getResultTableName?.() || ''}
+              </span>
+            </div>
+            <pre style={{
+              margin: 0, padding: '12px 14px', overflow: 'auto',
+              fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+            }}>
+              {insertPreview}
+            </pre>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderTop: '1px solid var(--border-subtle)' }}>
+              <button onClick={() => window.electronAPI.clipboard.write(insertPreview)}
+                title="copia l'INSERT" data-tip-desc="copy the statement to the clipboard"
+                style={previewBtn}>
+                copia
+              </button>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setInsertPreview(null)} disabled={inserting} style={previewBtn}>annulla</button>
+              <button onClick={runInsert} disabled={inserting}
+                style={{ ...previewBtn, display: 'flex', alignItems: 'center', gap: '5px', background: 'var(--accent-color)', borderColor: 'var(--accent-color)', color: 'var(--text-inverse)', fontWeight: 700 }}>
+                {inserting ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={10} />} esegui insert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
+}
+
+const previewBtn: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 12px', height: '26px',
+  background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+  borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', cursor: 'pointer',
+  fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
 }

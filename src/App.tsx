@@ -175,7 +175,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
+  const toggleTheme = () => {
+    // the settings store drives data-theme (and syncs the editors), so the
+    // status-bar toggle must write there, not only to the UI store
+    updateSettings({ theme: settingsTheme === 'dark' ? 'light' : 'dark' })
+  }
 
   // Remember the last active panel at startup.
   useEffect(() => {

@@ -9,8 +9,8 @@ import { RecentConnectionsMenu } from './RecentConnectionsMenu'
 import { DiagramView } from './DiagramView'
 import { useSqlStore, useSqlRecentStore, useToastStore } from '../../store'
 import { Plus, PanelLeftClose, PanelLeftOpen, Loader2, Check, XCircle, Database } from 'lucide-react'
-import { SqlConnection, SqlConnectionConfig, SqlExecutionResult, SqlForeignKeyInfo, SqlGridQueryState, SqlHistoryEntry, SqlQuerySource, SqlTestResult, SqlWorkspaceState } from '../../types/sql'
-import { connectionLabel } from './sqlForm'
+import { SqlColumnInfo, SqlConnection, SqlConnectionConfig, SqlExecutionResult, SqlForeignKeyInfo, SqlGridQueryState, SqlHistoryEntry, SqlQuerySource, SqlTestResult, SqlWorkspaceState } from '../../types/sql'
+import { connectionLabel, quoteColumn, quoteTable, sqlLiteral as sqlLiteralForType } from './sqlForm'
 import { Modal } from '../layout/Modal'
 import { appendJoinedSelectColumns, appendRelatedJoin, buildExplicitSelect, extractSqlBaseTable, getSqlResultTableName } from './sqlQueryUtils'
 import { SqlWorkspaceDrawer } from './SqlWorkspaceDrawer'
@@ -18,6 +18,8 @@ import { addHistoryEntry, EMPTY_SQL_WORKSPACE, favoriteHistoryEntry, updateWorks
 import { buildGridQuery, canRewriteGridQuery } from './sqlGridQuery'
 import { SqlQueryMessage, SqlQueryOutput, SqlRunningQuery } from './SqlQueryOutput'
 import { normalizeSqlConnectionConfig } from '../../shared/sqlConnection'
+import type { DataTierAction } from '../../shared/sqlBackup'
+import { SqlBackupDialog, SqlDataTierDialog } from './SqlBackupDialogs'
 import '../../styles/sql-workbench.css'
 
 function escapeRe(s: string): string {
@@ -75,6 +77,9 @@ export function SqlPanel() {
   const [edit, setEdit] = useState<Partial<SqlConnection> | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [plusMenu, setPlusMenu] = useState<{ x: number; y: number } | null>(null)
+  const [resultColumnInfo, setResultColumnInfo] = useState<Record<string, SqlColumnInfo> | null>(null)
+  const [backupTarget, setBackupTarget] = useState<{ conn: SqlConnection; database: string } | null>(null)
+  const [dataTierTarget, setDataTierTarget] = useState<{ conn: SqlConnection; database: string; action: DataTierAction } | null>(null)
   const [diagram, setDiagram] = useState<DiagramTarget | null>(null)
   const [rowLimitTable, setRowLimitTable] = useState<{ table: string; context?: QueryExecutionContext; columns: string[] } | null>(null)
   const [confirmSelectAll, setConfirmSelectAll] = useState<{ table: string; context?: QueryExecutionContext; columns: string[] } | null>(null)
@@ -511,6 +516,35 @@ export function SqlPanel() {
     return getSqlResultTableName(q)
   }
 
+  // Real schema of the result's base table (accurate types, nullability, PK/FK):
+  // used by the insert row for typed editors and the FK existence check.
+  useEffect(() => {
+    const table = execution ? getResultTableName() : undefined
+    if (!table || !activeConnection) {
+      setResultColumnInfo(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const cols = await window.electronAPI.sql.columns(activeConnection, activeDb, table)
+        if (!cancelled) setResultColumnInfo(Object.fromEntries(cols.map(c => [c.name, c])))
+      } catch {
+        if (!cancelled) setResultColumnInfo(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [execution, activeConnection, activeDb])
+
+  /** Runs a silent existence query for a FK value (never touches the grid). */
+  const handleCheckExists = async (fk: SqlForeignKeyInfo, value: string, colType: string): Promise<boolean> => {
+    if (!activeConnection) throw new Error('nessuna connessione attiva')
+    const literal = sqlLiteralForType(fk.referencedColumn, value, { [fk.referencedColumn]: colType })
+    const sql = `SELECT TOP 1 1 AS ok FROM ${quoteTable(fk.referencedTable)} WHERE ${quoteColumn(fk.referencedColumn)} = ${literal}`
+    const res = await window.electronAPI.sql.query(activeConnection, sql, undefined, 1, activeDb)
+    return (res.results?.[0]?.rows?.length ?? 0) > 0
+  }
+
   const handleServerInfo = async (conn: SqlConnection) => {
     try {
       const info = await trackOperation(`Loading server info for ${conn.label}`, () => window.electronAPI.sql.serverInfo(conn.id))
@@ -615,6 +649,8 @@ export function SqlPanel() {
               onOpenDiagram={(connId, database, tables) => setDiagram({ connId, database, tables })}
               onAskRowLimit={(table, context, columns = []) => setRowLimitTable({ table, context, columns })}
               onServerInfo={handleServerInfo}
+              onBackupDatabase={(conn, database) => setBackupTarget({ conn, database })}
+              onDataTier={(conn, database, action) => setDataTierTarget({ conn, database, action })}
               trackOperation={trackOperation}
             />
           <main className="sql-workbench__stage" style={{
@@ -687,6 +723,8 @@ export function SqlPanel() {
                       return ok
                     }}
                     onDeleteRequest={(query) => { void executeSql(query).then(ok => { if (ok) refreshGrid() }) }}
+                    columnInfo={resultColumnInfo || undefined}
+                    onCheckExists={handleCheckExists}
                     gridQueryState={activeGridState}
                     gridQuerySupported={gridCapability}
                     onGridQueryStateChange={applyGridQueryState}
@@ -776,6 +814,19 @@ export function SqlPanel() {
             runQuery(buildExplicitSelect(confirmSelectAll.table, confirmSelectAll.columns), confirmSelectAll.context)
             setConfirmSelectAll(null)
           }}
+        />
+      )}
+
+      {backupTarget && (
+        <SqlBackupDialog conn={backupTarget.conn} database={backupTarget.database} onClose={() => setBackupTarget(null)} />
+      )}
+
+      {dataTierTarget && (
+        <SqlDataTierDialog
+          conn={dataTierTarget.conn}
+          database={dataTierTarget.database}
+          action={dataTierTarget.action}
+          onClose={() => setDataTierTarget(null)}
         />
       )}
 

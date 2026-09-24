@@ -237,6 +237,15 @@ export class GitService {
     await git.push(['-u', 'origin', current])
   }
 
+  /**
+   * Publish an arbitrary local branch (it does not have to be checked out here).
+   * Stacked worktrees need the parent on the remote before a PR can target it.
+   */
+  async pushBranch(repoPath: string, branch: string): Promise<void> {
+    const git = this.getGit(repoPath)
+    await git.push(['origin', branch])
+  }
+
   async merge(repoPath: string, branch: string): Promise<{ ok: boolean; message: string; conflicts: string[] }> {
     const git = this.getGit(repoPath)
     try {

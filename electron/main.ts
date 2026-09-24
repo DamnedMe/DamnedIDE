@@ -186,8 +186,20 @@ function registerIpcHandlers(
 
   // ─── Worktree ──────────────────────────────────────
   ipcMain.handle('worktree:list', (_e, repoPath: string) => worktree.list(repoPath))
-  ipcMain.handle('worktree:add', (_e, repoPath: string, branch: string, path: string) =>
-    worktree.add(repoPath, branch, path))
+  ipcMain.handle('worktree:add', (_e, repoPath: string, branch: string, path: string, base?: string) =>
+    worktree.add(repoPath, branch, path, base))
+  ipcMain.handle('worktree:stack', (_e, repoPath: string) => worktree.stack(repoPath))
+  ipcMain.handle('worktree:retargetChildren', (_e, repoPath: string, parentBranch: string) =>
+    worktree.retargetChildren(repoPath, parentBranch))
+  ipcMain.handle('worktree:clearLink', (_e, repoPath: string, branch: string) => worktree.clearLink(repoPath, branch))
+  // promote a stacked branch: align it with develop (merge) then drop the link
+  ipcMain.handle('worktree:promote', async (_e, repoPath: string, worktreePath: string) => {
+    const merge = await git.merge(worktreePath, 'origin/develop')
+    if (!merge.ok) return { ok: false, error: merge.message, conflicts: merge.conflicts }
+    const branch = await git.currentBranch(worktreePath)
+    if (branch) await worktree.clearLink(repoPath, branch)
+    return { ok: true }
+  })
   ipcMain.handle('worktree:remove', (_e, repoPath: string, worktreePath: string, force?: boolean) => {
     // a terminal rooted in the worktree keeps a handle on the folder on Windows:
     // on a forced removal close those first, otherwise rm/`worktree remove` fail
@@ -467,6 +479,7 @@ function registerIpcHandlers(
   ipcMain.handle('git:transferChanges', (_e, sourcePath: string, targetPath: string, opts: { copy: boolean; stagedOnly: boolean }) =>
     git.transferChanges(sourcePath, targetPath, opts))
   ipcMain.handle('git:pushWithUpstream', (_e, repoPath: string) => git.pushWithUpstream(repoPath))
+  ipcMain.handle('git:pushBranch', (_e, repoPath: string, branch: string) => git.pushBranch(repoPath, branch))
   ipcMain.handle('git:merge', (_e, repoPath: string, branch: string) => git.merge(repoPath, branch))
   ipcMain.handle('git:currentBranch', (_e, repoPath: string) => git.currentBranch(repoPath))
   ipcMain.handle('git:gitCommonDir', (_e, repoPath: string) => git.gitCommonDir(repoPath))
@@ -577,9 +590,9 @@ function registerIpcHandlers(
 
   // ─── Agent chat (multi-provider: claude / opencode / codex / cursor) ───
   // `ai:test` keeps accepting the legacy (backend) signature used by Claude.
-  ipcMain.handle('ai:test', (_e, provider?: AgentProviderId | 'subscription' | 'api', backend?: 'subscription' | 'api') => {
+  ipcMain.handle('ai:test', (_e, provider?: AgentProviderId | 'subscription' | 'api', backend?: 'subscription' | 'api', model?: string) => {
     if (provider === 'subscription' || provider === 'api') return claude.test(provider, mainWindow)
-    return agent.test((provider as AgentProviderId) || 'claude', mainWindow, backend)
+    return agent.test((provider as AgentProviderId) || 'claude', mainWindow, backend, model)
   })
   ipcMain.handle('ai:providers', (_e, refresh?: boolean) => agent.providers({ refresh: !!refresh }))
   ipcMain.handle('ai:models', (_e, provider: AgentProviderId) => agent.listModels(provider))

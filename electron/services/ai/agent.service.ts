@@ -336,10 +336,10 @@ export class AgentService {
   }
 
   /** Cheap real round trip that proves the provider is authenticated. */
-  async test(provider: AgentProviderId, win: BrowserWindow | null, backend?: 'subscription' | 'api'): Promise<ClaudeResult> {
+  async test(provider: AgentProviderId, win: BrowserWindow | null, backend?: 'subscription' | 'api', model?: string): Promise<ClaudeResult> {
     if (provider === 'claude') return this.claude.test(backend || 'subscription', win)
-    // no model/effort: the CLI uses its own default, which is what the user set up
-    return this.send({ chatKey: '__test__', provider, prompt: 'Rispondi solo con: ok' }, win)
+    // the chosen model matters: the CLI default may be a provider without credit
+    return this.send({ chatKey: '__test__', provider, prompt: 'Rispondi solo con: ok', model: model || undefined }, win)
   }
 
   /** Runs a short CLI command capturing stdout+stderr (auth probes, status). */
@@ -451,7 +451,12 @@ export class AgentService {
       proc.on('exit', (code) => {
         this.runs.delete(req.chatKey)
         if (code === 0 && !failed) resolve({ ok: true, text, sessionId: session || undefined, costUsd, usage })
-        else resolve({ ok: false, error: failure || text.trim() || stderr.trim() || `${spec.command} terminato con codice ${code ?? '?'}` })
+        else {
+          const base = failure || text.trim() || stderr.trim() || `${spec.command} terminato con codice ${code ?? '?'}`
+          // name the model: a provider error (e.g. "Insufficient Balance") is
+          // actionable only if the user knows which model/provider produced it
+          resolve({ ok: false, error: `${base}${req.model ? ` (modello: ${req.model})` : ` (modello predefinito di ${spec.label})`}` })
+        }
       })
 
       if (spec.promptViaStdin) {

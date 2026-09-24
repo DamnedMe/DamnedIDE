@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Loader2, X, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, FileCode } from 'lucide-react'
+import { Loader2, X, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, FileCode, Layers, Trash2 } from 'lucide-react'
 import { useAdoStore, useEditorStore, useToastStore } from '../../store'
 
 interface CompleteWorktreeDialogProps {
@@ -26,6 +26,8 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
   const [repos, setRepos] = useState<string[]>([])
   const [repo, setRepo] = useState('')
   const [autoComplete, setAutoComplete] = useState(false)
+  const [stackInfo, setStackInfo] = useState<WorktreeStackInfo | null>(null)
+  const [removingChild, setRemovingChild] = useState(false)
   const ado = useAdoStore(s => s.connection)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const showToast = useToastStore(s => s.showToast)
@@ -49,6 +51,48 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
     if (ids.size === 0 && workItemId !== null) ids.add(workItemId)
     return [...ids]
   })()
+
+  // Stacked worktree: while the parent is open the PR targets the parent; once
+  // the parent is in develop the target becomes develop (and the link is dropped).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const branch = await window.electronAPI.git.currentBranch(worktreePath)
+        const list = await window.electronAPI.worktree.stack(repoPath)
+        if (!cancelled) setStackInfo(list.find(i => i.branch === branch) || null)
+      } catch {
+        if (!cancelled) setStackInfo(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [worktreePath, repoPath])
+
+  const stacked = !!stackInfo
+  const targetBranch = stackInfo && stackInfo.state === 'open' ? stackInfo.parent : 'develop'
+  const mergeRef = stackInfo && stackInfo.state === 'open' ? stackInfo.mergeRef : 'origin/develop'
+  const absorbed = stackInfo?.state === 'absorbed'
+
+  /** Absorbed child: its work is already in the parent, so the worktree is disposable. */
+  const removeAbsorbedChild = async () => {
+    setRemovingChild(true)
+    try {
+      // same guard as the list: its own children go back to develop first
+      const branch = await window.electronAPI.git.currentBranch(worktreePath)
+      const affected = branch
+        ? await window.electronAPI.worktree.retargetChildren(repoPath, branch).catch(() => [] as string[])
+        : []
+      const res = await window.electronAPI.worktree.remove(repoPath, worktreePath)
+      if (!res.ok) { showToast(res.error || 'rimozione fallita', 'error'); return }
+      if (res.warning) showToast(res.warning, 'error')
+      else showToast(affected.length > 0
+        ? `worktree figlio rimosso (${affected.length} figli riportati su develop)`
+        : 'worktree figlio rimosso')
+      onDone()
+    } finally {
+      setRemovingChild(false)
+    }
+  }
 
   useEffect(() => {
     if (!ado?.isConnected || !ado.organization || !ado.project) return
@@ -79,7 +123,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
     const branch = await window.electronAPI.git.currentBranch(worktreePath)
     const result = await window.electronAPI.ado.createPr(ado.project, repo, {
       sourceRef: branch,
-      targetRef: 'develop',
+      targetRef: targetBranch,
       title: fullMessage,
       description: `Automatic PR from worktree complete flow.\n\n${fullMessage}`,
       autoComplete: autoComplete,
@@ -111,9 +155,9 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
       { label: 'commit', status: 'pending' as const },
       { label: 'push feature branch', status: 'pending' as const },
       { label: 'fetch', status: 'pending' as const },
-      { label: 'merge develop', status: 'pending' as const },
+      { label: `merge ${targetBranch}`, status: 'pending' as const },
       { label: 'push after merge', status: 'pending' as const },
-      { label: 'create pull request', status: 'pending' as const }
+      { label: `create pull request → ${targetBranch}`, status: 'pending' as const }
     ]
     setSteps(initial)
 
@@ -138,9 +182,9 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
       await window.electronAPI.git.fetch(worktreePath)
       updateStep(3, { status: 'ok' })
 
-      // 5. merge develop
+      // 5. merge the base (the parent while stacked, develop otherwise)
       updateStep(4, { status: 'running' })
-      const merge = await window.electronAPI.git.merge(worktreePath, 'origin/develop')
+      const merge = await window.electronAPI.git.merge(worktreePath, mergeRef)
       if (!merge.ok) {
         setConflicts(merge.conflicts)
         updateStep(4, { status: 'error', detail: `conflitti: ${merge.conflicts.join(', ') || merge.message.slice(0, 120)}` })
@@ -152,9 +196,12 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
       }
       updateStep(4, { status: 'ok' })
 
-      // 6. push again
+      // 6. push again (and publish the parent branch: the PR targets it)
       updateStep(5, { status: 'running' })
       await window.electronAPI.git.push(worktreePath)
+      if (stacked && targetBranch !== 'develop') {
+        await window.electronAPI.git.pushBranch(worktreePath, targetBranch)
+      }
       updateStep(5, { status: 'ok' })
 
       // 7. create PR (skip if a PR was already created in a previous run)
@@ -167,6 +214,15 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
         prOk = await createPr()
       }
       setCompleted(prOk)
+      // promotion: the base was develop (parent already merged) → drop the link
+      if (prOk && stacked && targetBranch === 'develop') {
+        try {
+          const branch = await window.electronAPI.git.currentBranch(worktreePath)
+          if (branch) await window.electronAPI.worktree.clearLink(repoPath, branch)
+          setStackInfo(null)
+          showToast('worktree promosso su develop (legame con il padre rimosso)')
+        } catch { /* non bloccante */ }
+      }
       setIsRunning(false)
     } catch (e) {
       const i = steps.findIndex(s => s.status === 'running')
@@ -217,6 +273,49 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {stacked && !absorbed && stackInfo && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '8px 10px',
+              background: targetBranch === 'develop' ? 'var(--warning-bg)' : 'var(--accent-bg)',
+              border: `1px solid ${targetBranch === 'develop' ? 'var(--warning-color)' : 'var(--accent-color)'}`,
+              borderRadius: 'var(--radius-sm)',
+              color: targetBranch === 'develop' ? 'var(--warning-color)' : 'var(--accent-color)',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', lineHeight: 1.6
+            }}>
+              <Layers size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                worktree impilato su <b>{stackInfo.parent}</b> — {stackInfo.detail}.<br />
+                {targetBranch === 'develop'
+                  ? <>il padre è già in develop: la PR andrà su <b>develop</b> e il legame verrà rimosso (promozione).</>
+                  : <>la PR andrà verso <b>{stackInfo.parent}</b> (allineamento con <span style={{ fontFamily: 'var(--font-mono)' }}>{mergeRef}</span>).</>}
+              </span>
+            </div>
+          )}
+
+          {absorbed && stackInfo && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px',
+              background: 'var(--success-bg)', border: '1px solid var(--success-color)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--success-color)',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', lineHeight: 1.6
+            }}>
+              <Layers size={12} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                il lavoro di questo worktree è già dentro <b>{stackInfo.parent}</b>: non c'è nulla da completare.
+              </span>
+              <button onClick={removeAbsorbedChild} disabled={removingChild}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', height: '24px',
+                  background: 'var(--bg-card)', border: '1px solid var(--success-color)', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--success-color)', cursor: removingChild ? 'not-allowed' : 'pointer',
+                  fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                }}>
+                {removingChild ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={10} />}
+                rimuovi worktree
+              </button>
+            </div>
+          )}
+
           <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             commit message
             <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="es. feat: add new endpoint"
@@ -308,7 +407,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
 
           {prCreated !== null && (
             <div style={{ padding: '8px 10px', background: 'var(--success-bg)', color: 'var(--success-color)', borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
-              Pull request #{prCreated} creata verso develop{autoComplete ? ' (autocomplete)' : ''}
+              Pull request #{prCreated} creata verso {targetBranch}{autoComplete ? ' (autocomplete)' : ''}
             </div>
           )}
 
@@ -345,13 +444,13 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                   borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
                   fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
                 }}>close</button>
-                <button onClick={run} disabled={!message.trim() || isRunning}
+                <button onClick={run} disabled={!message.trim() || isRunning || absorbed}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px',
-                    background: message.trim() && !isRunning ? 'var(--accent-color)' : 'var(--bg-disabled)',
+                    background: message.trim() && !isRunning && !absorbed ? 'var(--accent-color)' : 'var(--bg-disabled)',
                     border: 'none', borderRadius: 'var(--radius-md)',
-                    color: message.trim() && !isRunning ? 'var(--text-inverse)' : 'var(--text-muted)',
-                    cursor: message.trim() && !isRunning ? 'pointer' : 'not-allowed',
+                    color: message.trim() && !isRunning && !absorbed ? 'var(--text-inverse)' : 'var(--text-muted)',
+                    cursor: message.trim() && !isRunning && !absorbed ? 'pointer' : 'not-allowed',
                     fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                   }}>
                   {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : 'start'}

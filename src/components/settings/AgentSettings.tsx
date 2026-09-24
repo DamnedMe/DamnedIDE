@@ -9,8 +9,9 @@ import { useI18n } from '../../i18n'
 // they are added, signed in (the login runs in the IDE terminal) and removed.
 export function AgentSettings() {
   const t = useI18n()
-  const { configured, addAgent, removeAgent } = useAgentConfigStore()
+  const { configured, addAgent, removeAgent, setModel, models: agentModels } = useAgentConfigStore()
   const [providers, setProviders] = useState<AgentProviderInfo[]>([])
+  const [models, setModels] = useState<Record<string, { id: string; label: string }[]>>({})
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, { ok: boolean; msg: string }>>({})
@@ -61,6 +62,15 @@ export function AgentSettings() {
 
   const info = (id: AgentProviderId): AgentProviderInfo | undefined => providers.find(p => p.id === id)
   const label = (id: AgentProviderId): string => info(id)?.label || id
+  // catalog per provider: opencode enumerates the models it is actually configured for
+  const providerModels = (id: AgentProviderId): { id: string; label: string }[] => models[id] || info(id)?.models || []
+  const selectedModel = (id: AgentProviderId): string => agentModels[id] || providerModels(id)[0]?.id || ''
+
+  useEffect(() => {
+    window.electronAPI.ai.models('opencode')
+      .then(list => { if (list.length) setModels(prev => ({ ...prev, opencode: list })) })
+      .catch(() => { /* keep the static list */ })
+  }, [])
 
   const signIn = (p: AgentProviderInfo) => {
     if (!p.loginCommand) return
@@ -73,7 +83,11 @@ export function AgentSettings() {
   const test = async (p: AgentProviderInfo) => {
     setTesting(p.id)
     try {
-      const res = await window.electronAPI.ai.test(p.id, p.id === 'claude' ? useClaudeStore.getState().backend : undefined)
+      const res = await window.electronAPI.ai.test(
+        p.id,
+        p.id === 'claude' ? useClaudeStore.getState().backend : undefined,
+        p.id === 'claude' ? undefined : selectedModel(p.id)
+      )
       setResults(prev => ({
         ...prev,
         [p.id]: res.ok
@@ -155,6 +169,23 @@ export function AgentSettings() {
           <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--warning-color)', fontFamily: 'var(--font-mono)' }}>
             non configurato: accedi con {p.loginCommand}
           </div>
+        )}
+
+        {p && providerModels(id).length > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+            modello
+            <select
+              value={selectedModel(id)}
+              onChange={(e) => setModel(id, e.target.value)}
+              title="modello usato per la verifica e per le nuove chat" data-tip-desc="model used by 'verifica' and by new chats with this agent"
+              style={{
+                flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
+                fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', padding: '2px 6px', outline: 'none'
+              }}>
+              {providerModels(id).map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </label>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>

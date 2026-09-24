@@ -833,31 +833,54 @@ const AGENT_CONFIG_KEY = 'damnedide_agent_providers'
 
 interface AgentConfigState {
   configured: AgentProviderId[]
+  // default model per provider, chosen in the settings: used by "verifica" and
+  // by new chat sessions (the CLI default may be a provider without credit)
+  models: Record<string, string>
   addAgent: (id: AgentProviderId) => void
   removeAgent: (id: AgentProviderId) => void
+  setModel: (provider: AgentProviderId, model: string) => void
 }
 
-function loadConfiguredAgents(): AgentProviderId[] {
-  const stored = loadJson<AgentProviderId[] | null>(AGENT_CONFIG_KEY, null)
+interface AgentConfigPersisted {
+  configured: AgentProviderId[]
+  models: Record<string, string>
+}
+
+function loadAgentConfig(): AgentConfigPersisted {
+  const stored = loadJson<AgentProviderId[] | AgentConfigPersisted | null>(AGENT_CONFIG_KEY, null)
+  const known = (list: unknown): AgentProviderId[] =>
+    Array.isArray(list) ? (list as AgentProviderId[]).filter(id => (ALL_AGENT_PROVIDERS as string[]).includes(id)) : []
   // first run: every supported provider is available in the chat
-  if (!Array.isArray(stored)) return [...ALL_AGENT_PROVIDERS]
-  return stored.filter((id) => (ALL_AGENT_PROVIDERS as string[]).includes(id))
+  if (Array.isArray(stored)) return { configured: known(stored), models: {} }
+  if (stored && Array.isArray(stored.configured)) return { configured: known(stored.configured), models: stored.models || {} }
+  return { configured: [...ALL_AGENT_PROVIDERS], models: {} }
 }
 
-export const useAgentConfigStore = create<AgentConfigState>((set) => ({
-  configured: loadConfiguredAgents(),
-  addAgent: (id) => set((s) => {
-    if (s.configured.includes(id)) return {}
-    const configured = [...s.configured, id]
-    saveJson(AGENT_CONFIG_KEY, configured)
-    return { configured }
-  }),
-  removeAgent: (id) => set((s) => {
-    const configured = s.configured.filter((x) => x !== id)
-    saveJson(AGENT_CONFIG_KEY, configured)
-    return { configured }
-  })
-}))
+const initialAgentConfig = loadAgentConfig()
+
+export const useAgentConfigStore = create<AgentConfigState>((set) => {
+  const persist = (state: AgentConfigPersisted) => saveJson(AGENT_CONFIG_KEY, state)
+  return {
+    configured: initialAgentConfig.configured,
+    models: initialAgentConfig.models,
+    addAgent: (id) => set((s) => {
+      if (s.configured.includes(id)) return {}
+      const configured = [...s.configured, id]
+      persist({ configured, models: s.models })
+      return { configured }
+    }),
+    removeAgent: (id) => set((s) => {
+      const configured = s.configured.filter((x) => x !== id)
+      persist({ configured, models: s.models })
+      return { configured }
+    }),
+    setModel: (provider, model) => set((s) => {
+      const models = { ...s.models, [provider]: model }
+      persist({ configured: s.configured, models })
+      return { models }
+    })
+  }
+})
 
 const RECENT_REPOS_KEY = 'damnedide_recent_repos'
 const RECENT_REPOS_MAX = 5

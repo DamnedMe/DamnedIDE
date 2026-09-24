@@ -82,6 +82,14 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     fitRef.current = null
   }
 
+  // The terminal must own the keyboard: when a login command is injected from
+  // the settings, the click left the focus on the settings button, so the TUI
+  // would never receive a keystroke (and the dock may be scrolled out of view).
+  const focusTerminal = () => {
+    try { xtermRef.current?.focus() } catch { /* ignore */ }
+    try { termRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) } catch { /* ignore */ }
+  }
+
   const createTerm = async (type: ShellType) => {
     disposeTerm()
     disposedRef.current = false // reset: this is a brand-new terminal
@@ -109,8 +117,14 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
       const isPaste = ((e.ctrlKey || e.metaKey) && key === 'v') || (e.shiftKey && e.key === 'Insert')
       if (isPaste) {
         e.preventDefault()
+        // write straight to the pty: the interactive CLI/TUI receives the text
+        // exactly as if it had been typed (no xterm-side paste quirks)
         window.electronAPI.clipboard.read()
-          .then((text) => { if (text) { try { term.paste(text) } catch { /* disposed */ } } })
+          .then((text) => {
+            if (!text) return
+            const session = sessionRef.current
+            if (session) { try { window.electronAPI.terminal.write(session, text) } catch { /* closed */ } }
+          })
           .catch(() => { /* clipboard unavailable */ })
         return false
       }
@@ -177,6 +191,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
 
     // focus so typing works immediately, like VS
     try { term.focus() } catch { /* ignore */ }
+    if (pending) focusTerminal()
   }
 
   const addTab = (type: ShellType) => {
@@ -215,7 +230,11 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     const command = useTerminalStore.getState().takePendingCommand()
     if (command) {
       try { window.electronAPI.terminal.write(sessionRef.current, `${command}\r`) } catch { /* closed */ }
+      // the click that launched the login left the focus on the settings button:
+      // without this the TUI would receive no keystrokes
+      focusTerminal()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingCommand])
 
   // auto-open a default shell when the terminal mounts (dock open / panel), so it's
@@ -351,8 +370,8 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
           </div>
         </div>
 
-        {/* Terminal area */}
-        <div ref={termRef} style={{ flex: 1, minHeight: 0, padding: '4px' }} />
+        {/* Terminal area: a click anywhere inside gives the keyboard to the shell */}
+        <div ref={termRef} onMouseDown={() => focusTerminal()} style={{ flex: 1, minHeight: 0, padding: '4px' }} />
       </div>
     </PanelContainer>
   )

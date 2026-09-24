@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSettingsStore, useToastStore, useWorktreeStore, AppSettings, ThemeColorConfig, DEFAULT_DARK_COLORS, DEFAULT_LIGHT_COLORS } from '../../store'
+import { useSettingsStore, useToastStore, useWorktreeStore, useEditorStore, AppSettings, ThemeColorConfig, DEFAULT_DARK_COLORS, DEFAULT_LIGHT_COLORS } from '../../store'
 import { PanelContainer } from '../layout/PanelContainer'
 import { relativeLuminance } from '../../utils/color'
 import { useI18n } from '../../i18n'
@@ -116,8 +116,10 @@ export function SettingsPanel() {
   const { settings, themeDefaults, updateSettings, resetSettings, setThemeDefaults, resetThemeToDefaults } = useSettingsStore()
   const showToast = useToastStore(s => s.showToast)
   // the terminal dock lives here too, so "accedi" (agent login) is visible without
-  // switching panel
-  const dockRepoPath = useWorktreeStore(s => s.selectedWorktree)
+  // switching panel; the login runs in the selected worktree/repo when available
+  const dockWorktree = useWorktreeStore(s => s.selectedWorktree)
+  const dockRoot = useEditorStore(s => s.editorRootPath)
+  const dockRepoPath = dockWorktree || dockRoot
   const s = settings
   const [showColors, setShowColors] = useState(false)
   const [showMcp, setShowMcp] = useState(false)

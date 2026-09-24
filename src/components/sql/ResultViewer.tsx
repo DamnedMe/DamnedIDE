@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SqlColumnInfo, SqlExecutionResult, SqlForeignKeyInfo, SqlQueryResult } from '../../types/sql'
-import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown, Plus, Sparkles, CalendarDays, ShieldCheck, Loader2, ClipboardCheck } from 'lucide-react'
+import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown, Plus, Sparkles, CalendarDays, ShieldCheck, Loader2, ClipboardCheck, Copy } from 'lucide-react'
 import { buildDeleteStatement, buildInsertEntries, buildInsertStatement, buildUpdateStatement, formatGridDate, newGuid, parseEditedValue } from './sqlForm'
 import { DateTimePicker } from './DateTimePicker'
 import { calculateColumnMetrics, calculateVisibleRange } from './sqlGridUtils'
 import { SqlGridFilter, SqlGridFilterOperator, SqlGridQueryState } from '../../types/sql'
+import { useToastStore } from '../../store'
 
 type CellKind = 'guid' | 'date' | 'boolean' | 'number' | 'string'
 
@@ -376,6 +377,22 @@ function draftActionBtn(color: string): React.CSSProperties {
   }
 }
 
+function rowMenuItem(label: string, icon: React.ReactNode, action: () => void, danger?: boolean): React.ReactNode {
+  return (
+    <div onClick={action}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px',
+        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: 'pointer',
+        color: danger ? 'var(--error-color)' : 'var(--text-primary)'
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = danger ? 'var(--error-bg)' : 'var(--bg-hover)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+      {icon}
+      {label}
+    </div>
+  )
+}
+
 function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }: {
   column: string
   dataType: string
@@ -455,8 +472,10 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const [inserting, setInserting] = useState(false)
   const [datePicker, setDatePicker] = useState<{ col: string; x: number; y: number; target: 'draft' | 'edit' } | null>(null)
   const [fkChecks, setFkChecks] = useState<Record<string, { state: 'checking' | 'ok' | 'missing' | 'error'; message?: string }>>({})
+  const showToast = useToastStore(s => s.showToast)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
+  const autofitCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const rafRef = useRef<number | null>(null)
   const scrollRafRef = useRef<number | null>(null)
   const pendingScrollTopRef = useRef(0)
@@ -634,7 +653,26 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     return String(v)
   }, [colTypes])
 
-  // Ctrl/Cmd+C copies the selected rows as tab-separated values.
+  // Ctrl/Cmd+C copies the selected rows as tab-separated values (with header).
+  // The same text builder powers the row context menu.
+  const selectionToText = useCallback((withHeader: boolean): string => {
+    const selected = [...selectedRows].sort((a, b) => a - b).map(i => rows[i]).filter(Boolean)
+    const cell = (c: string, v: unknown) => {
+      const s = formatValue(c, v)
+      return /[\t\n\r]/.test(s) ? s.replace(/\t/g, ' ').replace(/\r?\n/g, ' ') : s
+    }
+    const lines = selected.map(r => columns.map(c => cell(c, r[c])).join('\t'))
+    if (withHeader) lines.unshift(columns.join('\t'))
+    return lines.join('\n')
+  }, [selectedRows, rows, columns, formatValue])
+
+  const copySelection = useCallback((withHeader: boolean) => {
+    const count = selectedRows.size
+    if (count === 0) return
+    window.electronAPI.clipboard.write(selectionToText(withHeader))
+    showToast(`${count} rig${count === 1 ? 'a' : 'he'} copiat${count === 1 ? 'a' : 'e'} ${withHeader ? 'con intestazione' : 'senza intestazione'}`)
+  }, [selectedRows.size, selectionToText, showToast])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!result || selectedRows.size === 0) return
@@ -642,20 +680,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
       const container = scrollRef.current
       if (!container || !container.contains(document.activeElement)) return
       e.preventDefault()
-      const sel = rows.filter((_, i) => selectedRows.has(i))
-      const cell = (c: string, v: unknown) => {
-        const s = formatValue(c, v)
-        return /[\t\n\r]/.test(s) ? s.replace(/\t/g, ' ').replace(/\r?\n/g, ' ') : s
-      }
-      const lines = [
-        columns.join('\t'),
-        ...sel.map(r => columns.map(c => cell(c, r[c])).join('\t'))
-      ]
-      navigator.clipboard.writeText(lines.join('\n')).catch(() => {})
+      copySelection(true)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [result, selectedRows, formatValue, rows, columns])
+  }, [result, selectedRows, copySelection])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -732,6 +761,21 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }
+
+  // Double-click on the resize grip: size the column to its widest value.
+  const autofitColumn = useCallback((col: string) => {
+    const canvas = autofitCanvasRef.current || (autofitCanvasRef.current = document.createElement('canvas'))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.font = `${fontSize}px "JetBrains Mono", "Cascadia Code", "Fira Code", "Consolas", monospace`
+    let widest = ctx.measureText(col).width
+    for (const row of rows) {
+      const width = ctx.measureText(formatValue(col, row[col])).width
+      if (width > widest) widest = width
+    }
+    const next = Math.min(1400, Math.max(60, Math.ceil(widest / zoomScale) + 22))
+    setColWidths(prev => ({ ...prev, [col]: next }))
+  }, [rows, formatValue, fontSize, zoomScale])
 
   const colAccent = (col: string): { color: string; bg: string; tag: string } | null => {
     if (primaryKeys.has(col)) return { color: PK_COLOR, bg: PK_BG, tag: 'PK' }
@@ -853,10 +897,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const handleRowContextMenu = useCallback((event: React.MouseEvent, index: number) => {
     event.preventDefault()
     event.stopPropagation()
-    if (!editable) return
-    setSelectedRows(new Set([index]))
+    // right-clicking a row of the current selection keeps the selection, so the
+    // copy/delete actions apply to all the selected rows
+    setSelectedRows(prev => prev.has(index) ? prev : new Set([index]))
     setRowMenu({ x: event.clientX, y: event.clientY, row: index })
-  }, [editable])
+  }, [])
 
   const isDoubleClick = useCallback((row: number, col: string): boolean => {
     const last = lastCellClickRef.current
@@ -980,34 +1025,32 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const isTruncated = execution.truncated
 
   const renderRowMenu = () => {
-    if (!rowMenu || !editable) return null
-    const row = rows[rowMenu.row]
+    if (!rowMenu) return null
+    const count = selectedRows.size
+    const menuLabel = count > 1 ? `${count} righe selezionate` : `row ${rowMenu.row + 1}`
     return (
       <>
         <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setRowMenu(null)} />
         <div style={{
-          position: 'fixed', left: Math.min(rowMenu.x, window.innerWidth - 200), top: Math.min(rowMenu.y, window.innerHeight - 140),
+          position: 'fixed', left: Math.min(rowMenu.x, window.innerWidth - 260), top: Math.min(rowMenu.y, window.innerHeight - 190),
           zIndex: 200, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '180px',
+          borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '230px',
           boxShadow: 'var(--shadow-lg)', animation: 'menuIn 140ms ease', fontFamily: 'var(--font-mono)'
         }}>
           <div style={{
             padding: '5px 12px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)',
             borderBottom: '1px solid var(--border-subtle)', marginBottom: '4px'
           }}>
-            row {rowMenu.row + 1}
+            {menuLabel}
           </div>
-          <div onClick={() => requestDelete(rowMenu.row)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px',
-              fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: 'pointer',
-              color: 'var(--error-color)'
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--error-bg)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-            <Trash2 size={12} />
-            delete row
-          </div>
+          {rowMenuItem(`copia ${count > 1 ? `${count} righe` : 'riga'} con intestazione`, <Copy size={12} />, () => { copySelection(true); setRowMenu(null) })}
+          {rowMenuItem('copia senza intestazione', <Copy size={12} />, () => { copySelection(false); setRowMenu(null) })}
+          {editable && (
+            <>
+              <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
+              {rowMenuItem('delete row', <Trash2 size={12} />, () => requestDelete(rowMenu.row), true)}
+            </>
+          )}
         </div>
       </>
     )
@@ -1025,8 +1068,8 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', flexShrink: 0, gap: '8px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-          <span style={{ color: 'var(--accent-color)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
+          <span style={{ color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>
             {result.rowCount} rows{selectedRows.size > 0 ? ` · ${selectedRows.size} selected` : ''}
           </span>
           {editable && (
@@ -1035,7 +1078,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             </span>
           )}
           {draft && (
-            <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--success-color)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{
+              fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--success-color)',
+              display: 'flex', alignItems: 'center', gap: '3px',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+            }}>
               <Plus size={8} /> nuova riga: cella vuota = valore di default · “NULL” = nullo
             </span>
           )}
@@ -1070,7 +1117,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '1px', alignItems: 'center', flexShrink: 0, flexWrap: 'nowrap' }}>
           <button style={btnStyle} title="zoom out (Ctrl+-)" data-tip-desc="zoom out the results grid (Ctrl+-)" onClick={() => changeZoom(-1)}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -1089,7 +1136,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               title={draft ? 'annulla la nuova riga' : 'inserisci una nuova riga'}
               data-tip-desc="add an editable row to insert into the table"
               style={{
-                display: 'flex', alignItems: 'center', gap: '4px',
+                display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
                 padding: '2px 8px', marginLeft: '6px', height: '18px',
                 background: draft ? 'var(--warning-bg)' : 'transparent',
                 border: `1px solid ${draft ? 'var(--warning-color)' : 'var(--success-color)'}`,
@@ -1098,16 +1145,16 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               }}
               onMouseEnter={(e) => { if (!draft) { e.currentTarget.style.background = 'var(--success-color)'; e.currentTarget.style.color = 'var(--text-inverse)' } }}
               onMouseLeave={(e) => { if (!draft) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--success-color)' } }}>
-              {draft ? <X size={9} /> : <Plus size={9} />} {draft ? 'annulla riga' : 'nuova riga'}
+              {draft ? <X size={9} /> : <Plus size={9} />} {draft ? 'annulla' : 'nuova riga'}
             </button>
           )}
           {draft && (
             <button
               onClick={() => draftStatement && setInsertPreview(draftStatement)}
               disabled={!draftStatement}
-              title="rivedi e conferma l'INSERT" data-tip-desc="review the INSERT statement before running it"
+              title={`rivedi e conferma l'INSERT (${draftEntries.length} colonne)`} data-tip-desc="review the INSERT statement before running it"
               style={{
-                display: 'flex', alignItems: 'center', gap: '4px',
+                display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
                 padding: '2px 8px', marginLeft: '4px', height: '18px',
                 background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
                 borderRadius: 'var(--radius-sm)', color: 'var(--accent-color)',
@@ -1116,7 +1163,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               }}
               onMouseEnter={(e) => { if (draftStatement) { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--text-inverse)' } }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent-bg)'; e.currentTarget.style.color = 'var(--accent-color)' }}>
-              <ClipboardCheck size={9} /> rivedi insert{draftEntries.length > 0 ? ` (${draftEntries.length})` : ''}
+              <ClipboardCheck size={9} /> rivedi
             </button>
           )}
           <button
@@ -1124,7 +1171,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             title={selectedRows.size > 0 ? `export ${selectedRows.size} selected rows` : 'export all rows to csv'}
             data-tip-desc="export the grid as a CSV file"
             style={{
-              display: 'flex', alignItems: 'center', gap: '4px',
+              display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
               padding: '2px 8px', marginLeft: '6px', height: '18px',
               background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
               borderRadius: 'var(--radius-sm)', color: 'var(--accent-color)',
@@ -1140,7 +1187,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             title={selectedRows.size > 0 ? `export ${selectedRows.size} selected rows as sql insert` : 'export all rows as sql insert'}
             data-tip-desc="generate SQL INSERT statements from the grid"
             style={{
-              display: 'flex', alignItems: 'center', gap: '4px',
+              display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
               padding: '2px 8px', marginLeft: '4px', height: '18px',
               background: 'transparent', border: '1px solid var(--accent-secondary)',
               borderRadius: 'var(--radius-sm)', color: 'var(--accent-secondary)',
@@ -1312,7 +1359,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                       style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         background: 'none', border: 'none', cursor: 'pointer',
-                        padding: 0, marginLeft: 4, flexShrink: 0,
+                        padding: 0, marginLeft: 4, marginRight: 6, flexShrink: 0,
                         color: isPinned ? 'var(--accent-color)' : 'var(--text-muted)'
                       }}
                       onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
@@ -1320,12 +1367,17 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                     >
                       <Pin size={9} fill={isPinned ? 'currentColor' : 'none'} />
                     </button>
+                    {/* Resize grip: inside the cell, otherwise the header's
+                        overflow:hidden would clip it and make it unclickable */}
                     <div
                       onMouseDown={(e) => startResize(e, col)}
-                      title="drag to resize" data-tip-desc="drag to resize the panel"
+                      onDoubleClick={(e) => { e.stopPropagation(); autofitColumn(col) }}
+                      title="drag to resize · double-click to fit the content" data-tip-desc="drag to resize the column, double-click to fit the widest value"
                       style={{
-                        position: 'absolute', top: -4, right: -8, bottom: -4, width: '6px',
-                        cursor: 'col-resize', zIndex: 15
+                        position: 'absolute', top: 0, right: 0, bottom: 0, width: '7px',
+                        cursor: 'col-resize', zIndex: 15,
+                        // a faint line makes the grip discoverable without hovering
+                        borderLeft: '1px solid var(--border-color)'
                       }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-color)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}

@@ -1,16 +1,20 @@
 import { useState } from 'react'
-import { Loader2, X, GitBranch, FolderGit2, Bug, Sparkles } from 'lucide-react'
+import { Loader2, X, GitBranch, FolderGit2, Bug, Sparkles, Layers } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import type { WorktreeEntry } from '../../types/worktree'
 
 interface NewWorktreeDialogProps {
   repoPath: string
+  /** other worktrees: their branches can be used as the base (stacked worktree) */
+  worktrees?: WorktreeEntry[]
   onClose: () => void
   onCreated: () => void
 }
 
-export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeDialogProps) {
+export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: NewWorktreeDialogProps) {
   const [id, setId] = useState('')
   const [wtType, setWtType] = useState<'feature' | 'bugfix'>('feature')
+  const [base, setBase] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const t = useI18n()
@@ -18,12 +22,18 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
   const branch = id.trim() ? `${wtType}/${id.trim()}` : ''
   const worktreePath = id.trim() ? `${repoPath}\\.worktrees\\${wtType}\\${id.trim()}` : ''
 
+  // candidate bases: every other worktree's branch (excluding the one being created)
+  const baseOptions = (worktrees || [])
+    .map(e => e.branch.replace(/^refs\/heads\//, ''))
+    .filter(b => b && b !== branch && !b.startsWith('('))
+    .sort()
+
   const handleCreate = async () => {
     if (!branch || !worktreePath || isCreating) return
     setError(null)
     setIsCreating(true)
     try {
-      await window.electronAPI.worktree.add(repoPath, branch, worktreePath)
+      await window.electronAPI.worktree.add(repoPath, branch, worktreePath, base || undefined)
       onCreated()
     } catch (e) {
       setError((e as Error).message || 'Errore durante la creazione del worktree')
@@ -109,6 +119,36 @@ export function NewWorktreeDialog({ repoPath, onClose, onCreated }: NewWorktreeD
 
           {infoRow(<GitBranch size={12} />, 'branch', branch)}
           {infoRow(<FolderGit2 size={12} />, 'path', worktreePath)}
+
+          <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+            base
+            <select value={base} onChange={(e) => setBase(e.target.value)}
+              title="branch da cui nasce il nuovo worktree" data-tip-desc="start point of the new branch: develop or another branch (stacked worktree)"
+              style={{
+                display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
+                background: 'var(--bg-input)', border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
+                fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
+              }}>
+              <option value="">develop (default)</option>
+              {baseOptions.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </label>
+
+          {base && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '7px 10px',
+              background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--accent-color)',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', lineHeight: 1.6
+            }}>
+              <Layers size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                worktree impilato: <b>{branch || 'nuovo branch'}</b> nascerà da <b>{base}</b>, non da develop.
+                Il completamento aprirà la PR verso {base}.
+              </span>
+            </div>
+          )}
 
           {error && (
             <div style={{ padding: '8px 10px', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>

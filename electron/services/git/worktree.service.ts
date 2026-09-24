@@ -95,6 +95,176 @@ export function cancelScheduledDeletes(): void {
   pendingDeletes.clear()
 }
 
+// ─── Stacked worktrees (a branch created from another branch) ────────────────
+// The link lives in the repository config (`branch.<name>.damnedide-base`): it is
+// inspectable with plain git and survives app reinstalls, but it is local to the
+// clone — the shared truth for the team remains the PR base branch.
+
+export interface StackLink {
+  parent: string
+  /** tip of the parent when the link was created (detects a rewritten base) */
+  tip?: string
+}
+
+export type ParentState =
+  | 'open' // parent exists and is not in develop yet
+  | 'merged' // parent already merged into develop
+  | 'absorbed' // this branch is already contained in the parent
+  | 'abandoned' // parent branch gone (merged+deleted, or abandoned)
+  | 'rewritten' // parent history rewritten (force-push)
+  | 'unknown'
+
+export interface WorktreeStackInfo {
+  branch: string
+  parent: string
+  tip?: string
+  state: ParentState
+  detail?: string
+  /** commits the parent has and this branch does not (base avanzata) */
+  behindParent: number
+  /** commits this branch has and the parent does not */
+  aheadParent: number
+  /** ref to merge to align this branch (the parent when open, develop otherwise) */
+  mergeRef: string
+}
+
+const BASE_KEY = 'damnedide-base'
+const TIP_KEY = 'damnedide-base-tip'
+
+export async function revParseCommit(git: SimpleGit, ref: string): Promise<string | null> {
+  try {
+    const out = (await git.raw(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).trim()
+    return out || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * True when `ancestor` is reachable from `descendant`.
+ * Compares the merge-base with `ancestor` instead of using `merge-base --is-ancestor`:
+ * simple-git's raw() resolves even when that command exits with 1 (no stderr), which
+ * would make every check look positive.
+ */
+async function isAncestor(git: SimpleGit, ancestor: string, descendant: string): Promise<boolean> {
+  try {
+    const base = (await git.raw(['merge-base', ancestor, descendant])).trim()
+    const head = await revParseCommit(git, ancestor)
+    return !!base && !!head && base === head
+  } catch {
+    return false
+  }
+}
+
+async function countCommits(git: SimpleGit, range: string): Promise<number> {
+  try {
+    return Number((await git.raw(['rev-list', '--count', range])).trim()) || 0
+  } catch {
+    return 0
+  }
+}
+
+/** Prefers the remote-tracking ref, then the local branch. */
+async function resolveRef(git: SimpleGit, name: string): Promise<string | null> {
+  if (await revParseCommit(git, `refs/remotes/origin/${name}`)) return `origin/${name}`
+  if (await revParseCommit(git, name)) return name
+  return null
+}
+
+export async function readStackLink(git: SimpleGit, branch: string): Promise<StackLink | null> {
+  if (!branch) return null
+  try {
+    const parent = (await git.raw(['config', '--get', `branch.${branch}.${BASE_KEY}`])).trim()
+    if (!parent) return null
+    let tip: string | undefined
+    try {
+      tip = (await git.raw(['config', '--get', `branch.${branch}.${TIP_KEY}`])).trim() || undefined
+    } catch { /* optional */ }
+    return { parent, tip }
+  } catch {
+    return null
+  }
+}
+
+export async function writeStackLink(git: SimpleGit, branch: string, parent: string, tip?: string): Promise<void> {
+  await git.raw(['config', `branch.${branch}.${BASE_KEY}`, parent])
+  if (tip) await git.raw(['config', `branch.${branch}.${TIP_KEY}`, tip])
+}
+
+export async function clearStackLink(git: SimpleGit, branch: string): Promise<void> {
+  await git.raw(['config', '--unset', `branch.${branch}.${BASE_KEY}`]).catch(() => { /* already absent */ })
+  await git.raw(['config', '--unset', `branch.${branch}.${TIP_KEY}`]).catch(() => { /* already absent */ })
+}
+
+/**
+ * Classifies the parent of a stacked branch with local signals only (an ADO
+ * check could refine the squash-merge case, which `merge-base` cannot see).
+ */
+export async function parentStatus(git: SimpleGit, branch: string, link: StackLink): Promise<WorktreeStackInfo> {
+  const info: WorktreeStackInfo = {
+    branch, parent: link.parent, tip: link.tip, state: 'open', behindParent: 0, aheadParent: 0, mergeRef: 'origin/develop'
+  }
+  const headRef = await revParseCommit(git, branch)
+  const parentRef = await resolveRef(git, link.parent)
+  const developRef = await resolveRef(git, 'develop')
+  // the parent worktree commits on the local branch and pushes only on completion,
+  // so the local ref can be ahead of the remote one: both are signals
+  const localParent = await revParseCommit(git, link.parent)
+
+  if (!parentRef) {
+    return { ...info, state: 'abandoned', detail: `branch '${link.parent}' non trovato (cancellato dopo il merge?)` }
+  }
+  info.mergeRef = parentRef
+
+  // a child with no commits of its own sits on the recorded base tip: it is not
+  // "absorbed", it is simply empty (absorbed = its own work already in the parent)
+  const childAdvanced = !link.tip || headRef !== link.tip
+  const absorbed = !!headRef && childAdvanced && (
+    await isAncestor(git, headRef, parentRef) ||
+    (!!localParent && await isAncestor(git, headRef, link.parent))
+  )
+  if (absorbed) {
+    return { ...info, state: 'absorbed', detail: `il lavoro di ${branch} è già dentro ${link.parent}` }
+  }
+
+  // a parent with no commits of its own sits exactly on develop: keep it stacked
+  // (targeting it is the same as targeting develop), otherwise a fresh stack
+  // would immediately look "merged"
+  const parentTip = localParent || await revParseCommit(git, parentRef)
+  const parentEmpty = !!developRef && !!parentTip && parentTip === await revParseCommit(git, developRef)
+  // "in develop" requires both refs: an unpushed parent commit keeps it stacked
+  const parentInDevelop = !!developRef &&
+    await isAncestor(git, parentRef, developRef) &&
+    (!localParent || await isAncestor(git, link.parent, developRef))
+  if (!parentEmpty && parentInDevelop) {
+    return {
+      ...info,
+      state: 'merged',
+      detail: `${link.parent} è già in develop`,
+      mergeRef: developRef,
+      behindParent: await countCommits(git, `${branch}..${parentRef}`)
+    }
+  }
+  if (link.tip) {
+    const recorded = await revParseCommit(git, link.tip)
+    if (recorded && !(await isAncestor(git, link.tip, parentRef))) {
+      return {
+        ...info,
+        state: 'rewritten',
+        detail: `la base ${link.parent} è stata riscritta (force-push)`,
+        behindParent: await countCommits(git, `${branch}..${parentRef}`)
+      }
+    }
+  }
+  return {
+    ...info,
+    state: 'open',
+    detail: `${link.parent} non è ancora in develop`,
+    behindParent: await countCommits(git, `${branch}..${parentRef}`),
+    aheadParent: await countCommits(git, `${parentRef}..${branch}`)
+  }
+}
+
 export interface WorktreeServiceHooks {
   /**
    * Closes the Explorer windows showing the folder (Windows): Explorer holds a
@@ -134,7 +304,7 @@ export class WorktreeService {
       } else if (line.startsWith('HEAD ')) {
         current.head = line.slice(5)
       } else if (line.startsWith('branch ')) {
-        current.branch = line.slice(15)
+        current.branch = line.slice(18)
       } else if (line.startsWith('bare')) {
         current.bare = true
       } else if (line.startsWith('detached')) {
@@ -146,7 +316,7 @@ export class WorktreeService {
     return entries
   }
 
-  async add(repoPath: string, branch: string, worktreePath: string): Promise<void> {
+  async add(repoPath: string, branch: string, worktreePath: string, base = 'origin/develop'): Promise<void> {
     const git = this.getGit(repoPath)
     // fail fast with an actionable message instead of git's bare
     // "fatal: not a git repository (or any of the parent directories): .git"
@@ -155,26 +325,37 @@ export class WorktreeService {
     } catch {
       throw new Error(`"${repoPath}" non è un repository git: apri la cartella che contiene la directory .git`)
     }
+
+    // a branch can be checked out in a single worktree
+    const existing = await this.list(repoPath).catch(() => [] as WorktreeEntry[])
+    const taken = existing.find(e => e.branch.replace(/^refs\/heads\//, '') === branch)
+    if (taken) {
+      throw new Error(`il branch '${branch}' è già usato dal worktree "${taken.path}": scegli un altro nome o lavora lì`)
+    }
+
     // `git worktree add` creates the leaf directory but not the missing parents
     await mkdir(dirname(worktreePath), { recursive: true }).catch(() => { /* created by git */ })
 
-    // Fetch develop (no tags — faster) so the new branch starts from the latest.
-    // If the fetch fails (offline), fall back to the local refs; the worktree add
-    // then reports a clear error only if no develop exists at all.
+    // Fetch the base branch (no tags — faster) so the new branch starts from the
+    // latest. If the fetch fails (offline), fall back to the local refs.
+    const baseName = base.replace(/^origin\//, '')
     try {
-      await git.fetch(['--no-tags', 'origin', 'develop'])
+      await git.fetch(['--no-tags', 'origin', baseName])
     } catch { /* offline: proceed with the local ref */ }
 
-    let startPoint = 'origin/develop'
-    try {
-      await git.raw(['rev-parse', '--verify', startPoint])
-    } catch {
-      try {
-        await git.raw(['rev-parse', '--verify', 'develop'])
-        startPoint = 'develop'
-      } catch {
-        throw new Error(`il repository non ha un branch 'develop' (né origin/develop): fai un fetch o crea il branch prima di creare un worktree`)
-      }
+    // start point: the requested base (preferring the remote-tracking ref) then
+    // its local counterpart, then develop for the default base
+    const candidates = base.startsWith('origin/')
+      ? [base, baseName]
+      : [`origin/${baseName}`, baseName]
+    let startPoint: string | null = null
+    for (const candidate of candidates) {
+      if (await revParseCommit(git, candidate)) { startPoint = candidate; break }
+    }
+    if (!startPoint) {
+      throw new Error(baseName === 'develop'
+        ? `il repository non ha un branch 'develop' (né origin/develop): fai un fetch o crea il branch prima di creare un worktree`
+        : `base '${base}' non trovata: fai un fetch o scegli un altro branch`)
     }
 
     await git.raw(['worktree', 'add', '-b', branch, worktreePath, startPoint])
@@ -185,6 +366,45 @@ export class WorktreeService {
     // before it has been pushed (push then creates it).
     await git.raw(['config', `branch.${branch}.remote`, 'origin'])
     await git.raw(['config', `branch.${branch}.merge`, `refs/heads/${branch}`])
+
+    // remember the stack link (a develop base is the default: no link needed)
+    if (baseName !== 'develop') {
+      const tip = await revParseCommit(git, startPoint)
+      await writeStackLink(git, branch, baseName, tip || undefined)
+    }
+  }
+
+  /** Stack info for every linked worktree branch of the repository. */
+  async stack(repoPath: string): Promise<WorktreeStackInfo[]> {
+    const git = this.getGit(repoPath)
+    const entries = await this.list(repoPath)
+    const out: WorktreeStackInfo[] = []
+    for (const entry of entries) {
+      const branch = entry.branch.replace(/^refs\/heads\//, '')
+      if (!branch) continue
+      const link = await readStackLink(git, branch)
+      if (!link) continue
+      out.push(await parentStatus(git, branch, link))
+    }
+    return out
+  }
+
+  /** Drops the stack link of a branch (after a promotion to develop). */
+  async clearLink(repoPath: string, branch: string): Promise<void> {
+    await clearStackLink(this.getGit(repoPath), branch)
+  }
+
+  /** Drops the link of every branch stacked on `parentBranch`; returns them. */
+  async retargetChildren(repoPath: string, parentBranch: string): Promise<string[]> {
+    const git = this.getGit(repoPath)
+    const affected: string[] = []
+    for (const info of await this.stack(repoPath)) {
+      if (info.parent === parentBranch) {
+        await clearStackLink(git, info.branch)
+        affected.push(info.branch)
+      }
+    }
+    return affected
   }
 
   /**

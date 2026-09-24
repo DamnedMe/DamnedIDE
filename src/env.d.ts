@@ -60,6 +60,19 @@ interface AgentProviderInfo {
   docsUrl?: string
 }
 
+type WorktreeParentState = 'open' | 'merged' | 'absorbed' | 'abandoned' | 'rewritten' | 'unknown'
+
+interface WorktreeStackInfo {
+  branch: string
+  parent: string
+  tip?: string
+  state: WorktreeParentState
+  detail?: string
+  behindParent: number
+  aheadParent: number
+  mergeRef: string
+}
+
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
 
 interface UpdateState {
@@ -95,7 +108,7 @@ interface Window {
     platform: string
     ai: {
       status: () => Promise<ClaudeAuthStatus>
-      test: (provider?: AgentProviderId | ClaudeBackend, backend?: ClaudeBackend) => Promise<ClaudeResult>
+      test: (provider?: AgentProviderId | ClaudeBackend, backend?: ClaudeBackend, model?: string) => Promise<ClaudeResult>
       providers: (refresh?: boolean) => Promise<AgentProviderInfo[]>
       models: (provider: AgentProviderId) => Promise<{ id: string; label: string }[]>
       send: (req: AgentSendRequest) => Promise<ClaudeResult>
@@ -130,6 +143,7 @@ interface Window {
       stageAll: (repoPath: string) => Promise<void>
       transferChanges: (sourcePath: string, targetPath: string, opts: { copy: boolean; stagedOnly: boolean }) => Promise<{ ok: boolean; message: string }>
       pushWithUpstream: (repoPath: string) => Promise<void>
+      pushBranch: (repoPath: string, branch: string) => Promise<void>
       merge: (repoPath: string, branch: string) => Promise<{ ok: boolean; message: string; conflicts: string[] }>
       currentBranch: (repoPath: string) => Promise<string>
       gitCommonDir: (repoPath: string) => Promise<string>
@@ -140,8 +154,12 @@ interface Window {
     }
     worktree: {
       list: (repoPath: string) => Promise<WorktreeEntry[]>
-      add: (repoPath: string, branch: string, path: string) => Promise<void>
+      add: (repoPath: string, branch: string, path: string, base?: string) => Promise<void>
       remove: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; warning?: string; trashedPath?: string; error?: string }>
+      stack: (repoPath: string) => Promise<WorktreeStackInfo[]>
+      retargetChildren: (repoPath: string, parentBranch: string) => Promise<string[]>
+      clearLink: (repoPath: string, branch: string) => Promise<void>
+      promote: (repoPath: string, worktreePath: string) => Promise<{ ok: boolean; error?: string; conflicts?: string[] }>
       prune: (repoPath: string) => Promise<void>
     }
     diff: {

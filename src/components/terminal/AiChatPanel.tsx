@@ -35,6 +35,7 @@ export function AiChatPanel() {
   const worktreeEntries = useWorktreeStore(s => s.entries)
   const rules = useAiChatStore(s => s.rules)
   const configuredAgents = useAgentConfigStore(s => s.configured)
+  const configuredModels = useAgentConfigStore(s => s.models)
   const claude = useClaudeStore()
 
   const [providers, setProviders] = useState<AgentProviderInfo[]>([])
@@ -111,9 +112,13 @@ export function AiChatPanel() {
     const info = providers.find(p => p.id === active.provider)
     if (!info) return
     const knownModels = models[active.provider] || info.models
-    if (!active.model && knownModels[0]) updateSession(active.id, { model: knownModels[0].id })
+    // the model chosen in the settings wins over the first catalog entry (the
+    // CLI default may point at a provider without credit)
+    const preferred = configuredModels[active.provider]
+    const fallback = knownModels[0]?.id
+    if (!active.model && (preferred || fallback)) updateSession(active.id, { model: preferred || fallback! })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providers, active?.id, active?.provider])
+  }, [providers, active?.id, active?.provider, configuredModels])
 
   useEffect(() => {
     const el = scrollRef.current

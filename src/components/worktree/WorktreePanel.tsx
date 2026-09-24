@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { PanelContainer } from '../layout/PanelContainer'
 import { ResizableSplitter } from '../layout/ResizableSplitter'
-import { WorktreeList } from './WorktreeList'
+import { WorktreeList, STACK_LABELS } from './WorktreeList'
 import { WorktreeChanges, type WorktreeChangesHandle } from './WorktreeChanges'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { CompleteWorktreeDialog } from './CompleteWorktreeDialog'
@@ -11,7 +11,7 @@ import { FileFilterBar } from '../editor/CodeEditor'
 import { Modal } from '../layout/Modal'
 import { useWorktreeStore, useToastStore } from '../../store'
 import { useI18n } from '../../i18n'
-import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle } from 'lucide-react'
+import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge } from 'lucide-react'
 import { WorktreeEntry } from '../../types/worktree'
 
 type CheckState = 'ok' | 'ko'
@@ -45,6 +45,9 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const [completeTarget, setCompleteTarget] = useState<WorktreeEntry | null>(null)
   const [removeConfirm, setRemoveConfirm] = useState<{ path: string; error?: string } | null>(null)
   const [isForcingRemove, setIsForcingRemove] = useState(false)
+  const [stack, setStack] = useState<Record<string, WorktreeStackInfo>>({})
+  const [removeGuard, setRemoveGuard] = useState<{ path: string; branch: string; children: WorktreeStackInfo[] } | null>(null)
+  const [retargetOnRemove, setRetargetOnRemove] = useState(true)
   const [showNewWorktree, setShowNewWorktree] = useState(false)
   const [hiddenPaths, setHiddenPaths] = useState<Set<string>>(new Set())
   const [listError, setListError] = useState<string | null>(null)
@@ -68,6 +71,16 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     }
   }
 
+  const fetchStack = async () => {
+    if (!repoPath) return
+    try {
+      const list = await window.electronAPI.worktree.stack(repoPath)
+      setStack(Object.fromEntries(list.map(i => [i.branch, i])))
+    } catch {
+      setStack({})
+    }
+  }
+
   const loadWorktrees = async () => {
     if (!repoPath) return
     setLoading(true)
@@ -75,6 +88,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
       await window.electronAPI.worktree.prune(repoPath).catch(() => {})
       await refreshWorktrees()
       setListError(null)
+      void fetchStack()
     } catch (e) {
       // e.g. the opened folder is not a git repository
       setEntries([])
@@ -84,7 +98,37 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     }
   }
 
+  const branchOf = (path: string): string =>
+    entries.find(e => e.path === path)?.branch.replace(/^refs\/heads\//, '') || ''
+
+  /** Removal with the stacked-children guard: a parent can only go if its
+   *  children are re-targeted (or the user accepts leaving them orphaned). */
   const handleRemoveWorktree = async (path: string) => {
+    if (!repoPath) return
+    const branch = branchOf(path)
+    const children = branch ? Object.values(stack).filter(i => i.parent === branch) : []
+    if (children.length > 0) {
+      setRetargetOnRemove(true)
+      setRemoveGuard({ path, branch, children })
+      return
+    }
+    await proceedRemove(path)
+  }
+
+  const confirmGuardedRemove = async () => {
+    if (!removeGuard || !repoPath) return
+    const guard = removeGuard
+    setRemoveGuard(null)
+    if (retargetOnRemove) {
+      try {
+        const affected = await window.electronAPI.worktree.retargetChildren(repoPath, guard.branch)
+        if (affected.length > 0) showToast(`${affected.length} worktree figli re-targettati su develop`)
+      } catch { /* remove anyway */ }
+    }
+    await proceedRemove(guard.path)
+  }
+
+  const proceedRemove = async (path: string) => {
     if (!repoPath) return
     // First attempt: plain removal. If the folder is locked (open in a terminal,
     // Explorer, another app) it fails and we ask for confirmation before forcing.
@@ -112,6 +156,32 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
       setRemoveConfirm(null)
       loadWorktrees()
     }
+  }
+
+  /** Align a stacked worktree with its base (merge of the parent or develop). */
+  const handleAlign = async (worktreePath: string, info: WorktreeStackInfo) => {
+    const merge = await window.electronAPI.git.merge(worktreePath, info.mergeRef)
+    if (merge.ok) {
+      showToast(`allineato su ${info.mergeRef}`)
+      loadWorktrees()
+      return
+    }
+    if (merge.conflicts.length > 0) showToast(`conflitti da risolvere: ${merge.conflicts.join(', ')}`, 'error')
+    else showToast(merge.message || 'allineamento fallito', 'error')
+  }
+
+  /** Drop the stale stack link and align the branch on develop. */
+  const handlePromote = async (entry: WorktreeEntry) => {
+    if (!repoPath) return
+    const branch = entry.branch.replace(/^refs\/heads\//, '')
+    const res = await window.electronAPI.worktree.promote(repoPath, entry.path)
+    if (!res.ok) {
+      if (res.conflicts?.length) showToast(`conflitti da risolvere prima di promuovere: ${res.conflicts.join(', ')}`, 'error')
+      else showToast(res.error || 'promozione fallita', 'error')
+      return
+    }
+    showToast(`${branch} promosso su develop`)
+    loadWorktrees()
   }
 
   const handleHide = (path: string) => {
@@ -276,7 +346,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                       borderRadius: 'var(--radius-md)', overflow: 'hidden'
                     }}>
-                      <WorktreeList repoPath={repoPath} entries={entries} isLoading={isLoading} onRemove={handleRemoveWorktree} onComplete={handleComplete} />
+                      <WorktreeList repoPath={repoPath} entries={entries} isLoading={isLoading} onRemove={handleRemoveWorktree} onComplete={handleComplete} stack={stack} />
                     </div>
                   )}
                   {/* ─── Files section ─── */}
@@ -314,6 +384,58 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                   )}
                 </div>
                 <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  {(() => {
+                    const selectedBranch = branchOf(selectedWorktree)
+                    const info = stack[selectedBranch]
+                    if (!info) return null
+                    const meta = STACK_LABELS[info.state]
+                    const parentEntry = entries.find(e => e.branch.replace(/^refs\/heads\//, '') === info.parent)
+                    const chainBtn: React.CSSProperties = {
+                      display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 7px',
+                      background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+                      cursor: 'pointer', fontSize: 'inherit', fontFamily: 'inherit', fontWeight: 600
+                    }
+                    return (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
+                        padding: '3px 8px', marginBottom: '4px', background: 'var(--bg-card)',
+                        border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
+                        fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0
+                      }}>
+                        <Layers size={11} style={{ color: meta.color, flexShrink: 0 }} />
+                        <span style={{ color: 'var(--text-muted)' }}>develop ›</span>
+                        <button onClick={() => parentEntry && selectWorktree(parentEntry.path)} disabled={!parentEntry}
+                          title={parentEntry ? `vai al worktree di ${info.parent}` : `${info.parent} non è aperto in un worktree`}
+                          data-tip-desc="jump to the parent worktree"
+                          style={{ ...chainBtn, color: parentEntry ? 'var(--accent-color)' : 'var(--text-muted)', cursor: parentEntry ? 'pointer' : 'default' }}>
+                          {info.parent}
+                        </button>
+                        <span style={{ color: 'var(--text-muted)' }}>›</span>
+                        <span style={{ color: 'var(--accent-color)', fontWeight: 700 }}>{selectedBranch}</span>
+                        <span title={info.detail} data-tip-desc={info.detail}
+                          style={{ padding: '0 5px', borderRadius: 'var(--radius-sm)', border: `1px solid ${meta.color}`, color: meta.color, fontWeight: 700 }}>
+                          {meta.label}
+                        </span>
+                        {info.behindParent > 0 && (
+                          <span style={{ color: 'var(--warning-color)' }}>base avanzata (+{info.behindParent})</span>
+                        )}
+                        <div style={{ flex: 1 }} />
+                        <button onClick={() => handleAlign(selectedWorktree, info)}
+                          title={`merge ${info.mergeRef} in questo worktree`} data-tip-desc="align this worktree with its base (merge)"
+                          style={chainBtn}>
+                          <GitMerge size={9} /> allinea
+                        </button>
+                        {(info.state === 'merged' || info.state === 'abandoned' || info.state === 'rewritten') && (
+                          <button onClick={() => { const e = entries.find(x => x.path === selectedWorktree); if (e) void handlePromote(e) }}
+                            title="promuovi su develop: allinea e rimuovi il legame con il padre" data-tip-desc="align on develop and drop the stack link"
+                            style={chainBtn}>
+                            promuovi
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })()}
                   <div style={{ flex: 1, minHeight: 0 }}>
                     <WorktreeChanges worktreePath={selectedWorktree} repoPath={repoPath} checkMarks={checkMarks[selectedWorktree] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedWorktree, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef} />
                   </div>
@@ -331,7 +453,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                 {listError}
               </div>
             ) : (
-              <WorktreeList repoPath={repoPath} entries={entries} isLoading={isLoading} onRemove={handleRemoveWorktree} onComplete={handleComplete} />
+              <WorktreeList repoPath={repoPath} entries={entries} isLoading={isLoading} onRemove={handleRemoveWorktree} onComplete={handleComplete} stack={stack} />
             )}
           </div>
         )}
@@ -352,6 +474,14 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               <StripMenuItem icon={<EyeOff size={12} />} label="hide from list" onClick={() => handleHide(stripMenu.entry.path)} />
             )}
             <StripMenuItem icon={<GitPullRequest size={12} />} label="completa worktree" onClick={() => handleComplete(stripMenu.entry)} />
+            {(() => {
+              const info = stack[stripMenu.entry.branch.replace(/^refs\/heads\//, '')]
+              if (!info || (info.state !== 'merged' && info.state !== 'abandoned' && info.state !== 'rewritten')) return null
+              return (
+                <StripMenuItem icon={<Layers size={12} />} label="promuovi su develop"
+                  onClick={() => { setStripMenu(null); void handlePromote(stripMenu.entry) }} />
+              )
+            })()}
             {!stripMenu.entry.path.includes('.worktrees') ? null : (
               <StripMenuItem icon={<Trash2 size={12} />} label="remove worktree" danger onClick={() => { setStripMenu(null); handleRemoveWorktree(stripMenu.entry.path) }} />
             )}
@@ -371,9 +501,66 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
       {showNewWorktree && repoPath && (
         <NewWorktreeDialog
           repoPath={repoPath}
+          worktrees={entries}
           onClose={() => setShowNewWorktree(false)}
           onCreated={() => { setShowNewWorktree(false); loadWorktrees() }}
         />
+      )}
+
+      {removeGuard && (
+        <Modal onClose={() => setRemoveGuard(null)} width={520} label="remove stacked worktree">
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Layers size={16} style={{ color: 'var(--warning-color)', flexShrink: 0 }} />
+              <span style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {removeGuard.branch} ha worktree impilati
+              </span>
+            </div>
+            <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              Questi worktree nascono da <b>{removeGuard.branch}</b>:
+              <ul style={{ margin: '6px 0 0', paddingLeft: '18px', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                {removeGuard.children.map(c => (
+                  <li key={c.branch}>
+                    {c.branch}
+                    {c.behindParent > 0 ? ` (+${c.behindParent} dalla base)` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer',
+              fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)'
+            }}>
+              <input type="checkbox" checked={retargetOnRemove} onChange={(e) => setRetargetOnRemove(e.target.checked)} />
+              re-target dei figli su develop (rimuove il legame con il padre)
+            </label>
+            {!retargetOnRemove && (
+              <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--warning-color)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
+                i figli resteranno con un legame verso un branch che non esiste più (badge "padre mancante")
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => setRemoveGuard(null)}
+                style={{
+                  display: 'flex', alignItems: 'center', padding: '5px 12px', height: '26px',
+                  background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-secondary)', cursor: 'pointer',
+                  fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                }}>
+                {t('cancel')}
+              </button>
+              <button onClick={confirmGuardedRemove}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '26px',
+                  background: 'var(--error-color)', border: 'none', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-inverse)', cursor: 'pointer',
+                  fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                }}>
+                <Trash2 size={11} /> rimuovi
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {removeConfirm && (

@@ -11,8 +11,8 @@ const electronAPI = {
   platform: process.platform,
   ai: {
     status: (): Promise<ClaudeAuthStatus> => ipcRenderer.invoke('ai:status'),
-    test: (provider?: string, backend?: 'subscription' | 'api'): Promise<ClaudeResult> =>
-      ipcRenderer.invoke('ai:test', provider, backend),
+    test: (provider?: string, backend?: 'subscription' | 'api', model?: string): Promise<ClaudeResult> =>
+      ipcRenderer.invoke('ai:test', provider, backend, model),
     providers: (refresh?: boolean): Promise<AgentProviderInfo[]> => ipcRenderer.invoke('ai:providers', refresh),
     models: (provider: string): Promise<{ id: string; label: string }[]> => ipcRenderer.invoke('ai:models', provider),
     send: (req: AgentSendRequest): Promise<ClaudeResult> => ipcRenderer.invoke('ai:send', req),
@@ -65,6 +65,7 @@ const electronAPI = {
     transferChanges: (sourcePath: string, targetPath: string, opts: { copy: boolean; stagedOnly: boolean }) =>
       ipcRenderer.invoke('git:transferChanges', sourcePath, targetPath, opts),
     pushWithUpstream: (repoPath: string) => ipcRenderer.invoke('git:pushWithUpstream', repoPath),
+    pushBranch: (repoPath: string, branch: string) => ipcRenderer.invoke('git:pushBranch', repoPath, branch),
     merge: (repoPath: string, branch: string) => ipcRenderer.invoke('git:merge', repoPath, branch),
     currentBranch: (repoPath: string) => ipcRenderer.invoke('git:currentBranch', repoPath),
     gitCommonDir: (repoPath: string) => ipcRenderer.invoke('git:gitCommonDir', repoPath),
@@ -75,9 +76,13 @@ const electronAPI = {
   },
   worktree: {
     list: (repoPath: string) => ipcRenderer.invoke('worktree:list', repoPath),
-    add: (repoPath: string, branch: string, path: string) =>
-      ipcRenderer.invoke('worktree:add', repoPath, branch, path),
+    add: (repoPath: string, branch: string, path: string, base?: string) =>
+      ipcRenderer.invoke('worktree:add', repoPath, branch, path, base),
     remove: (repoPath: string, worktreePath: string, force?: boolean) => ipcRenderer.invoke('worktree:remove', repoPath, worktreePath, force),
+    stack: (repoPath: string) => ipcRenderer.invoke('worktree:stack', repoPath),
+    retargetChildren: (repoPath: string, parentBranch: string) => ipcRenderer.invoke('worktree:retargetChildren', repoPath, parentBranch),
+    clearLink: (repoPath: string, branch: string) => ipcRenderer.invoke('worktree:clearLink', repoPath, branch),
+    promote: (repoPath: string, worktreePath: string) => ipcRenderer.invoke('worktree:promote', repoPath, worktreePath),
     prune: (repoPath: string) => ipcRenderer.invoke('worktree:prune', repoPath)
   },
   diff: {

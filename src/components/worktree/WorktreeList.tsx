@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useWorktreeStore } from '../../store'
 import { WorktreeEntry } from '../../types/worktree'
-import { GitBranch, Bug, Loader2, Trash2, EyeOff, Eye, GitPullRequest } from 'lucide-react'
+import { GitBranch, Bug, Loader2, Trash2, EyeOff, Eye, GitPullRequest, Layers } from 'lucide-react'
 
 interface WorktreeListProps {
   repoPath: string
@@ -9,9 +9,20 @@ interface WorktreeListProps {
   isLoading: boolean
   onRemove?: (path: string) => void
   onComplete?: (entry: WorktreeEntry) => void
+  /** stack info per branch (parent, state) */
+  stack?: Record<string, WorktreeStackInfo>
 }
 
-export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplete }: WorktreeListProps) {
+export const STACK_LABELS: Record<WorktreeParentState, { label: string; color: string; tip: string }> = {
+  open: { label: 'stacked', color: 'var(--accent-color)', tip: 'il padre non è ancora in develop' },
+  merged: { label: 'padre in develop', color: 'var(--warning-color)', tip: 'il padre è già in develop: promuovi su develop' },
+  absorbed: { label: 'assorbito', color: 'var(--success-color)', tip: 'il lavoro è già dentro il padre: il worktree può essere rimosso' },
+  abandoned: { label: 'padre mancante', color: 'var(--error-color)', tip: 'il branch padre non esiste più' },
+  rewritten: { label: 'base riscritta', color: 'var(--warning-color)', tip: 'la storia del padre è stata riscritta (force-push)' },
+  unknown: { label: 'da verificare', color: 'var(--text-muted)', tip: 'stato non determinabile' }
+}
+
+export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplete, stack }: WorktreeListProps) {
   const { selectedWorktree, selectWorktree } = useWorktreeStore()
   const [hiddenPaths, setHiddenPaths] = useState<Set<string>>(new Set())
   const [showHidden, setShowHidden] = useState(false)
@@ -187,6 +198,35 @@ export function WorktreeList({ repoPath, entries, isLoading, onRemove, onComplet
               }}>
                 {entry.path}
               </div>
+              {(() => {
+                const info = stack?.[entry.branch.replace(/^refs\/heads\//, '')]
+                if (!info) return null
+                const meta = STACK_LABELS[info.state]
+                return (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', marginTop: '4px',
+                    fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+                  }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-muted)' }}>
+                      <Layers size={10} style={{ color: meta.color }} />
+                      ↳ da {info.parent}
+                    </span>
+                    <span
+                      title={info.detail || meta.tip} data-tip-desc={info.detail || meta.tip}
+                      style={{
+                        padding: '0 5px', borderRadius: 'var(--radius-sm)', border: `1px solid ${meta.color}`,
+                        color: meta.color, fontWeight: 700
+                      }}>
+                      {meta.label}
+                    </span>
+                    {info.behindParent > 0 && (
+                      <span style={{ color: 'var(--warning-color)' }}>
+                        base avanzata (+{info.behindParent})
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )
         })}

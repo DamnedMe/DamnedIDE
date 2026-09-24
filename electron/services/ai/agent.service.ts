@@ -19,6 +19,8 @@ export interface AgentSendRequest {
   history?: { role: 'user' | 'assistant'; text: string }[]
   // claude only: subscription CLI (default) or Anthropic API with the stored key
   backend?: 'subscription' | 'api'
+  // hard cap on a single turn: the settings "verifica" must never spin forever
+  timeoutMs?: number
 }
 
 export interface AgentProviderInfo {
@@ -338,8 +340,13 @@ export class AgentService {
   /** Cheap real round trip that proves the provider is authenticated. */
   async test(provider: AgentProviderId, win: BrowserWindow | null, backend?: 'subscription' | 'api', model?: string): Promise<ClaudeResult> {
     if (provider === 'claude') return this.claude.test(backend || 'subscription', win)
-    // the chosen model matters: the CLI default may be a provider without credit
-    return this.send({ chatKey: '__test__', provider, prompt: 'Rispondi solo con: ok', model: model || undefined }, win)
+    // the chosen model matters: the CLI default may be a provider without credit.
+    // a slow provider can take over a minute (retries) before it reports the
+    // error, so cap the wait and report it instead of spinning forever
+    return this.send({
+      chatKey: '__test__', provider, prompt: 'Rispondi solo con: ok',
+      model: model || undefined, timeoutMs: 150_000
+    }, win)
   }
 
   /** Runs a short CLI command capturing stdout+stderr (auth probes, status). */
@@ -363,7 +370,14 @@ export class AgentService {
     })
     if (!out) return OPENCODE_MODELS
     const ids = out.split('\n').map(l => l.trim()).filter(l => /^[\w.-]+\/[\w.-]+$/.test(l))
-    return ids.length ? ids.map(id => ({ id, label: id })) : OPENCODE_MODELS
+    if (!ids.length) return OPENCODE_MODELS
+    // the CLI list is alphabetical, so its first entry would silently become the
+    // default for the verifica: the curated opencode-go models stay on top
+    const curated = OPENCODE_MODELS.filter(m => ids.includes(m.id))
+    const rest = ids
+      .filter(id => !OPENCODE_MODELS.some(m => m.id === id))
+      .map(id => ({ id, label: id }))
+    return [...curated, ...rest]
   }
 
   cancel(chatKey: string): void {
@@ -411,6 +425,28 @@ export class AgentService {
       }
       this.runs.set(req.chatKey, { proc })
 
+      let settled = false
+      let deadline: NodeJS.Timeout | null = null
+      const finish = (result: ClaudeResult) => {
+        if (settled) return
+        settled = true
+        if (deadline) clearTimeout(deadline)
+        resolve(result)
+      }
+      // a stuck CLI must not leave the caller waiting forever (the settings
+      // "verifica" would spin with no end): chats are long, the test is capped
+      if (req.timeoutMs) {
+        deadline = setTimeout(() => {
+          try { proc.kill() } catch { /* already dead */ }
+          this.runs.delete(req.chatKey)
+          finish({
+            ok: false,
+            error: `'${spec.command}' non ha risposto entro ${Math.round(req.timeoutMs! / 1000)}s` +
+              `${req.model ? ` (modello: ${req.model})` : ''}`
+          })
+        }, req.timeoutMs)
+      }
+
       let text = ''
       let session = req.resume || ''
       let costUsd = 0
@@ -446,16 +482,16 @@ export class AgentService {
       proc.stderr!.on('data', (d) => { stderr += String(d) })
       proc.on('error', (e) => {
         this.runs.delete(req.chatKey)
-        resolve({ ok: false, error: `avvio di '${spec.command}' fallito: ${e.message}` })
+        finish({ ok: false, error: `avvio di '${spec.command}' fallito: ${e.message}` })
       })
       proc.on('exit', (code) => {
         this.runs.delete(req.chatKey)
-        if (code === 0 && !failed) resolve({ ok: true, text, sessionId: session || undefined, costUsd, usage })
+        if (code === 0 && !failed) finish({ ok: true, text, sessionId: session || undefined, costUsd, usage })
         else {
           const base = failure || text.trim() || stderr.trim() || `${spec.command} terminato con codice ${code ?? '?'}`
           // name the model: a provider error (e.g. "Insufficient Balance") is
           // actionable only if the user knows which model/provider produced it
-          resolve({ ok: false, error: `${base}${req.model ? ` (modello: ${req.model})` : ` (modello predefinito di ${spec.label})`}` })
+          finish({ ok: false, error: `${base}${req.model ? ` (modello: ${req.model})` : ` (modello predefinito di ${spec.label})`}` })
         }
       })
 

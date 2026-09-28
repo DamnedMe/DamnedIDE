@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Plus, Trash2, Loader2, Check, AlertCircle, RefreshCw, ExternalLink, TerminalSquare } from 'lucide-react'
+import { Bot, Plus, Trash2, Loader2, Check, AlertCircle, RefreshCw, ExternalLink, TerminalSquare, X } from 'lucide-react'
 import { Modal } from '../layout/Modal'
 import { useAgentConfigStore, useClaudeStore, useToastStore, useTerminalStore, ALL_AGENT_PROVIDERS } from '../../store'
 import { ClaudeSettings } from '../mcp/ClaudeSettings'
@@ -222,6 +222,13 @@ export function AgentSettings() {
             {testing === id ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={11} />}
             {testing === id ? `verifica ${testElapsed}s` : 'verifica'}
           </button>
+          {testing === id && (
+            <button onClick={() => window.electronAPI.ai.cancel('__test__')}
+              title="annulla la verifica" data-tip-desc="interrompe il turno di prova (alcuni provider ritentano a lungo prima di rispondere)"
+              style={actionBtn(true, 'var(--error-color)')}>
+              <X size={11} /> stop
+            </button>
+          )}
         </div>
 
         {result && (

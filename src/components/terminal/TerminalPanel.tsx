@@ -15,7 +15,11 @@ interface Tab {
   title: string
 }
 
-// xterm theme derived from the IDE theme + primary color (accent)
+// xterm theme derived from the IDE theme + primary color (accent).
+// The 16 ANSI colors follow the VS Code defaults: interactive TUIs (opencode,
+// codex, ...) paint their list highlights with these, and the previous neon
+// palette put light text on light backgrounds, making the selected row
+// unreadable. Contrast is additionally enforced by minimumContrastRatio.
 function buildTermTheme(accent: string, dark: boolean) {
   const fg = dark ? '#f0f0f0' : '#111122'
   const bg = dark ? '#0a0a0a' : '#ffffff'
@@ -26,22 +30,22 @@ function buildTermTheme(accent: string, dark: boolean) {
     cursorAccent: bg,
     selectionBackground: hexToRgba(accent, 0.3),
     selectionForeground: fg,
-    black: dark ? '#1a1a1a' : '#333344',
-    red: dark ? '#ff5566' : '#cc2244',
-    green: dark ? '#00ff77' : '#008855',
-    yellow: dark ? '#ffbb00' : '#bb7700',
-    blue: dark ? '#44bbff' : '#0055dd',
-    magenta: dark ? '#aa55ff' : '#7722ee',
+    black: dark ? '#3b3b3b' : '#000000',
+    red: '#cd3131',
+    green: dark ? '#0dbc79' : '#00bc00',
+    yellow: dark ? '#e5e510' : '#949800',
+    blue: dark ? '#2472c8' : '#0451a5',
+    magenta: dark ? '#bc3fbc' : '#bc05bc',
     cyan: accent,
-    white: fg,
-    brightBlack: dark ? '#666677' : '#8899aa',
-    brightRed: dark ? '#ff7788' : '#dd4455',
-    brightGreen: dark ? '#33ff99' : '#22aa66',
-    brightYellow: dark ? '#ffcc33' : '#cc9922',
-    brightBlue: dark ? '#66ccff' : '#2266dd',
-    brightMagenta: dark ? '#cc77ff' : '#9944ee',
+    white: dark ? '#e5e5e5' : '#555555',
+    brightBlack: dark ? '#767676' : '#666666',
+    brightRed: dark ? '#f14c4c' : '#cd3131',
+    brightGreen: dark ? '#23d18b' : '#14ce14',
+    brightYellow: dark ? '#f5f543' : '#b5ba00',
+    brightBlue: dark ? '#3b8eea' : '#0451a5',
+    brightMagenta: dark ? '#d670d6' : '#bc05bc',
     brightCyan: accent,
-    brightWhite: dark ? '#ffffff' : '#000000'
+    brightWhite: dark ? '#f5f5f5' : '#a5a5a5'
   }
 }
 
@@ -100,6 +104,9 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
       fontSize: 12,
       fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
       theme: buildTermTheme(accentColor, uiTheme === 'dark'),
+      // same default as VS Code: a TUI that paints a coloured background (list
+      // selection, banners) must never end up with unreadable text on it
+      minimumContrastRatio: 4.5,
       allowProposedApi: true
     })
 

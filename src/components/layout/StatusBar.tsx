@@ -1,6 +1,6 @@
 import { GitBranch, AlertCircle, CheckCircle2, Sun, Moon, TerminalSquare, Bot } from 'lucide-react'
 import logo from '../../assets/logo.png'
-import { useMcpStore } from '../../store'
+import { useAgentConfigStore, useMcpStore } from '../../store'
 
 interface StatusBarProps {
   repoPath: string | null
@@ -16,6 +16,10 @@ interface StatusBarProps {
 
 export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, onToggleTheme, onToggleTerminal, terminalOpen, onToggleAi, aiOpen }: StatusBarProps) {
   const hasMcp = useMcpStore(s => s.custom.length > 0 || Object.keys(s.connected).length > 0)
+  // the chat is not MCP-only anymore: it also hosts the configured AI agents,
+  // so the button must show up as soon as there is something to talk to
+  const hasAgents = useAgentConfigStore(s => s.configured.length > 0)
+  const canChat = hasMcp || hasAgents
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -26,11 +30,11 @@ export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, o
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <img src={logo} alt="logo" style={{ width: '15px', height: '15px', flexShrink: 0, objectFit: 'contain' }} />
-        {onToggleAi && hasMcp && (
+        {onToggleAi && canChat && (
           <button onClick={onToggleAi}
             title={aiOpen ? 'hide AI chat' : 'open AI chat'}
             data-tip={aiOpen ? 'hide AI chat' : 'open AI chat'}
-            data-tip-desc="chat with the agent using the configured MCP server"
+            data-tip-desc="chat with the configured agents (and MCP tools)"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: aiOpen ? 'var(--accent-bg)' : 'none',

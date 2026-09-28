@@ -221,9 +221,13 @@ export function AiChatPanel() {
   const miniSelect = (label: string, value: string, options: [string, string][], onChange: (v: string) => void) => (
     <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
       {label}
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...selectStyle, maxWidth: '160px' }}>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        title={value} data-tip={value} data-tip-desc="currently selected value"
+        style={{ ...selectStyle, flex: 1, minWidth: '150px', maxWidth: '290px' }}>
         {value && !options.some(o => o[0] === value) && <option value={value}>{value}</option>}
-        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        {/* the catalog can be long (opencode lists every configured provider):
+            mark the current entry so it is obvious while scrolling the list */}
+        {options.map(([v, l]) => <option key={v} value={v}>{v === value ? `✓ ${l}` : l}</option>)}
       </select>
     </label>
   )

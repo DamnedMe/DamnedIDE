@@ -241,6 +241,8 @@ const CLI_SPECS: CliSpec[] = [
 
 interface Run {
   proc?: ChildProcess
+  /** set by cancel(): the turn was stopped on purpose, not by a provider error */
+  cancelled?: boolean
 }
 
 // Multi-provider agent chat. Claude keeps its own service (subscription CLI or
@@ -383,6 +385,7 @@ export class AgentService {
   cancel(chatKey: string): void {
     const run = this.runs.get(chatKey)
     if (!run) return
+    run.cancelled = true
     this.runs.delete(chatKey)
     try { run.proc?.kill() } catch { /* already dead */ }
   }
@@ -423,7 +426,8 @@ export class AgentService {
         resolve({ ok: false, error: `avvio di '${spec.command}' fallito: ${(e as Error).message}` })
         return
       }
-      this.runs.set(req.chatKey, { proc })
+      const run: Run = { proc }
+      this.runs.set(req.chatKey, run)
 
       let settled = false
       let deadline: NodeJS.Timeout | null = null
@@ -481,11 +485,15 @@ export class AgentService {
 
       proc.stderr!.on('data', (d) => { stderr += String(d) })
       proc.on('error', (e) => {
-        this.runs.delete(req.chatKey)
+        if (this.runs.get(req.chatKey) === run) this.runs.delete(req.chatKey)
         finish({ ok: false, error: `avvio di '${spec.command}' fallito: ${e.message}` })
       })
       proc.on('exit', (code) => {
-        this.runs.delete(req.chatKey)
+        if (run.cancelled) {
+          finish({ ok: false, error: 'annullato dall\'utente' })
+          return
+        }
+        if (this.runs.get(req.chatKey) === run) this.runs.delete(req.chatKey)
         if (code === 0 && !failed) finish({ ok: true, text, sessionId: session || undefined, costUsd, usage })
         else {
           const base = failure || text.trim() || stderr.trim() || `${spec.command} terminato con codice ${code ?? '?'}`

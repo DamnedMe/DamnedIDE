@@ -423,5 +423,5 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
 const menuItemStyle: React.CSSProperties = {
   width: '100%', height: 28, padding: '0 8px', display: 'flex', alignItems: 'center', gap: 7,
   border: 0, borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--text-primary)',
-  cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, textAlign: 'left'
+  cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', textAlign: 'left'
 }

@@ -32,7 +32,7 @@ function tabStyle(active: boolean): React.CSSProperties {
     height: 28, padding: '0 11px', display: 'inline-flex', alignItems: 'center', gap: 5,
     border: 0, borderBottom: active ? '2px solid var(--accent-color)' : '2px solid transparent',
     background: active ? 'var(--bg-card)' : 'transparent', color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-    cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: active ? 600 : 500
+    cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontWeight: active ? 600 : 500
   }
 }
 
@@ -70,7 +70,7 @@ export function SqlQueryOutput({ execution, messages, running, selected, onSelec
         <div className={`sql-query-output__status ${running ? 'is-running' : ''}`} data-testid="sql-query-progress" aria-live="polite" style={{
           marginLeft: 'auto', minWidth: 0, padding: '0 9px', display: 'flex', alignItems: 'center', gap: 6,
           color: running ? 'var(--accent-color)' : latest?.tone === 'error' ? 'var(--error-color)' : 'var(--text-muted)',
-          fontFamily: 'var(--font-mono)', fontSize: 9, fontVariantNumeric: 'tabular-nums'
+          fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontVariantNumeric: 'tabular-nums'
         }}>
           {running
             ? <Loader2 size={10} style={{ animation: 'spin 0.9s linear infinite', flexShrink: 0 }} />
@@ -87,7 +87,7 @@ export function SqlQueryOutput({ execution, messages, running, selected, onSelec
         <div role="tabpanel" aria-label="Messages" style={{
           flex: 1, minHeight: 0, overflow: 'auto', padding: '10px 12px',
           background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)',
-          fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.65
+          fontFamily: 'var(--font-mono)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', lineHeight: 1.65
         }}>
           {messages.length === 0 ? (
             <div style={{ color: 'var(--text-muted)' }}>No messages for this query tab.</div>

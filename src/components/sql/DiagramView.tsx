@@ -6,6 +6,7 @@ import {
   Loader2, Image, Search, Play, PanelRightClose
 } from 'lucide-react'
 import { layoutSqlDiagram, TableLayout } from './sqlDiagramLayout'
+import { useSettingsStore } from '../../store'
 
 interface DiagramViewProps {
   connId: string
@@ -60,6 +61,10 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
   const [viewport, setViewport] = useState({ w: 600, h: 400 })
   const [selectedTable, setSelectedTable] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  // The canvas text starts from the IDE text-size setting; the dedicated diagram
+  // zoom (state `zoom`) then scales the whole SVG on top of it.
+  const settingsFontSize = useSettingsStore(s => s.settings.fontSize)
+  const svgTextScale = Math.min(1.9, Math.max(0.6, settingsFontSize / 12.5))
   const svgRef = useRef<SVGSVGElement | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const positionsRef = useRef(positions)
@@ -514,11 +519,11 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                         strokeWidth={isSelected ? 2 : isMatch ? 1.5 : 1} vectorEffect="non-scaling-stroke" />
                       <rect x="0" y="0" width={table.w} height="27" rx="7" fill={isSelected ? 'var(--bg-active)' : 'var(--bg-card)'} />
                       <path d={`M 0 27 H ${table.w}`} stroke="var(--border-subtle)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                      <text x="10" y="18" fontSize="11" fontWeight="600" fill={isSelected || isMatch ? 'var(--accent-color)' : 'var(--text-primary)'} fontFamily="var(--font-mono)">
+                      <text x="10" y="18" fontSize={11 * svgTextScale} fontWeight="600" fill={isSelected || isMatch ? 'var(--accent-color)' : 'var(--text-primary)'} fontFamily="var(--font-mono)">
                         {shortName(table.name)}
                       </text>
                       {overview ? (
-                        <text x="10" y="41" fontSize="8.5" fill="var(--text-muted)" fontFamily="var(--font-mono)">
+                        <text x="10" y="41" fontSize={8.5 * svgTextScale} fill="var(--text-muted)" fontFamily="var(--font-mono)">
                           {table.columns.length} columns
                         </text>
                       ) : (
@@ -526,18 +531,18 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                           {table.visibleColumns.map((column, index) => (
                             <g key={column.name} transform={`translate(8 ${28 + index * 20})`}>
                               {column.isPrimaryKey ? <KeyRoundIcon /> : column.isForeignKey ? <Link2Icon /> : null}
-                              <text x={column.isPrimaryKey || column.isForeignKey ? 14 : 0} y="13" fontSize="10"
+                              <text x={column.isPrimaryKey || column.isForeignKey ? 14 : 0} y="13" fontSize={10 * svgTextScale}
                                 fill={column.isPrimaryKey ? PK_COLOR : column.isForeignKey ? FK_COLOR : 'var(--text-secondary)'} fontFamily="var(--font-mono)">
                                 {shortName(column.name, 21)}
                               </text>
-                              <text x={table.w - 16} y="13" fontSize="8.5" textAnchor="end" fill="var(--text-muted)" fontFamily="var(--font-mono)">
+                              <text x={table.w - 16} y="13" fontSize={8.5 * svgTextScale} textAnchor="end" fill="var(--text-muted)" fontFamily="var(--font-mono)">
                                 {shortName(column.type, 14)}
                               </text>
                               <line x1="0" y1="19" x2={table.w - 16} y2="19" stroke="var(--border-subtle)" strokeWidth="0.5" />
                             </g>
                           ))}
                           {table.hiddenColumnCount > 0 && (
-                            <text x="10" y={table.h - 7} fontSize="8.5" fill="var(--text-muted)" fontFamily="var(--font-mono)">
+                            <text x="10" y={table.h - 7} fontSize={8.5 * svgTextScale} fill="var(--text-muted)" fontFamily="var(--font-mono)">
                               + {table.hiddenColumnCount} more columns · inspect →
                             </text>
                           )}

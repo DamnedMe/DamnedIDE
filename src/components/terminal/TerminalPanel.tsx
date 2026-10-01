@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import { PanelContainer } from '../layout/PanelContainer'
 import { useUIStore, useSettingsStore, useTerminalStore } from '../../store'
 import { hexToRgba } from '../../utils/color'
+import { appFontStack } from '../../utils/fonts'
 import { Monitor, ExternalLink, Plus, X, ChevronDown } from 'lucide-react'
 
 type ShellType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
@@ -86,13 +87,17 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
   const disposedRef = useRef(false)
   let pendingBuffer = ''
   const accentColor = useSettingsStore(s => s.settings.accentColor)
+  const appFont = useSettingsStore(s => s.settings.appFont)
   const uiTheme = useUIStore(s => s.theme)
 
-  // keep the terminal theme in sync with the IDE primary color / theme
+  // keep the terminal theme in sync with the IDE primary color / theme / font
   useEffect(() => {
     const t = xtermRef.current
-    if (t) t.options.theme = buildTermTheme(accentColor, uiTheme === 'dark')
-  }, [accentColor, uiTheme])
+    if (t) {
+      t.options.theme = buildTermTheme(accentColor, uiTheme === 'dark')
+      t.options.fontFamily = appFontStack(appFont)
+    }
+  }, [accentColor, uiTheme, appFont])
 
   const disposeTerm = () => {
     unsubRef.current?.()
@@ -123,7 +128,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
 
     const term = new Terminal({
       fontSize: 12,
-      fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+      fontFamily: appFontStack(appFont),
       theme: buildTermTheme(accentColor, uiTheme === 'dark'),
       // same default as VS Code: a TUI that paints a coloured background (list
       // selection, banners) must never end up with unreadable text on it

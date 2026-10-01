@@ -16,6 +16,7 @@ import { RecentReposDialog } from './components/layout/RecentReposDialog'
 import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
+import { appFontStack, ensureFontLoaded } from './utils/fonts'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from './components/editor/monaco-theme'
 import {
   GitBranch,
@@ -44,6 +45,7 @@ export default function App() {
   const accentColor = useSettingsStore(s => s.settings.accentColor)
   const iconSize = useSettingsStore(s => s.settings.iconSize)
   const fontSize = useSettingsStore(s => s.settings.fontSize)
+  const appFont = useSettingsStore(s => s.settings.appFont)
   const updateSettings = useSettingsStore(s => s.updateSettings)
   const gitStatus = useGitStore(s => s.status)
   const gitFiles = useGitStore(s => s.files)
@@ -212,8 +214,15 @@ export default function App() {
     document.documentElement.style.setProperty('--icon-zoom', String(iconSize / 14))
   }, [iconSize])
 
+  // Global font family: one family for the whole IDE (UI, SQL, editors,
+  // terminal). Google Fonts are fetched on demand, offline it falls back.
   useEffect(() => {
-    const scale = Math.min(1.9, Math.max(0.6, fontSize / 12.5))
+    document.documentElement.style.setProperty('--app-font', appFontStack(appFont))
+    ensureFontLoaded(appFont)
+  }, [appFont])
+
+  useEffect(() => {
+    const scale = Math.min(2.4, Math.max(0.5, fontSize / 12.5))
     document.documentElement.style.setProperty('--ui-text-scale', String(scale))
   }, [fontSize])
 

@@ -9,7 +9,7 @@
 html, body, #root {
   height: 100%;
   overflow: hidden;
-  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+  font-family: var(--app-font, 'Nunito', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace);
   font-size: calc(12px * var(--ui-text-scale, 1));
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;

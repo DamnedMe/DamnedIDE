@@ -13,6 +13,7 @@ import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnosti
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
 import { FileTypeIcon } from '../../utils/file-icon'
 import { joinPath, basenameOf, dirnameOf, normalizeSlashes } from '../../utils/paths'
+import { appFontStack } from '../../utils/fonts'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { MarkdownView } from './MarkdownView'
 import Editor, { OnMount } from '@monaco-editor/react'
@@ -1434,7 +1435,7 @@ export function CodeEditor() {
             onMount={handleEditorMount}
             options={{
               fontSize,
-              fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+              fontFamily: appFontStack(settings.appFont),
               fontLigatures: settings.fontLigatures,
               mouseWheelZoom: true,
               minimap: { enabled: settings.minimap, maxColumn: 80, renderCharacters: false },
@@ -1557,7 +1558,7 @@ export function CodeEditor() {
             }}
             style={{
               flex: 1, overflow: 'auto', margin: 0, padding: '6px 10px', outline: 'none',
-              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
               color: 'var(--text-primary)', background: 'var(--bg-card)',
               whiteSpace: 'pre-wrap', wordBreak: 'break-all'
             }}

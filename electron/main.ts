@@ -19,6 +19,7 @@ import { AgentService, AgentSendRequest, AgentProviderId } from './services/ai/a
 import { UpdateService } from './services/update/update.service'
 import { watchRoot, unwatchRoot, closeAllWatchers } from './services/watch/watch.service'
 import { openTargetFromArgv, resolveOpenTarget, type OpenTarget } from './services/open/open-target'
+import { buildXlsx } from './services/export/xlsx.service'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
@@ -289,6 +290,8 @@ function registerIpcHandlers(
   ipcMain.handle('sql:backup', ipc((connectionId: string, database: string, options: { path: string; compress: boolean; copyOnly: boolean; init: boolean }) =>
     sql.backupDatabase(connectionId, database, options)))
   ipcMain.handle('sql:sqlPackageInfo', () => sql.sqlPackageInfo())
+  ipcMain.handle('sql:restore', ipc((connectionId: string, options: { path: string; database: string; replace: boolean }) =>
+    sql.restoreDatabase(connectionId, options)))
   ipcMain.handle('sql:dataTier', ipc((connectionId: string, database: string, action: 'extract' | 'export', targetFile: string) =>
     sql.dataTier(connectionId, database, action, targetFile, mainWindow)))
   ipcMain.handle('sql:dataTierCancel', () => { sql.cancelDataTier() })
@@ -319,6 +322,29 @@ function registerIpcHandlers(
       filters
     })
     return result.canceled || !result.filePath ? null : result.filePath
+  })
+
+  ipcMain.handle('dialog:openFile', async (_e, title: string, filters: { name: string; extensions: string[] }[]) => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title,
+      properties: ['openFile'],
+      filters
+    })
+    return result.canceled || !result.filePaths[0] ? null : result.filePaths[0]
+  })
+
+  // The SQL results grid exports a real .xlsx (written here, no renderer library)
+  ipcMain.handle('export:xlsx', async (_e, defaultName: string, sheetName: string, columns: string[], rows: (string | number | boolean | null)[][]) => {
+    const safeName = (defaultName || 'query_results.xlsx').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/[. ]+$/, '') || 'query_results.xlsx'
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Esporta in Excel',
+      defaultPath: safeName.toLocaleLowerCase().endsWith('.xlsx') ? safeName : `${safeName}.xlsx`,
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }, { name: 'All files', extensions: ['*'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    const file = result.filePath.toLocaleLowerCase().endsWith('.xlsx') ? result.filePath : `${result.filePath}.xlsx`
+    await writeFile(file, buildXlsx({ name: sheetName || 'Results', columns: columns || [], rows: rows || [] }))
+    return file
   })
 
   // ─── Filesystem ─────────────────────────────────────

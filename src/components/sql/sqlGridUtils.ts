@@ -20,20 +20,26 @@ export function calculateColumnMetrics(
   widths: Record<string, number>,
   pinned: string[],
   defaultWidth: number
-): { totalWidth: number; pinnedLeft: Record<string, number>; columnLeft: Record<string, number>; columnWidth: Record<string, number> } {
-  let totalWidth = 0
+): { totalWidth: number; pinnedLeft: Record<string, number>; columnLeft: Record<string, number>; columnWidth: Record<string, number>; railWidth: number } {
+  const widthOf = (column: string): number => widths[column] ?? defaultWidth
+  // Pinned columns live in a fixed rail on the left, ordered like the result.
+  // They are removed from the scrolling flow, so the columns before them take
+  // the space they leave free instead of being hidden under the pinned ones.
+  const pinnedLeft: Record<string, number> = {}
+  let railWidth = 0
+  for (const column of columns) {
+    if (!pinned.includes(column)) continue
+    pinnedLeft[column] = railWidth
+    railWidth += widthOf(column)
+  }
+  let totalWidth = railWidth
   const columnLeft: Record<string, number> = {}
   const columnWidth: Record<string, number> = {}
   for (const column of columns) {
+    columnWidth[column] = widthOf(column)
+    if (pinned.includes(column)) continue
     columnLeft[column] = totalWidth
-    columnWidth[column] = widths[column] ?? defaultWidth
     totalWidth += columnWidth[column]
   }
-  const pinnedLeft: Record<string, number> = {}
-  let left = 0
-  for (const column of pinned) {
-    pinnedLeft[column] = left
-    left += widths[column] ?? defaultWidth
-  }
-  return { totalWidth, pinnedLeft, columnLeft, columnWidth }
+  return { totalWidth, pinnedLeft, columnLeft, columnWidth, railWidth }
 }

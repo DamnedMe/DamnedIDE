@@ -29,11 +29,12 @@ import {
   Search,
   X,
   HardDriveDownload,
+  HardDriveUpload,
   FileArchive,
   PackageOpen
 } from 'lucide-react'
 import { AUTH_TYPES, connectionLabel } from './sqlForm'
-import type { DataTierAction } from '../../shared/sqlBackup'
+import type { BackupSource, DataTierAction } from '../../shared/sqlBackup'
 import type { QueryExecutionContext } from './QueryEditor'
 import { buildExplicitSelect } from './sqlQueryUtils'
 import { localSqlAssistant } from './sqlAssistant'
@@ -58,6 +59,8 @@ interface DatabaseExplorerProps {
   onBackupDatabase: (conn: SqlConnection, database: string) => void
   /** opens the data-tier extract/export dialog for a database */
   onDataTier: (conn: SqlConnection, database: string, action: DataTierAction) => void
+  /** opens the import dialog (restore .bak / import .bacpac) for a database */
+  onImportDatabase: (conn: SqlConnection, database: string, source: BackupSource) => void
   trackOperation: <T>(label: string, operation: () => Promise<T>) => Promise<T>
 }
 
@@ -80,7 +83,7 @@ interface ExplorerSearchResult {
 export function DatabaseExplorer({
   connections, activeConnection, activeDatabases,
   onSelect, onReconnect, onDisconnect, onEdit, onRemove,
-  onRunQuery, onLoadQuery, onAskConfirmSelectAll, onSetActiveDatabase, onOpenDiagram, onAskRowLimit, onServerInfo, onBackupDatabase, onDataTier, trackOperation
+  onRunQuery, onLoadQuery, onAskConfirmSelectAll, onSetActiveDatabase, onOpenDiagram, onAskRowLimit, onServerInfo, onBackupDatabase, onDataTier, onImportDatabase, trackOperation
 }: DatabaseExplorerProps) {
   const { cache, setEntry, invalidate, invalidateConnection } = useSqlExplorerStore()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -414,6 +417,9 @@ export function DatabaseExplorer({
               {menuItem('backup .bak…', <HardDriveDownload size={12} />, () => onBackupDatabase(conn, database), false, !conn.isConnected)}
               {menuItem('estrai applicazione a livello dati (.dacpac)…', <PackageOpen size={12} />, () => onDataTier(conn, database, 'extract'), false, !conn.isConnected)}
               {menuItem('esporta applicazione a livello dati (.bacpac)…', <FileArchive size={12} />, () => onDataTier(conn, database, 'export'), false, !conn.isConnected)}
+              {menuSection('import')}
+              {menuItem('importa da backup .bak…', <HardDriveUpload size={12} />, () => onImportDatabase(conn, database, 'bak'), false, !conn.isConnected)}
+              {menuItem('importa applicazione a livello dati (.bacpac)…', <PackageOpen size={12} />, () => onImportDatabase(conn, database, 'bacpac'), false, !conn.isConnected)}
               {menuSection('diagram')}
               {menuItem('open diagram (all tables)', <Workflow size={12} />, () => onOpenDiagram(conn.id, database))}
             </>

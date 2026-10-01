@@ -32,6 +32,7 @@
     "test:sql-guards": "node --experimental-strip-types scripts/sql-linux-guards.check.ts",
     "test:sql-insert": "node --experimental-strip-types scripts/sql-insert.check.ts",
     "test:sql-backup": "node --experimental-strip-types scripts/sql-backup.check.ts",
+    "test:xlsx": "node --experimental-strip-types scripts/xlsx-export.check.ts",
     "test:sql-playwright": "playwright test --config playwright.config.ts",
     "test:sql": "npm run test:sql-ui && npm run test:sql-playwright",
     "test:sql-playwright:report": "playwright show-report playwright-report/sql",

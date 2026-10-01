@@ -25,6 +25,20 @@ async function installElectronMock(page: Page) {
         return config.connectionId || connectionId
       },
       disconnect: emptyAsync,
+      sqlPackageInfo: async () => ({ found: true, path: 'C:\\mock\\SqlPackage.exe', hint: 'dotnet tool install -g microsoft.sqlpackage' }),
+      restore: async (_connection: string, options: { path: string; database: string; replace: boolean }) => {
+        ;(window as unknown as { __sqlMock: { restores: unknown[] } }).__sqlMock.restores.push(options)
+        return {
+          ok: true,
+          elapsedMs: 12,
+          statement: `RESTORE DATABASE [${options.database}]\nFROM DISK = N'${options.path}'\nWITH MOVE N'${options.database}' TO N'C:\\mock\\${options.database}.mdf', RECOVERY`
+        }
+      },
+      dataTier: async (_connection: string, database: string, action: string, file: string) => {
+        ;(window as unknown as { __sqlMock: { dataTiers: unknown[] } }).__sqlMock.dataTiers.push({ database, action, file })
+        return { ok: true, output: 'mock sqlpackage' }
+      },
+      onDataTierLog: () => () => {},
       query: async (_connection: string, query: string, queryId = 'mock-query') => {
         await new Promise(resolve => setTimeout(resolve, 150))
         if (/\bsp_help\b/i.test(query)) {
@@ -233,21 +247,31 @@ async function installElectronMock(page: Page) {
         window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
         dialog: {
           openFolder: async () => null,
+          openFile: async () => 'C:\\mock\\import.bacpac',
           saveSqlQuery: async (defaultName: string, content: string) => {
             ;(window as unknown as { __sqlMock: { savedQueries: Array<{ defaultName: string; content: string }> } }).__sqlMock.savedQueries.push({ defaultName, content })
             return `C:\\mock\\${defaultName}`
           }
         },
         ado: { connect: async () => true },
+        export: {
+          xlsx: async (defaultName: string, sheetName: string, columns: string[], rows: unknown[][]) => {
+            ;(window as unknown as { __sqlMock: { xlsx: unknown[] } }).__sqlMock.xlsx.push({ defaultName, sheetName, columns, rows })
+            return 'C:\\mock\\query_results.xlsx'
+          }
+        },
         clipboard: { write(text: string) { navigator.clipboard.writeText(text).catch(() => {}) } }
       }
     })
-    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }> } }).__sqlMock = {
+    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }>; xlsx: unknown[]; restores: unknown[]; dataTiers: unknown[] } }).__sqlMock = {
       queries: [],
       completedQueries: [],
       diagramCalls: 0,
       connectConfigs: [],
-      savedQueries: []
+      savedQueries: [],
+      xlsx: [],
+      restores: [],
+      dataTiers: []
     }
     const originalQuery = sql.query
     sql.query = async (connection: string, query: string, queryId?: string) => {

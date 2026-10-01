@@ -210,7 +210,9 @@ interface Window {
       backup: (connectionId: string, database: string, options: { path: string; compress: boolean; copyOnly: boolean; init: boolean }) =>
         Promise<{ ok: boolean; error?: string; elapsedMs?: number }>
       sqlPackageInfo: () => Promise<{ found: boolean; path?: string; hint: string }>
-      dataTier: (connectionId: string, database: string, action: 'extract' | 'export', targetFile: string) =>
+      restore: (connectionId: string, options: { path: string; database: string; replace: boolean }) =>
+        Promise<{ ok: boolean; error?: string; elapsedMs?: number; statement?: string }>
+      dataTier: (connectionId: string, database: string, action: 'extract' | 'export' | 'import', targetFile: string) =>
         Promise<{ ok: boolean; error?: string; output?: string }>
       dataTierCancel: () => Promise<void>
       onDataTierLog: (cb: (payload: { action: string; line: string }) => void) => () => void
@@ -225,8 +227,12 @@ interface Window {
     }
     dialog: {
       openFolder: () => Promise<string | null>
+      openFile: (title: string, filters: { name: string; extensions: string[] }[]) => Promise<string | null>
       saveFile: (defaultName: string, filters: { name: string; extensions: string[] }[]) => Promise<string | null>
       saveSqlQuery: (defaultName: string, content: string) => Promise<string | null>
+    }
+    export: {
+      xlsx: (defaultName: string, sheetName: string, columns: string[], rows: (string | number | boolean | null)[][]) => Promise<string | null>
     }
     fs: {
       readDir: (dirPath: string) => Promise<{ name: string; isDirectory: boolean; isFile: boolean }[]>

@@ -214,8 +214,8 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                 </div>
               )}
               {isLocalDb && (isWindows
-                ? <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 9 }}>LocalDB uses its local named pipe; transport encryption is disabled automatically.</div>
-                : <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 9 }}>LocalDB esiste solo su Windows: su questo sistema usa un SQL Server su host/porta.</div>)}
+                ? <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>LocalDB uses its local named pipe; transport encryption is disabled automatically.</div>
+                : <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>LocalDB esiste solo su Windows: su questo sistema usa un SQL Server su host/porta.</div>)}
             </Field>
 
             <Field label="authentication">
@@ -223,7 +223,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                 {authTypes.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
               {!isWindows && form.authType === 'windows' && (
-                <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 9 }}>
+                <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
                   Windows Authentication non usa la sessione di Windows su questo sistema: servono dominio, utente e password (NTLM) espliciti.
                 </div>
               )}

@@ -5,7 +5,7 @@ import { buildDeleteStatement, buildInsertEntries, buildInsertStatement, buildUp
 import { DateTimePicker } from './DateTimePicker'
 import { calculateColumnMetrics, calculateVisibleRange } from './sqlGridUtils'
 import { SqlGridFilter, SqlGridFilterOperator, SqlGridQueryState } from '../../types/sql'
-import { useToastStore } from '../../store'
+import { useSettingsStore, useToastStore } from '../../store'
 
 type CellKind = 'guid' | 'date' | 'boolean' | 'number' | 'string'
 
@@ -37,9 +37,9 @@ const DEFAULT_COL_W = 160
 const ROW_H = 26
 const ROW_WINDOW_BUFFER = 8
 const ROW_WINDOW_GUARD = 2
-const DEFAULT_FONT_SIZE = 11
 const MIN_FONT_SIZE = 8
-const MAX_FONT_SIZE = 20
+const MAX_FONT_SIZE = 32
+const ZOOM_STEP = 1.1
 
 function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
   const esc = (v: unknown) => {
@@ -422,10 +422,10 @@ function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }:
       borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)'
     }} onKeyDown={event => { if (event.key === 'Escape') onClose() }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 9 }}>
-        <Filter size={10} color="var(--accent-color)" /><strong style={{ marginLeft: 6, fontSize: 10, flex: 1 }}>{column}</strong>
-        <span style={{ fontSize: 8, color: 'var(--text-muted)' }}>{dataType}</span>
+        <Filter size={10} color="var(--accent-color)" /><strong style={{ marginLeft: 6, fontSize: 'calc(10px * var(--ui-text-scale, 1))', flex: 1 }}>{column}</strong>
+        <span style={{ fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{dataType}</span>
       </div>
-      <select autoFocus aria-label="filter operator" value={operator} onChange={event => setOperator(event.target.value as SqlGridFilterOperator)} style={{ width: '100%', height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 9 }}>
+      <select autoFocus aria-label="filter operator" value={operator} onChange={event => setOperator(event.target.value as SqlGridFilterOperator)} style={{ width: '100%', height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
         {options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
       {!noValue && (
@@ -433,9 +433,9 @@ function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }:
           {boolean ? (
             <select aria-label="filter value" value={value} onChange={event => setValue(event.target.value)} style={{ width: '100%', height: 27, background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}><option value="1">true</option><option value="0">false</option></select>
           ) : (
-            <input aria-label="filter value" type={date ? 'datetime-local' : numeric ? 'number' : 'text'} value={value} onChange={event => setValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 9 }} />
+            <input aria-label="filter value" type={date ? 'datetime-local' : numeric ? 'number' : 'text'} value={value} onChange={event => setValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }} />
           )}
-          {operator === 'between' && <input aria-label="second filter value" type={date ? 'datetime-local' : 'number'} value={secondValue} onChange={event => setSecondValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 9 }} />}
+          {operator === 'between' && <input aria-label="second filter value" type={date ? 'datetime-local' : 'number'} value={secondValue} onChange={event => setSecondValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }} />}
         </div>
       )}
       <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end', marginTop: 10 }}>
@@ -449,12 +449,14 @@ function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }:
 
 const tinyGridButton: React.CSSProperties = {
   height: 25, padding: '0 8px', background: 'transparent', border: '1px solid var(--border-color)',
-  color: 'var(--text-secondary)', borderRadius: 3, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9
+  color: 'var(--text-secondary)', borderRadius: 3, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--ui-text-scale, 1))'
 }
 
 export function ResultViewer({ execution, getResultTableName, onJoinRequest, onFilterRequest, onClear, onExecuteSql, onDeleteRequest, columnInfo, onCheckExists, gridQueryState, gridQuerySupported, onGridQueryStateChange }: ResultViewerProps) {
   const [activeSet, setActiveSet] = useState(0)
-  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE)
+  // The grid text size starts from the IDE setting; the dedicated zoom (1 = 100%)
+  // then scales it up or down without touching the rest of the UI.
+  const [zoom, setZoom] = useState(1)
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
   const [colWidths, setColWidths] = useState<Record<string, number>>({})
   const [pinned, setPinned] = useState<string[]>([])
@@ -473,6 +475,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const [datePicker, setDatePicker] = useState<{ col: string; x: number; y: number; target: 'draft' | 'edit' } | null>(null)
   const [fkChecks, setFkChecks] = useState<Record<string, { state: 'checking' | 'ok' | 'missing' | 'error'; message?: string }>>({})
   const showToast = useToastStore(s => s.showToast)
+  const settingsFontSize = useSettingsStore(s => s.settings.fontSize)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
   const autofitCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -539,7 +542,8 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const rows = result?.rows || []
   const columns = result?.columns || []
 
-  const zoomScale = fontSize / DEFAULT_FONT_SIZE
+  const zoomScale = zoom
+  const fontSize = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, settingsFontSize * zoom))
   const rowHeight = Math.max(22, Math.round(ROW_H * zoomScale))
   const defaultColumnWidth = Math.round(DEFAULT_COL_W * zoomScale)
   const scaledColWidths = useMemo(
@@ -641,8 +645,15 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const pinnedLeft = (col: string): number => columnMetrics.pinnedLeft[col] ?? 0
 
   const changeZoom = useCallback((delta: number) => {
-    setFontSize(current => Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, current + delta)))
-  }, [])
+    setZoom(current => {
+      const next = delta > 0 ? current * ZOOM_STEP : current / ZOOM_STEP
+      // keep the resulting font inside [MIN_FONT_SIZE, MAX_FONT_SIZE] so the
+      // percentage shown in the toolbar always matches the real grid zoom
+      const minZoom = Math.min(1, MIN_FONT_SIZE / settingsFontSize)
+      const maxZoom = Math.max(1, MAX_FONT_SIZE / settingsFontSize)
+      return Math.min(maxZoom, Math.max(minZoom, next))
+    })
+  }, [settingsFontSize])
 
   const formatValue = useCallback((col: string, v: unknown): string => {
     if (v === null || v === undefined) return 'NULL'
@@ -699,7 +710,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         changeZoom(-1)
       } else if (event.key === '0') {
         event.preventDefault()
-        setFontSize(DEFAULT_FONT_SIZE)
+        setZoom(1)
       }
     }
     window.addEventListener('keydown', handler)
@@ -975,7 +986,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         flex: 1, minHeight: 0, overflow: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 10,
         background: 'var(--bg-secondary)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 9.5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))' }}>
           <span>{execution.results.length} result sets · {execution.totalRowCount} rows total</span>
           {onClear && <button style={{ ...btnStyle, marginLeft: 'auto' }} title="clear results" data-tip-desc="clear the displayed results" onClick={onClear}><X size={10} /></button>}
         </div>
@@ -992,7 +1003,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               height, minHeight: 190, flexShrink: 0, display: 'flex', flexDirection: 'column',
               borderRadius: 'var(--radius-md)', boxShadow: '0 1px 0 var(--border-subtle)'
             }}>
-              <div style={{ height: 25, flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 9px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderBottom: 0, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 600 }}>
+              <div style={{ height: 25, flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 9px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderBottom: 0, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600 }}>
                 Result set {index + 1} · {set.rowCount} row{set.rowCount === 1 ? '' : 's'}
               </div>
               <ResultViewer
@@ -1209,7 +1220,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
       </header>
 
       {(filters.length > 0 || sorts.length > 0 || gridQuerySupported?.supported === false) && (
-        <div style={{ minHeight: 27, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', fontFamily: 'var(--font-mono)', fontSize: 8.5 }}>
+        <div style={{ minHeight: 27, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', fontFamily: 'var(--font-mono)', fontSize: 'calc(8.5px * var(--ui-text-scale, 1))' }}>
           {gridQuerySupported?.supported === false && <span role="status" style={{ color: 'var(--warning-color)' }}>{gridQuerySupported.reason}</span>}
           {filters.map(filter => <button key={filter.column} aria-label={`active filter ${filter.column}`} title="remove filter" data-tip-desc="remove the filter from this column" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, filters: filters.filter(item => item.column !== filter.column) })} style={{ ...tinyGridButton, height: 19, color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}><Filter size={8} /> {filter.column} · {filter.operator} {filter.value} ×</button>)}
           {sorts.map((sort, index) => <button key={sort.column} aria-label={`active sort ${sort.column}`} title="remove sorting" data-tip-desc="remove the sorting from this column" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, sorts: sorts.filter(item => item.column !== sort.column) })} style={{ ...tinyGridButton, height: 19, display: 'inline-flex', alignItems: 'center' }}>{sort.direction === 'asc' ? '↑' : '↓'} {index + 1} · {sort.column} ×</button>)}

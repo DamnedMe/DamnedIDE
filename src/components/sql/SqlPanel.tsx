@@ -889,8 +889,8 @@ export function SqlPanel() {
       {pendingHistoryClear && workspace && (
         <Modal onClose={() => setPendingHistoryClear(false)} width={400} label="clear query history">
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px', fontFamily: 'var(--font-mono)' }}>
-            <strong style={{ fontSize: 13 }}>clear query history?</strong>
-            <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>Favorites and open query tabs will be preserved.</span>
+            <strong style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>clear query history?</strong>
+            <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>Favorites and open query tabs will be preserved.</span>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button onClick={() => setPendingHistoryClear(false)} style={{ padding: '7px 14px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 4, color: 'var(--text-secondary)', cursor: 'pointer' }}>cancel</button>
               <button onClick={() => { persistWorkspace({ ...workspace, history: [] }, true); setPendingHistoryClear(false) }} style={{ padding: '7px 14px', background: 'var(--error-color)', border: 0, borderRadius: 4, color: 'var(--text-inverse)', cursor: 'pointer' }}>clear</button>
@@ -951,7 +951,7 @@ function SqlActivityStrip({ activities }: { activities: SqlActivity[] }) {
       fontFamily: 'var(--font-mono)'
     }}>
       {visible.length === 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 9.5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))' }}>
           <Check size={10} style={{ color: 'var(--success-color)' }} /> Ready
         </div>
       ) : visible.map(item => (
@@ -966,7 +966,7 @@ function SqlActivityStrip({ activities }: { activities: SqlActivity[] }) {
           </span>
         </div>
       ))}
-      {running.length > 1 && <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: 9 }}>{running.length} operations running</span>}
+      {running.length > 1 && <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>{running.length} operations running</span>}
     </footer>
   )
 }

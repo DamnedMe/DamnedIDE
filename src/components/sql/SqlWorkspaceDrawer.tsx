@@ -27,7 +27,7 @@ function tinyButton(active = false): React.CSSProperties {
     height: 24, padding: '0 8px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
     border: `1px solid ${active ? 'var(--accent-color)' : 'var(--border-color)'}`,
     color: active ? 'var(--accent-color)' : 'var(--text-secondary)',
-    background: active ? 'var(--accent-bg)' : 'transparent', fontFamily: 'var(--font-mono)', fontSize: 9
+    background: active ? 'var(--accent-bg)' : 'transparent', fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--ui-text-scale, 1))'
   }
 }
 
@@ -66,7 +66,7 @@ export function SqlWorkspaceDrawer({
     }}>
       <header className="sql-workspace-drawer__header" style={{ height: 42, display: 'flex', alignItems: 'center', padding: '0 10px', borderBottom: '1px solid var(--border-subtle)', gap: 7 }}>
         <Clock3 size={13} color="var(--accent-color)" />
-        <strong style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>SQL workspace</strong>
+        <strong style={{ flex: 1, fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600 }}>SQL workspace</strong>
         <button aria-label="close SQL workspace" title="close" data-tip-desc="close the SQL workspace drawer" onClick={onClose} style={tinyButton()}><X size={11} /></button>
       </header>
 
@@ -90,7 +90,7 @@ export function SqlWorkspaceDrawer({
           <Search size={10} style={{ position: 'absolute', left: 7, top: 7, color: 'var(--text-muted)' }} />
           <input aria-label="search SQL workspace" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search SQL or database…" style={{
             width: '100%', height: 26, padding: '0 7px 0 23px', background: 'var(--bg-input)', color: 'var(--text-primary)',
-            border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', outline: 'none', fontSize: 9
+            border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', outline: 'none', fontSize: 'calc(9px * var(--ui-text-scale, 1))'
           }} />
         </label>
       </div>
@@ -119,22 +119,22 @@ export function SqlWorkspaceDrawer({
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <button aria-label={`open ${tab.title}`} onClick={() => onActivateTab(tab.id)} style={{
                   border: 0, padding: 0, flex: 1, textAlign: 'left', background: 'transparent', color: 'var(--text-primary)',
-                  cursor: 'pointer', fontSize: 10, fontWeight: 600
+                  cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600
                 }}>{tab.title}</button>
                 <button aria-label={`rename ${tab.title}`} title="rename query" data-tip-desc="rename the current query" onClick={() => { setDraftTitle(tab.title); setEditingTab(tab.id) }} style={tinyButton()}><Pencil size={9} /></button>
               </div>
             )}
-            <div style={{ color: 'var(--text-muted)', fontSize: 8.5, marginTop: 4 }}>{tab.context?.database || 'no database'} · {queryTitle(tab.query)}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', marginTop: 4 }}>{tab.context?.database || 'no database'} · {queryTitle(tab.query)}</div>
           </article>
         ))}
 
         {section === 'history' && history.map(entry => (
           <article data-testid="sql-history-item" key={entry.id} style={{ padding: '9px', borderBottom: '1px solid var(--border-subtle)' }}>
             <button aria-label={`open ${queryTitle(entry.query)}`} onClick={() => onOpenQuery(entry.query, { connectionId: entry.connectionId, database: entry.database }, 'history')}
-              style={{ border: 0, padding: 0, width: '100%', textAlign: 'left', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 9.5, lineHeight: 1.45 }}>
+              style={{ border: 0, padding: 0, width: '100%', textAlign: 'left', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', lineHeight: 1.45 }}>
               {queryTitle(entry.query)}
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 8, color: 'var(--text-muted)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
               <span style={{ color: entry.status === 'success' ? 'var(--success-color)' : 'var(--error-color)' }}>{entry.status}</span>
               <span>{entry.database || 'server'}</span><span>{entry.source}</span><span>{entry.durationMs} ms</span><span>{entry.rowCount} rows</span>
               {entry.runCount > 1 && <span>×{entry.runCount}</span>}
@@ -153,9 +153,9 @@ export function SqlWorkspaceDrawer({
                 onKeyDown={event => { if (event.key === 'Enter') { onRenameFavorite(favorite.id, draftTitle); setEditingFavorite(null) } if (event.key === 'Escape') setEditingFavorite(null) }}
                 style={{ width: '100%', height: 25, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--accent-color)', color: 'var(--text-primary)', borderRadius: 3 }} />
             ) : (
-              <button aria-label={`rename favorite ${favorite.title}`} onClick={() => { setDraftTitle(favorite.title); setEditingFavorite(favorite.id) }} style={{ border: 0, padding: 0, background: 'transparent', color: 'var(--text-primary)', fontSize: 10, fontWeight: 600, cursor: 'text' }}>{favorite.title}</button>
+              <button aria-label={`rename favorite ${favorite.title}`} onClick={() => { setDraftTitle(favorite.title); setEditingFavorite(favorite.id) }} style={{ border: 0, padding: 0, background: 'transparent', color: 'var(--text-primary)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600, cursor: 'text' }}>{favorite.title}</button>
             )}
-            <div style={{ fontSize: 8.5, color: 'var(--text-muted)', margin: '4px 0 7px' }}>{queryTitle(favorite.query)}</div>
+            <div style={{ fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', margin: '4px 0 7px' }}>{queryTitle(favorite.query)}</div>
             <div style={{ display: 'flex', gap: 5 }}>
               <button aria-label={`open ${favorite.title}`} onClick={() => onOpenQuery(favorite.query, { connectionId: favorite.connectionId, database: favorite.database }, 'favorite')} style={tinyButton(true)}><FileText size={9} /> open</button>
               <button aria-label={`remove ${favorite.title} from favorites`} title="remove favorite" data-tip-desc="remove this query from the favorites" onClick={() => onRemoveFavorite(favorite.id)} style={tinyButton()}><HeartOff size={9} /></button>
@@ -164,7 +164,7 @@ export function SqlWorkspaceDrawer({
         ))}
 
         {((section === 'history' && history.length === 0) || (section === 'favorites' && favorites.length === 0) || (section === 'workspace' && workspace.tabs.length === 0)) && (
-          <div style={{ padding: '32px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 9 }}>No matching items</div>
+          <div style={{ padding: '32px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>No matching items</div>
         )}
       </div>
     </aside>

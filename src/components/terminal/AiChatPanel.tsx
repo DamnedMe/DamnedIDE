@@ -327,7 +327,13 @@ export function AiChatPanel() {
             )}
 
           {providerInfo && providerInfo.efforts.length > 0 &&
-            miniSelect('effort', active.effort, providerInfo.efforts.map(e => [e, e]), (v) => updateSession(active.id, { effort: v }))}
+            miniSelect('effort', active.effort,
+              // opencode v2 applies the reasoning effort as a variant of the model
+              // id and "no variant" is a valid choice (same list as its TUI)
+              active.provider === 'opencode'
+                ? [['', 'default'], ...providerInfo.efforts.map(e => [e, e])] as [string, string][]
+                : providerInfo.efforts.map(e => [e, e]) as [string, string][],
+              (v) => updateSession(active.id, { effort: v }))}
 
           {providerInfo && providerInfo.permissionModes.length > 0 &&
             miniSelect('perm', active.permissionMode, providerInfo.permissionModes.map(p => [p, p]), (v) => updateSession(active.id, { permissionMode: v }))}

@@ -131,6 +131,22 @@ export interface WorktreeStackInfo {
 const BASE_KEY = 'damnedide-base'
 const TIP_KEY = 'damnedide-base-tip'
 
+/**
+ * Per-call memo for the many `git` commands `parentStatus` runs per branch:
+ * a repository refresh must not respawn the same rev-parse/merge-base for every
+ * stacked worktree.
+ */
+export interface StackCache {
+  commits: Map<string, string | null>
+  ancestors: Map<string, boolean>
+  refs: Map<string, string | null>
+  counts: Map<string, number>
+}
+
+export function newStackCache(): StackCache {
+  return { commits: new Map(), ancestors: new Map(), refs: new Map(), counts: new Map() }
+}
+
 export async function revParseCommit(git: SimpleGit, ref: string): Promise<string | null> {
   try {
     const out = (await git.raw(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).trim()
@@ -138,6 +154,14 @@ export async function revParseCommit(git: SimpleGit, ref: string): Promise<strin
   } catch {
     return null
   }
+}
+
+async function revParseCommitCached(git: SimpleGit, ref: string, cache: StackCache): Promise<string | null> {
+  const hit = cache.commits.get(ref)
+  if (hit !== undefined) return hit
+  const value = await revParseCommit(git, ref)
+  cache.commits.set(ref, value)
+  return value
 }
 
 /**
@@ -156,6 +180,22 @@ async function isAncestor(git: SimpleGit, ancestor: string, descendant: string):
   }
 }
 
+async function isAncestorCached(git: SimpleGit, ancestor: string, descendant: string, cache: StackCache): Promise<boolean> {
+  const key = `${ancestor}\u0000${descendant}`
+  const hit = cache.ancestors.get(key)
+  if (hit !== undefined) return hit
+  let value = false
+  try {
+    const base = (await git.raw(['merge-base', ancestor, descendant])).trim()
+    const head = await revParseCommitCached(git, ancestor, cache)
+    value = !!base && !!head && base === head
+  } catch {
+    value = false
+  }
+  cache.ancestors.set(key, value)
+  return value
+}
+
 async function countCommits(git: SimpleGit, range: string): Promise<number> {
   try {
     return Number((await git.raw(['rev-list', '--count', range])).trim()) || 0
@@ -164,11 +204,27 @@ async function countCommits(git: SimpleGit, range: string): Promise<number> {
   }
 }
 
+async function countCommitsCached(git: SimpleGit, range: string, cache: StackCache): Promise<number> {
+  const hit = cache.counts.get(range)
+  if (hit !== undefined) return hit
+  const value = await countCommits(git, range)
+  cache.counts.set(range, value)
+  return value
+}
+
 /** Prefers the remote-tracking ref, then the local branch. */
 async function resolveRef(git: SimpleGit, name: string): Promise<string | null> {
   if (await revParseCommit(git, `refs/remotes/origin/${name}`)) return `origin/${name}`
   if (await revParseCommit(git, name)) return name
   return null
+}
+
+async function resolveRefCached(git: SimpleGit, name: string, cache: StackCache): Promise<string | null> {
+  const hit = cache.refs.get(name)
+  if (hit !== undefined) return hit
+  const value = await resolveRef(git, name)
+  cache.refs.set(name, value)
+  return value
 }
 
 export async function readStackLink(git: SimpleGit, branch: string): Promise<StackLink | null> {
@@ -200,16 +256,16 @@ export async function clearStackLink(git: SimpleGit, branch: string): Promise<vo
  * Classifies the parent of a stacked branch with local signals only (an ADO
  * check could refine the squash-merge case, which `merge-base` cannot see).
  */
-export async function parentStatus(git: SimpleGit, branch: string, link: StackLink): Promise<WorktreeStackInfo> {
+export async function parentStatus(git: SimpleGit, branch: string, link: StackLink, cache: StackCache = newStackCache()): Promise<WorktreeStackInfo> {
   const info: WorktreeStackInfo = {
     branch, parent: link.parent, tip: link.tip, state: 'open', behindParent: 0, aheadParent: 0, mergeRef: 'origin/develop'
   }
-  const headRef = await revParseCommit(git, branch)
-  const parentRef = await resolveRef(git, link.parent)
-  const developRef = await resolveRef(git, 'develop')
+  const headRef = await revParseCommitCached(git, branch, cache)
+  const parentRef = await resolveRefCached(git, link.parent, cache)
+  const developRef = await resolveRefCached(git, 'develop', cache)
   // the parent worktree commits on the local branch and pushes only on completion,
   // so the local ref can be ahead of the remote one: both are signals
-  const localParent = await revParseCommit(git, link.parent)
+  const localParent = await revParseCommitCached(git, link.parent, cache)
 
   if (!parentRef) {
     return { ...info, state: 'abandoned', detail: `branch '${link.parent}' non trovato (cancellato dopo il merge?)` }
@@ -220,8 +276,8 @@ export async function parentStatus(git: SimpleGit, branch: string, link: StackLi
   // "absorbed", it is simply empty (absorbed = its own work already in the parent)
   const childAdvanced = !link.tip || headRef !== link.tip
   const absorbed = !!headRef && childAdvanced && (
-    await isAncestor(git, headRef, parentRef) ||
-    (!!localParent && await isAncestor(git, headRef, link.parent))
+    await isAncestorCached(git, headRef, parentRef, cache) ||
+    (!!localParent && await isAncestorCached(git, headRef, link.parent, cache))
   )
   if (absorbed) {
     return { ...info, state: 'absorbed', detail: `il lavoro di ${branch} è già dentro ${link.parent}` }
@@ -230,29 +286,29 @@ export async function parentStatus(git: SimpleGit, branch: string, link: StackLi
   // a parent with no commits of its own sits exactly on develop: keep it stacked
   // (targeting it is the same as targeting develop), otherwise a fresh stack
   // would immediately look "merged"
-  const parentTip = localParent || await revParseCommit(git, parentRef)
-  const parentEmpty = !!developRef && !!parentTip && parentTip === await revParseCommit(git, developRef)
+  const parentTip = localParent || await revParseCommitCached(git, parentRef, cache)
+  const parentEmpty = !!developRef && !!parentTip && parentTip === await revParseCommitCached(git, developRef, cache)
   // "in develop" requires both refs: an unpushed parent commit keeps it stacked
   const parentInDevelop = !!developRef &&
-    await isAncestor(git, parentRef, developRef) &&
-    (!localParent || await isAncestor(git, link.parent, developRef))
+    await isAncestorCached(git, parentRef, developRef, cache) &&
+    (!localParent || await isAncestorCached(git, link.parent, developRef, cache))
   if (!parentEmpty && parentInDevelop) {
     return {
       ...info,
       state: 'merged',
       detail: `${link.parent} è già in develop`,
       mergeRef: developRef,
-      behindParent: await countCommits(git, `${branch}..${parentRef}`)
+      behindParent: await countCommitsCached(git, `${branch}..${parentRef}`, cache)
     }
   }
   if (link.tip) {
-    const recorded = await revParseCommit(git, link.tip)
-    if (recorded && !(await isAncestor(git, link.tip, parentRef))) {
+    const recorded = await revParseCommitCached(git, link.tip, cache)
+    if (recorded && !(await isAncestorCached(git, link.tip, parentRef, cache))) {
       return {
         ...info,
         state: 'rewritten',
         detail: `la base ${link.parent} è stata riscritta (force-push)`,
-        behindParent: await countCommits(git, `${branch}..${parentRef}`)
+        behindParent: await countCommitsCached(git, `${branch}..${parentRef}`, cache)
       }
     }
   }
@@ -260,9 +316,37 @@ export async function parentStatus(git: SimpleGit, branch: string, link: StackLi
     ...info,
     state: 'open',
     detail: `${link.parent} non è ancora in develop`,
-    behindParent: await countCommits(git, `${branch}..${parentRef}`),
-    aheadParent: await countCommits(git, `${parentRef}..${branch}`)
+    behindParent: await countCommitsCached(git, `${branch}..${parentRef}`, cache),
+    aheadParent: await countCommitsCached(git, `${parentRef}..${branch}`, cache)
   }
+}
+
+/**
+ * Reads every stack link of the repository with two `git config` calls instead
+ * of two per branch: the branch list refresh used to spawn a process per branch.
+ */
+async function readStackLinks(git: SimpleGit): Promise<Map<string, StackLink>> {
+  const links = new Map<string, StackLink>()
+  let baseOut = ''
+  try {
+    baseOut = await git.raw(['config', '--get-regexp', `^branch\\..*\\.${BASE_KEY}$`])
+  } catch {
+    return links
+  }
+  const tips = new Map<string, string>()
+  try {
+    const tipOut = await git.raw(['config', '--get-regexp', `^branch\\..*\\.${TIP_KEY}$`])
+    for (const line of tipOut.split('\n')) {
+      const m = /^branch\.(.+)\.damnedide-base-tip\s+(.+)$/.exec(line.trim())
+      if (m) tips.set(m[1], m[2].trim())
+    }
+  } catch { /* optional */ }
+  for (const line of baseOut.split('\n')) {
+    const m = /^branch\.(.+)\.damnedide-base\s+(.+)$/.exec(line.trim())
+    if (!m) continue
+    links.set(m[1], { parent: m[2].trim(), tip: tips.get(m[1]) })
+  }
+  return links
 }
 
 export interface WorktreeServiceHooks {
@@ -378,15 +462,29 @@ export class WorktreeService {
   async stack(repoPath: string): Promise<WorktreeStackInfo[]> {
     const git = this.getGit(repoPath)
     const entries = await this.list(repoPath)
-    const out: WorktreeStackInfo[] = []
+    const links = await readStackLinks(git)
+    const targets: Array<{ branch: string; link: StackLink }> = []
     for (const entry of entries) {
       const branch = entry.branch.replace(/^refs\/heads\//, '')
       if (!branch) continue
-      const link = await readStackLink(git, branch)
+      const link = links.get(branch)
       if (!link) continue
-      out.push(await parentStatus(git, branch, link))
+      targets.push({ branch, link })
     }
-    return out
+    // Each classification runs several `git` processes: memoise the shared refs
+    // (develop, parents) and run a few branches in parallel instead of one at a
+    // time — with many stacked worktrees this was the slowest panel refresh.
+    const cache = newStackCache()
+    const results = new Map<string, WorktreeStackInfo>()
+    let next = 0
+    const workers = Array.from({ length: Math.min(4, targets.length) }, async () => {
+      while (next < targets.length) {
+        const target = targets[next++]
+        results.set(target.branch, await parentStatus(git, target.branch, target.link, cache))
+      }
+    })
+    await Promise.all(workers)
+    return targets.map(target => results.get(target.branch)!).filter(Boolean)
   }
 
   /** Drops the stack link of a branch (after a promotion to develop). */

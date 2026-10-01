@@ -51,6 +51,24 @@ function installHintFor(type: LinuxPackageType): string {
 }
 
 /**
+ * Raw electron-updater failures must never reach the settings panel as a JS
+ * TypeError. The classic one is `Cannot read properties of undefined (reading
+ * 'info')`: the GitHub feed carries no `.pacman`/`.deb` file, `findFile` returns
+ * undefined and `AppUpdater.executeDownload` dereferences it. It can only
+ * happen when an update is actually downloaded — managed Linux packages never
+ * download — but the message stays actionable if it ever comes back.
+ */
+function updateErrorMessage(e: unknown, managed: boolean, installHint?: string): string {
+  const msg = (e as Error)?.message || String(e)
+  if (/reading 'info'/.test(msg)) {
+    return managed
+      ? `questo pacchetto non si aggiorna dall'IDE — ${installHint || 'aggiorna con il gestore pacchetti'}`
+      : "il file di aggiornamento non è presente nel feed GitHub — scarica la nuova versione dalla pagina delle release"
+  }
+  return msg
+}
+
+/**
  * Owns the OTA lifecycle and exposes it to the renderer: credentials-free GitHub
  * provider, auto-download, periodic checks, plus a manual `update:check` that the
  * settings panel can trigger. State is broadcast on `update:state` so the UI can
@@ -120,7 +138,7 @@ export class UpdateService {
       this.set({ status: 'checking', error: undefined })
       await autoUpdater.checkForUpdates()
     } catch (e) {
-      this.set({ status: 'error', error: (e as Error).message })
+      this.set({ status: 'error', error: updateErrorMessage(e, this.managed, this.current.installHint) })
     }
   }
 
@@ -140,7 +158,7 @@ export class UpdateService {
       try { this.target()?.webContents.send('update:downloaded') } catch { /* window closed */ }
     })
     autoUpdater.on('error', (e) => {
-      this.set({ status: 'error', error: e?.message })
+      this.set({ status: 'error', error: updateErrorMessage(e, this.managed, this.current.installHint) })
       console.error('[updater]', e?.message)
     })
 

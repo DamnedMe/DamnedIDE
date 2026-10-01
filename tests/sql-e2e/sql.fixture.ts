@@ -237,7 +237,7 @@ async function installElectronMock(page: Page) {
         sql,
         app: { initialTarget: async () => null, onOpenPath: () => () => {} },
         updater: {
-          install: async () => true,
+          install: async () => ({ ok: true }),
           state: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
           check: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
           onState: () => () => {},

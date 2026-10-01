@@ -193,7 +193,7 @@ const electronAPI = {
     openDetached: (panelId: string) => ipcRenderer.invoke('window:openDetached', panelId)
   },
   updater: {
-    install: () => ipcRenderer.invoke('update:install'),
+    install: (): Promise<{ ok: boolean; error?: string; restartRequired?: boolean }> => ipcRenderer.invoke('update:install'),
     state: (): Promise<UpdateState> => ipcRenderer.invoke('update:state'),
     check: (): Promise<UpdateState> => ipcRenderer.invoke('update:check'),
     onState: (callback: (state: UpdateState) => void) => {

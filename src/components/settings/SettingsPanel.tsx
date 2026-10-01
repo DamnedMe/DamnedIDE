@@ -177,7 +177,7 @@ export function SettingsPanel() {
       else if (st.status === 'up-to-date') showToast('sei già alla versione più recente')
       else if (st.status === 'error') showToast(st.error || 'verifica aggiornamenti fallita', 'error')
       else if (st.status === 'available') {
-        showToast(st.managed
+        showToast(st.managed && st.selfInstall === false
           ? `nuova versione ${st.version} disponibile — ${st.installHint || 'aggiorna con il gestore pacchetti'}`
           : `nuova versione ${st.version} in scaricamento`)
       }
@@ -188,16 +188,32 @@ export function SettingsPanel() {
     }
   }
 
-  const updateBusy = checkingUpdates || update?.status === 'checking' || update?.status === 'downloading'
+  const updateBusy = checkingUpdates || update?.status === 'checking' || update?.status === 'downloading' || update?.status === 'installing'
+
+  const installUpdate = async () => {
+    try {
+      const res = await window.electronAPI.updater.install()
+      if (!res?.ok) showToast(res?.error || 'installazione aggiornamento fallita', 'error')
+      else showToast("aggiornamento installato: riavvia l'IDE")
+    } catch (e) {
+      showToast((e as Error).message || 'installazione aggiornamento fallita', 'error')
+    }
+  }
   const updateStatusText = (st: UpdateState | null): string => {
     if (!st) return '…'
     if (!st.packaged) return "versione di sviluppo: gli aggiornamenti OTA sono attivi solo nell'app installata"
-    // managed (deb/pacman): the IDE only checks, the package manager installs
+    // managed (deb/pacman): the IDE downloads the distro package and installs it
+    // with pkexec; when the feed has no package it points at the package manager
     if (st.managed) {
       switch (st.status) {
         case 'idle': return `versione installata ${st.currentVersion}`
         case 'checking': return 'verifica in corso…'
-        case 'available': return `nuova versione ${st.version} disponibile — ${st.installHint || 'aggiorna con il gestore pacchetti'}`
+        case 'available': return st.selfInstall === false
+          ? `nuova versione ${st.version} disponibile — ${st.installHint || 'aggiorna con il gestore pacchetti'}`
+          : `nuova versione ${st.version} disponibile — avvio scaricamento…`
+        case 'downloading': return `scaricamento ${st.version ?? ''}… ${st.progress ?? 0}%`
+        case 'downloaded': return `versione ${st.version} pronta — installa l'aggiornamento`
+        case 'installing': return 'installazione in corso (pkexec chiede la password)…'
         case 'up-to-date': return `sei alla versione più recente (${st.currentVersion})`
         case 'error': return `errore: ${st.error || 'verifica non riuscita'}`
         default: break
@@ -209,6 +225,7 @@ export function SettingsPanel() {
       case 'available': return `nuova versione ${st.version} disponibile — avvio scaricamento…`
       case 'downloading': return `scaricamento ${st.version ?? ''}… ${st.progress ?? 0}%`
       case 'downloaded': return `versione ${st.version} pronta — riavvia per installarla`
+      case 'installing': return 'installazione in corso…'
       case 'up-to-date': return `sei alla versione più recente (${st.currentVersion})`
       case 'error': return `errore: ${st.error || 'verifica non riuscita'}`
     }
@@ -400,8 +417,8 @@ export function SettingsPanel() {
                     verifica aggiornamenti
                   </button>
                   {update?.status === 'downloaded' && (
-                    <button onClick={() => window.electronAPI.updater.install()}
-                      title="riavvia e installa l'aggiornamento" data-tip-desc="quit and install the downloaded update"
+                    <button onClick={installUpdate}
+                      title={update.managed ? "installa l'aggiornamento (richiede la password di amministratore)" : "riavvia e installa l'aggiornamento"} data-tip-desc="install the downloaded update"
                       style={{
                         display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', height: '28px',
                         background: 'var(--accent-color)', border: 'none', borderRadius: 'var(--radius-sm)',
@@ -409,7 +426,7 @@ export function SettingsPanel() {
                         fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                       }}>
                       <Download size={11} />
-                      riavvia e aggiorna
+                      {update.managed ? 'installa aggiornamento' : 'riavvia e aggiorna'}
                     </button>
                   )}
                 </div>

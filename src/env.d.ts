@@ -73,7 +73,7 @@ interface WorktreeStackInfo {
   mergeRef: string
 }
 
-type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'up-to-date' | 'error'
 
 interface UpdateState {
   packaged: boolean
@@ -82,8 +82,10 @@ interface UpdateState {
   version?: string
   progress?: number
   error?: string
-  // native Linux package: installed by pacman/apt, not by electron-updater
+  // native Linux package: the IDE downloads and installs it with pkexec
   managed?: boolean
+  // managed only: the feed carries the package, so the IDE can install it itself
+  selfInstall?: boolean
   installHint?: string
 }
 
@@ -255,7 +257,7 @@ interface Window {
       openDetached: (panelId: string) => Promise<boolean>
     }
     updater: {
-      install: () => Promise<boolean>
+      install: () => Promise<{ ok: boolean; error?: string; restartRequired?: boolean }>
       state: () => Promise<UpdateState>
       check: () => Promise<UpdateState>
       onState: (callback: (state: UpdateState) => void) => () => void

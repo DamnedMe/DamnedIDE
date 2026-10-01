@@ -105,6 +105,9 @@ jobs:
           # pacman is built separately so resources/package-type stays "pacman"
           # (electron-updater must pick PacmanUpdater, not DebUpdater)
           DAMNED_PACKAGE_TYPE=pacman npx electron-builder --config electron-builder.yml --linux pacman --publish always
+          # electron-builder 24 does not put the .pacman file in latest-linux.yml:
+          # add it and republish the feed, so the IDE can download + install it
+          node scripts/patch-linux-update-feed.mjs --dir dist --tag "${{ needs.prepare-release.outputs.tag }}"
 
   build-macos:
     needs: [prepare-release, build-linux]

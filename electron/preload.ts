@@ -136,7 +136,9 @@ const electronAPI = {
     backup: (connectionId: string, database: string, options: { path: string; compress: boolean; copyOnly: boolean; init: boolean }): Promise<{ ok: boolean; error?: string; elapsedMs?: number }> =>
       ipcRenderer.invoke('sql:backup', connectionId, database, options),
     sqlPackageInfo: (): Promise<{ found: boolean; path?: string; hint: string }> => ipcRenderer.invoke('sql:sqlPackageInfo'),
-    dataTier: (connectionId: string, database: string, action: 'extract' | 'export', targetFile: string): Promise<{ ok: boolean; error?: string; output?: string }> =>
+    restore: (connectionId: string, options: { path: string; database: string; replace: boolean }): Promise<{ ok: boolean; error?: string; elapsedMs?: number; statement?: string }> =>
+      ipcRenderer.invoke('sql:restore', connectionId, options),
+    dataTier: (connectionId: string, database: string, action: 'extract' | 'export' | 'import', targetFile: string): Promise<{ ok: boolean; error?: string; output?: string }> =>
       ipcRenderer.invoke('sql:dataTier', connectionId, database, action, targetFile),
     dataTierCancel: (): Promise<void> => ipcRenderer.invoke('sql:dataTierCancel'),
     onDataTierLog: (cb: (payload: { action: string; line: string }) => void) => {
@@ -155,9 +157,15 @@ const electronAPI = {
   },
   dialog: {
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+    openFile: (title: string, filters: { name: string; extensions: string[] }[]): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:openFile', title, filters),
     saveFile: (defaultName: string, filters: { name: string; extensions: string[] }[]): Promise<string | null> =>
       ipcRenderer.invoke('dialog:saveFile', defaultName, filters),
     saveSqlQuery: (defaultName: string, content: string) => ipcRenderer.invoke('dialog:saveSqlQuery', defaultName, content)
+  },
+  export: {
+    xlsx: (defaultName: string, sheetName: string, columns: string[], rows: (string | number | boolean | null)[][]): Promise<string | null> =>
+      ipcRenderer.invoke('export:xlsx', defaultName, sheetName, columns, rows)
   },
   fs: {
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:readDir', dirPath),

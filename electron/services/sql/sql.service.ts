@@ -9,7 +9,7 @@ import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import { resolveCommand } from '../process/resolve-command'
 import { connectPoolWithRetry, normalizeSqlConnectionConfig, parseSqlServerTarget, sqlTimeoutMilliseconds, validatePlatformSqlConfig } from '../../../src/shared/sqlConnection'
-import { buildBackupStatement, dataTierArgs, type BackupOptions, type DataTierAction } from '../../../src/shared/sqlBackup'
+import { buildBackupStatement, buildFileListStatement, buildRestoreStatement, dataTierArgs, type BackupFileInfo, type BackupOptions, type DataTierAction } from '../../../src/shared/sqlBackup'
 
 export type SqlAuthType =
   | 'windows'
@@ -310,6 +310,12 @@ function stripPipePrefix(pipe: string): string {
   return p
 }
 
+/** Directory part of a server-side path (`C:\Backup\x.bak` → `C:\Backup`). */
+function serverDirectory(path: string): string {
+  const idx = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'))
+  return idx > 0 ? path.slice(0, idx) : ''
+}
+
 const localDbPipeCache = new Map<string, { pipe: string; expiresAt: number }>()
 
 function localDbInstanceName(server: string): string {
@@ -605,15 +611,62 @@ export class SqlService {
     }
   }
 
+  /**
+   * Restores a .bak into a new (or replaced) database. The file is read by the
+   * SQL Server, so `path` is a server-side one — same model as the backup. The
+   * logical files are moved next to the instance default directories, so a
+   * backup taken elsewhere still restores here.
+   */
+  async restoreDatabase(
+    connectionId: string,
+    options: { path: string; database: string; replace: boolean }
+  ): Promise<{ ok: boolean; error?: string; elapsedMs?: number; statement?: string }> {
+    const entry = this.connections.get(connectionId)
+    if (!entry) return { ok: false, error: 'Connessione non trovata' }
+    const started = Date.now()
+    const pool = new ConnectionPool({ ...this.buildPoolConfig(entry.config), requestTimeout: 6 * 60 * 60 * 1000 })
+    try {
+      await pool.connect()
+      const defaults = await pool.request().query(
+        "SELECT CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(4000)) AS dataPath, " +
+        "CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(4000)) AS logPath"
+      )
+      const paths = (defaults.recordset?.[0] || {}) as { dataPath?: string | null; logPath?: string | null }
+      const listed = await pool.request().batch(buildFileListStatement(options.path))
+      const rows = (listed.recordset || []) as Array<{ LogicalName?: string; PhysicalName?: string; Type?: string }>
+      const files: BackupFileInfo[] = rows
+        .map(row => ({ logicalName: String(row.LogicalName ?? ''), type: String(row.Type ?? '') }))
+        .filter(file => file.logicalName)
+      if (files.length === 0) {
+        return { ok: false, error: 'RESTORE FILELISTONLY non ha restituito file logici: il percorso è raggiungibile dal server e punta a un .bak valido?' }
+      }
+      // fall back to the directories stored in the backup when the instance does
+      // not report its defaults (Azure SQL, restricted permissions, ...)
+      const dataRow = rows.find(row => String(row.Type).toUpperCase() !== 'L' && row.PhysicalName)
+      const logRow = rows.find(row => String(row.Type).toUpperCase() === 'L' && row.PhysicalName)
+      const dataDirectory = paths.dataPath || serverDirectory(dataRow?.PhysicalName || '')
+      const logDirectory = paths.logPath || serverDirectory(logRow?.PhysicalName || '') || dataDirectory
+      if (!dataDirectory) return { ok: false, error: 'directory di destinazione non determinabile (InstanceDefaultDataPath assente)' }
+
+      const statement = buildRestoreStatement({ database: options.database, path: options.path, files, dataDirectory, logDirectory, replace: options.replace })
+      await pool.request().batch(statement)
+      return { ok: true, elapsedMs: Date.now() - started, statement }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    } finally {
+      try { await pool.close() } catch { /* ignore */ }
+    }
+  }
+
   sqlPackageInfo(): { found: boolean; path?: string; hint: string } {
     const path = findSqlPackage()
     return { found: !!path, path: path || undefined, hint: SQLPACKAGE_INSTALL_HINT }
   }
 
   /**
-   * Extract (.dacpac, schema only) or Export (.bacpac, schema + data) of a
-   * data-tier application through SqlPackage, streaming its output to the
-   * renderer. Only one run at a time.
+   * Extract (.dacpac, schema only), Export (.bacpac, schema + data) or Import
+   * (.bacpac into a database through its connection) of a data-tier application
+   * via SqlPackage, streaming its output to the renderer. Only one run at a time.
    */
   dataTier(
     connectionId: string,
@@ -628,8 +681,12 @@ export class SqlService {
     const exe = findSqlPackage()
     if (!exe) return Promise.resolve({ ok: false, error: 'SqlPackage non trovato', output: SQLPACKAGE_INSTALL_HINT })
 
-    const connectionString = buildConnectionString({ ...entry.config, database })
-    const args = dataTierArgs(action, connectionString, targetFile)
+    // Import targets a database that may not exist yet: the connection string
+    // must NOT carry a catalog, the name goes to /TargetDatabaseName.
+    const connectionString = action === 'import'
+      ? buildConnectionString({ ...entry.config, database: undefined })
+      : buildConnectionString({ ...entry.config, database })
+    const args = dataTierArgs(action, connectionString, targetFile, action === 'import' ? database : undefined)
     const emit = (line: string) => {
       for (const w of win ? [win] : BrowserWindow.getAllWindows()) {
         try { w.webContents.send('sql:datatier:log', { action, line }) } catch { /* closed */ }

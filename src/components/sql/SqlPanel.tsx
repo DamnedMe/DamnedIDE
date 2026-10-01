@@ -18,8 +18,9 @@ import { addHistoryEntry, EMPTY_SQL_WORKSPACE, favoriteHistoryEntry, updateWorks
 import { buildGridQuery, canRewriteGridQuery } from './sqlGridQuery'
 import { SqlQueryMessage, SqlQueryOutput, SqlRunningQuery } from './SqlQueryOutput'
 import { normalizeSqlConnectionConfig } from '../../shared/sqlConnection'
-import type { DataTierAction } from '../../shared/sqlBackup'
+import type { BackupSource, DataTierAction } from '../../shared/sqlBackup'
 import { SqlBackupDialog, SqlDataTierDialog } from './SqlBackupDialogs'
+import { SqlImportDialog } from './SqlImportDialog'
 import '../../styles/sql-workbench.css'
 
 function escapeRe(s: string): string {
@@ -80,6 +81,7 @@ export function SqlPanel() {
   const [resultColumnInfo, setResultColumnInfo] = useState<Record<string, SqlColumnInfo> | null>(null)
   const [backupTarget, setBackupTarget] = useState<{ conn: SqlConnection; database: string } | null>(null)
   const [dataTierTarget, setDataTierTarget] = useState<{ conn: SqlConnection; database: string; action: DataTierAction } | null>(null)
+  const [importTarget, setImportTarget] = useState<{ conn: SqlConnection; database: string; source: BackupSource } | null>(null)
   const [diagram, setDiagram] = useState<DiagramTarget | null>(null)
   const [rowLimitTable, setRowLimitTable] = useState<{ table: string; context?: QueryExecutionContext; columns: string[] } | null>(null)
   const [confirmSelectAll, setConfirmSelectAll] = useState<{ table: string; context?: QueryExecutionContext; columns: string[] } | null>(null)
@@ -651,6 +653,7 @@ export function SqlPanel() {
               onServerInfo={handleServerInfo}
               onBackupDatabase={(conn, database) => setBackupTarget({ conn, database })}
               onDataTier={(conn, database, action) => setDataTierTarget({ conn, database, action })}
+              onImportDatabase={(conn, database, source) => setImportTarget({ conn, database, source })}
               trackOperation={trackOperation}
             />
           <main className="sql-workbench__stage" style={{
@@ -827,6 +830,15 @@ export function SqlPanel() {
           database={dataTierTarget.database}
           action={dataTierTarget.action}
           onClose={() => setDataTierTarget(null)}
+        />
+      )}
+
+      {importTarget && (
+        <SqlImportDialog
+          conn={importTarget.conn}
+          database={importTarget.database}
+          source={importTarget.source}
+          onClose={() => setImportTarget(null)}
         />
       )}
 

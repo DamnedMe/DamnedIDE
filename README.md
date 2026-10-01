@@ -84,8 +84,11 @@
 | 🖱️ **Click su tabella** | *Select Top 1000 / Top N / tutte*, *Script table as* CREATE/SELECT/INSERT/UPDATE/DELETE |
 | ⚡ **Risultati virtualizzati** | griglia a finestra (windowing) per centinaia di migliaia di righe senza lag, multi-result set, righe affette, tempi di esecuzione |
 | 🧭 **ER Diagram** | diagramma auto-generato con relazioni FK, tabelle trascinabili, pan/zoom, export SVG/PNG |
-| 🎨 **PK / FK evidenziate** | colori diversi, colonne ridimensionabili e pinnabili |
+| 🎨 **PK / FK evidenziate** | colori diversi, colonne ridimensionabili e pinnabili (rail a sinistra senza coprire le colonne precedenti) |
 | 📋 **Copy righe** | `Ctrl+C` su righe selezionate in formato tab-separated |
+| 📤 **Export risultati** | menu **esporta**: CSV, SQL INSERT e **Excel `.xlsx`** (numeri/booleani mantenuti, header in grassetto, riquadro bloccato) |
+| 💾 **Backup & ripristino** | backup `.bak` scritto dal server, **restore** con `RESTORE FILELISTONLY` e MOVE automatici dei file logici, `REPLACE` opzionale |
+| 📦 **Data-tier (DacFx)** | extract `.dacpac`, export e **import `.bacpac`** via SqlPackage, con log in tempo reale |
 | ⏹️ **Cancellazione query** | esecuzione annullabile, editor Monaco SQL con `F5` |
 | 🗓️ **Date formattate** | `dd/MM/yyyy HH:mm:ss.fffff` |
 

@@ -9,7 +9,30 @@ export interface BackupOptions {
   init: boolean
 }
 
-export type DataTierAction = 'extract' | 'export'
+export type DataTierAction = 'extract' | 'export' | 'import'
+
+export type BackupSource = 'bak' | 'bacpac'
+
+/** One logical file inside a .bak (RESTORE FILELISTONLY). */
+export interface BackupFileInfo {
+  logicalName: string
+  type: string
+}
+
+export interface RestoreOptions {
+  database: string
+  /** server-side path of the .bak */
+  path: string
+  files: BackupFileInfo[]
+  dataDirectory: string
+  logDirectory: string
+  /** overwrite an existing database (REPLACE) */
+  replace: boolean
+}
+
+function sqlString(value: string): string {
+  return `N'${value.replace(/'/g, "''")}'`
+}
 
 function quoteIdentifier(name: string): string {
   return `[${name.replace(/]/g, ']]')}]`
@@ -45,12 +68,47 @@ export function joinServerPath(dir: string, file: string): string {
   return `${dir.replace(/[\\/]+$/, '')}${separator}${file}`
 }
 
-/** SqlPackage arguments for the chosen data-tier action. */
-export function dataTierArgs(action: DataTierAction, connectionString: string, targetFile: string): string[] {
+/** SqlPackage arguments for the chosen data-tier action. Import reads a local
+ *  .bacpac and creates/updates the target database through its connection. */
+export function dataTierArgs(action: DataTierAction, connectionString: string, file: string, targetDatabase?: string): string[] {
+  if (action === 'import') {
+    const args = ['/Action:Import', `/SourceFile:${file}`, `/TargetConnectionString:${connectionString}`]
+    if (targetDatabase) args.push(`/TargetDatabaseName:${targetDatabase}`)
+    return args
+  }
   return [
     `/Action:${action === 'extract' ? 'Extract' : 'Export'}`,
     `/SourceConnectionString:${connectionString}`,
-    `/TargetFile:${targetFile}`,
+    `/TargetFile:${file}`,
     '/p:VerifyExtraction=True'
   ]
+}
+
+/** Logical files and their types inside a .bak. */
+export function buildFileListStatement(path: string): string {
+  return `RESTORE FILELISTONLY FROM DISK = ${sqlString(path)}`
+}
+
+/**
+ * T-SQL RESTORE for a .bak. Every logical file is moved next to the instance
+ * defaults (or the original directories when the server does not report them),
+ * so a backup taken on another machine still restores here.
+ */
+export function buildRestoreStatement(opts: RestoreOptions): string {
+  const moves = opts.files.map(file => {
+    const isLog = file.type.toUpperCase() === 'L'
+    const directory = isLog ? opts.logDirectory : opts.dataDirectory
+    const safeName = file.logicalName.replace(/[\\/:*?"<>|]/g, '_')
+    const physical = joinServerPath(directory, `${safeName}${isLog ? '.ldf' : '.mdf'}`)
+    return `MOVE ${sqlString(file.logicalName)} TO ${sqlString(physical)}`
+  })
+  const withParts = [...moves, 'RECOVERY', 'STATS = 10']
+  if (opts.replace) withParts.push('REPLACE')
+  return `RESTORE DATABASE ${quoteIdentifier(opts.database)}\nFROM DISK = ${sqlString(opts.path)}\nWITH ${withParts.join(',\n     ')}`
+}
+
+/** Suggested target database name for an import. */
+export function suggestedImportDatabaseName(database: string, source: BackupSource): string {
+  const suffix = source === 'bak' ? 'restore' : 'import'
+  return `${database}_${suffix}`
 }

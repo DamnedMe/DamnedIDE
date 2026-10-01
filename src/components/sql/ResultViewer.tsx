@@ -1,11 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SqlColumnInfo, SqlExecutionResult, SqlForeignKeyInfo, SqlQueryResult } from '../../types/sql'
-import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown, Plus, Sparkles, CalendarDays, ShieldCheck, Loader2, ClipboardCheck, Copy } from 'lucide-react'
+import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown, Plus, Sparkles, CalendarDays, ShieldCheck, Loader2, ClipboardCheck, Copy, ChevronDown, FileSpreadsheet } from 'lucide-react'
 import { buildDeleteStatement, buildInsertEntries, buildInsertStatement, buildUpdateStatement, formatGridDate, newGuid, parseEditedValue } from './sqlForm'
 import { DateTimePicker } from './DateTimePicker'
 import { calculateColumnMetrics, calculateVisibleRange } from './sqlGridUtils'
 import { SqlGridFilter, SqlGridFilterOperator, SqlGridQueryState } from '../../types/sql'
 import { useSettingsStore, useToastStore } from '../../store'
+import { appFontStack } from '../../utils/fonts'
 
 type CellKind = 'guid' | 'date' | 'boolean' | 'number' | 'string'
 
@@ -460,6 +461,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
   const [colWidths, setColWidths] = useState<Record<string, number>>({})
   const [pinned, setPinned] = useState<string[]>([])
+  const [exportMenu, setExportMenu] = useState<{ x: number; y: number } | null>(null)
   const [scrollLeft, setScrollLeft] = useState(0)
   const [viewportH, setViewportH] = useState(0)
   const [viewportW, setViewportW] = useState(0)
@@ -476,6 +478,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const [fkChecks, setFkChecks] = useState<Record<string, { state: 'checking' | 'ok' | 'missing' | 'error'; message?: string }>>({})
   const showToast = useToastStore(s => s.showToast)
   const settingsFontSize = useSettingsStore(s => s.settings.fontSize)
+  const appFont = useSettingsStore(s => s.settings.appFont)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
   const autofitCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -595,7 +598,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
       const joined = index >= baseColumnCount
       const label = joined && separator > 0 ? column.slice(0, separator) : baseTableLabel
       const key = `${joined ? 'joined' : 'base'}:${label}`
-      const left = columnMetrics.columnLeft[column] || 0
+      const left = columnMetrics.columnLeft[column] ?? columnMetrics.railWidth
       const width = columnMetrics.columnWidth[column] || defaultColumnWidth
       const previous = groups[groups.length - 1]
       if (previous?.key === key) previous.width = left + width - previous.left
@@ -748,6 +751,32 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     URL.revokeObjectURL(url)
   }
 
+  // Real .xlsx written by the main process: numbers/booleans keep their type,
+  // dates are exported as the grid shows them, nulls stay empty cells.
+  const exportXlsx = async () => {
+    if (!result) return
+    const sel = selectedRows.size > 0 ? rows.filter((_, i) => selectedRows.has(i)) : rows
+    const cellFor = (col: string, value: unknown): string | number | boolean | null => {
+      if (value === null || value === undefined) return null
+      if (typeof value === 'number') return Number.isFinite(value) ? value : String(value)
+      if (typeof value === 'boolean') return value
+      if (typeof value === 'bigint') {
+        return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : String(value)
+      }
+      if (value instanceof Date || colTypes[col] === 'date') return formatValue(col, value)
+      return String(value)
+    }
+    const data = sel.map(row => columns.map(col => cellFor(col, row[col])))
+    const table = getResultTableName?.()
+    const sheet = table ? (table.split('.').pop() || 'Results') : 'Results'
+    try {
+      const saved = await window.electronAPI.export.xlsx('query_results.xlsx', sheet, columns, data)
+      if (saved) showToast(`${sel.length} righe esportate in .xlsx`)
+    } catch (e) {
+      showToast((e as Error).message || 'esportazione xlsx fallita', 'error')
+    }
+  }
+
   // Column resize: coalesce writes to one per animation frame.
   const startResize = (e: React.MouseEvent, col: string) => {
     e.preventDefault()
@@ -778,7 +807,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     const canvas = autofitCanvasRef.current || (autofitCanvasRef.current = document.createElement('canvas'))
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    ctx.font = `${fontSize}px "JetBrains Mono", "Cascadia Code", "Fira Code", "Consolas", monospace`
+    ctx.font = `${fontSize}px ${appFontStack(appFont)}`
     let widest = ctx.measureText(col).width
     for (const row of rows) {
       const width = ctx.measureText(formatValue(col, row[col])).width
@@ -786,7 +815,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     }
     const next = Math.min(1400, Math.max(60, Math.ceil(widest / zoomScale) + 22))
     setColWidths(prev => ({ ...prev, [col]: next }))
-  }, [rows, formatValue, fontSize, zoomScale])
+  }, [rows, formatValue, fontSize, zoomScale, appFont])
 
   const colAccent = (col: string): { color: string; bg: string; tag: string } | null => {
     if (primaryKeys.has(col)) return { color: PK_COLOR, bg: PK_BG, tag: 'PK' }
@@ -964,6 +993,20 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)',
     cursor: 'pointer', transition: 'color 140ms ease'
   }
+
+  const exportItem = (label: string, icon: React.ReactNode, action: () => void, testId: string) => (
+    <div role="menuitem" data-testid={testId}
+      onClick={() => { setExportMenu(null); action() }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px', cursor: 'pointer',
+        color: 'var(--text-primary)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+      {icon}
+      {label}
+    </div>
+  )
 
   if (!execution || !result) {
     return (
@@ -1178,37 +1221,46 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             </button>
           )}
           <button
-            onClick={exportCsv}
-            title={selectedRows.size > 0 ? `export ${selectedRows.size} selected rows` : 'export all rows to csv'}
-            data-tip-desc="export the grid as a CSV file"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              setExportMenu(exportMenu ? null : { x: rect.left, y: rect.bottom + 4 })
+            }}
+            aria-haspopup="menu" aria-expanded={!!exportMenu}
+            title={selectedRows.size > 0 ? `esporta ${selectedRows.size} righe selezionate` : 'esporta tutte le righe'}
+            data-tip-desc="export the grid: csv, sql insert or excel"
             style={{
               display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
               padding: '2px 8px', marginLeft: '6px', height: '18px',
-              background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--accent-color)',
+              background: exportMenu ? 'var(--accent-color)' : 'var(--accent-bg)',
+              border: '1px solid var(--accent-color)',
+              borderRadius: 'var(--radius-sm)',
+              color: exportMenu ? 'var(--text-inverse)' : 'var(--accent-color)',
               cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
               fontWeight: 600
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--text-inverse)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent-bg)'; e.currentTarget.style.color = 'var(--accent-color)' }}>
-            <Download size={9} /> csv
+            onMouseLeave={(e) => {
+              if (!exportMenu) {
+                e.currentTarget.style.background = 'var(--accent-bg)'
+                e.currentTarget.style.color = 'var(--accent-color)'
+              }
+            }}>
+            <Download size={9} /> esporta <ChevronDown size={8} />
           </button>
-          <button
-            onClick={exportSql}
-            title={selectedRows.size > 0 ? `export ${selectedRows.size} selected rows as sql insert` : 'export all rows as sql insert'}
-            data-tip-desc="generate SQL INSERT statements from the grid"
-            style={{
-              display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
-              padding: '2px 8px', marginLeft: '4px', height: '18px',
-              background: 'transparent', border: '1px solid var(--accent-secondary)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--accent-secondary)',
-              cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
-              fontWeight: 600, transition: 'background 140ms ease, color 140ms ease'
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-secondary)'; e.currentTarget.style.color = 'var(--text-inverse)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--accent-secondary)' }}>
-            <FileCode2 size={9} /> sql
-          </button>
+          {exportMenu && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setExportMenu(null)} />
+              <div role="menu" aria-label="formato di esportazione" style={{
+                position: 'fixed', left: Math.min(exportMenu.x, window.innerWidth - 200), top: exportMenu.y, zIndex: 999,
+                background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', padding: '4px 0', minWidth: '180px'
+              }}>
+                {exportItem('CSV (.csv)', <Table2 size={11} />, exportCsv, 'export-file-csv')}
+                {exportItem('SQL INSERT (.sql)', <FileCode2 size={11} />, exportSql, 'export-file-sql')}
+                {exportItem('Excel (.xlsx)', <FileSpreadsheet size={11} />, () => { void exportXlsx() }, 'export-file-xlsx')}
+              </div>
+            </>
+          )}
           {onClear && (
             <button style={{ ...btnStyle, marginLeft: '4px' }} title="clear results" data-tip-desc="clear the displayed results" onClick={onClear}
               onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
@@ -1366,6 +1418,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); togglePin(col) }}
+                      aria-label={isPinned ? `unpin ${col}` : `pin ${col}`}
                       title={isPinned ? 'unpin column' : 'pin column'} data-tip-desc='pin or unpin this column'
                       style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center',

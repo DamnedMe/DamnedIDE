@@ -11,12 +11,20 @@ const processes = new Map<string, RunningProcess>()
 let nextId = 1
 
 /**
- * Force-kills a process and its whole descendant tree on Windows. `taskkill /T`
- * terminates the root AND every child in one pass, which is what keeps
- * `dotnet run` (and the app exe it launches) from surviving a stop.
+ * Force-kills a process and its whole descendant tree. Windows uses
+ * `taskkill /T`; POSIX kills the process group (node-pty forks the shell as a
+ * session leader, so its pgid equals its pid and every descendant is inside).
  */
 export function killProcessTree(rootPid: number): void {
   if (!rootPid) return
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-rootPid, 'SIGKILL')
+    } catch {
+      try { process.kill(rootPid, 'SIGKILL') } catch { /* already gone */ }
+    }
+    return
+  }
   try {
     execFile('taskkill', ['/PID', String(rootPid), '/T', '/F'], { windowsHide: true }, () => { /* best effort */ })
   } catch { /* ignore */ }
@@ -31,10 +39,13 @@ function sendToWindow(targetWindow: BrowserWindow | null, channel: string, ...ar
 
 export function startProcess(cwd: string, command: string, args: string[], targetWindow: BrowserWindow | null): string {
   const id = `proc_${nextId++}`
+  // POSIX: own process group (`detached`), so stop() can signal the whole tree
+  // (dotnet run + the app it spawns) with a single kill(-pid).
   const proc = spawn(command, args, {
     cwd,
     stdio: 'pipe',
-    shell: process.platform === 'win32'
+    shell: process.platform === 'win32',
+    detached: process.platform !== 'win32'
   })
 
   processes.set(id, { id, proc, cwd })
@@ -64,7 +75,11 @@ export function stopProcess(id: string): void {
     // Kill the whole process tree (dotnet run spawns the app as a child)
     killProcessTree(session.proc.pid)
   } else if (session.proc.pid) {
-    try { session.proc.kill('SIGTERM') } catch { /* ignore */ }
+    try {
+      process.kill(-session.proc.pid, 'SIGTERM')
+    } catch {
+      try { session.proc.kill('SIGTERM') } catch { /* ignore */ }
+    }
   }
 }
 

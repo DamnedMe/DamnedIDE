@@ -12,6 +12,7 @@ import { ReferencesModal } from './ReferencesModal'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics, type DiagnosticCounts } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
 import { FileTypeIcon } from '../../utils/file-icon'
+import { joinPath, basenameOf, dirnameOf, normalizeSlashes } from '../../utils/paths'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { MarkdownView } from './MarkdownView'
 import Editor, { OnMount } from '@monaco-editor/react'
@@ -105,9 +106,9 @@ const readLaunchProfiles = async (projectDir: string): Promise<LaunchProfileInfo
   const empty: LaunchProfileInfo = { profiles: [], launchUrls: {} }
   try {
     // existence check first: readFile on a missing file logs ENOENT in the main process
-    const entries = await window.electronAPI.fs.readDir(`${projectDir}\\Properties`).catch(() => [])
+    const entries = await window.electronAPI.fs.readDir(joinPath(projectDir, 'Properties')).catch(() => [])
     if (!entries.some(e => e.isFile && e.name.toLowerCase() === 'launchsettings.json')) return empty
-    const raw = await window.electronAPI.fs.readFile(`${projectDir}\\Properties\\launchSettings.json`)
+    const raw = await window.electronAPI.fs.readFile(joinPath(projectDir, 'Properties', 'launchSettings.json'))
     const data = JSON.parse(raw) as { profiles?: Record<string, { launchUrl?: string }> }
     if (!data.profiles || typeof data.profiles !== 'object') return empty
     const profiles = Object.keys(data.profiles)
@@ -826,23 +827,23 @@ export function CodeEditor() {
           return
         }
 
-        const slnPath = sln ? `${rootPath}\\${sln.name}` : null
+        const slnPath = sln ? joinPath(rootPath, sln.name) : null
         setSolutionPath(slnPath)
         const projects: SolutionProject[] = []
         const push = (rel: string) => {
-          const norm = rel.split('/').join('\\')
-          const abs = `${rootPath}\\${norm}`
+          const norm = normalizeSlashes(rel)
+          const abs = joinPath(rootPath, norm)
           projects.push({
-            name: norm.slice(norm.lastIndexOf('\\') + 1).replace(/\.csproj$/i, ''),
+            name: basenameOf(norm).replace(/\.csproj$/i, ''),
             csprojPath: abs,
-            projectDir: abs.slice(0, abs.lastIndexOf('\\')),
+            projectDir: dirnameOf(abs),
             relative: norm
           })
         }
         if (rootCsproj) push(rootCsproj.name)
         if (sln) {
           try {
-            const content = await window.electronAPI.fs.readFile(`${rootPath}\\${sln.name}`)
+            const content = await window.electronAPI.fs.readFile(joinPath(rootPath, sln.name))
             const re = /Project\(".*?"\)\s*=\s*".*?",\s*"(.*?\.csproj)"/gi
             let m: RegExpExecArray | null
             while ((m = re.exec(content))) push(m[1])
@@ -860,7 +861,7 @@ export function CodeEditor() {
 
         let saved: RunConfig | null = null
         if (cfgDir) {
-          try { saved = JSON.parse(await window.electronAPI.fs.readFile(`${cfgDir}\\damnedide\\run.json`)) as RunConfig } catch { /* none yet */ }
+          try { saved = JSON.parse(await window.electronAPI.fs.readFile(joinPath(cfgDir, 'damnedide', 'run.json'))) as RunConfig } catch { /* none yet */ }
         }
 
         // profiles per project: used both to pick the default startup and to fill the selector
@@ -869,7 +870,7 @@ export function CodeEditor() {
 
         const savedRel = saved?.startupProject
         const chosen = savedRel
-          ? uniq.find(p => p.relative.toLowerCase() === savedRel.toLowerCase())
+          ? uniq.find(p => normalizeSlashes(p.relative).toLowerCase() === normalizeSlashes(savedRel).toLowerCase())
           : undefined
         const chosenProject = chosen
           ?? uniq.find(p => profileMap[p.relative].profiles.length > 0)
@@ -894,8 +895,8 @@ export function CodeEditor() {
   const saveRunConfig = async (cfg: RunConfig) => {
     if (!runConfigDir) return
     try {
-      await window.electronAPI.fs.mkdir(`${runConfigDir}\\damnedide`).catch(() => {})
-      await window.electronAPI.fs.writeFile(`${runConfigDir}\\damnedide\\run.json`, JSON.stringify(cfg, null, 2))
+      await window.electronAPI.fs.mkdir(joinPath(runConfigDir, 'damnedide')).catch(() => {})
+      await window.electronAPI.fs.writeFile(joinPath(runConfigDir, 'damnedide', 'run.json'), JSON.stringify(cfg, null, 2))
     } catch { /* not critical */ }
   }
 

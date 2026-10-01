@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Loader2, X, GitBranch, FolderGit2, Bug, Sparkles, Layers } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import { joinPath } from '../../utils/paths'
 import type { WorktreeEntry } from '../../types/worktree'
 
 interface NewWorktreeDialogProps {
@@ -20,7 +21,7 @@ export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: N
   const t = useI18n()
 
   const branch = id.trim() ? `${wtType}/${id.trim()}` : ''
-  const worktreePath = id.trim() ? `${repoPath}\\.worktrees\\${wtType}\\${id.trim()}` : ''
+  const worktreePath = id.trim() ? joinPath(repoPath, '.worktrees', wtType, id.trim()) : ''
 
   // candidate bases: every other worktree's branch (excluding the one being created)
   const baseOptions = (worktrees || [])

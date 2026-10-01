@@ -19,11 +19,18 @@ let nextId = 1
 let pwshChecked = false
 let pwshFound = false
 
+const isWindows = process.platform === 'win32'
+
+function defaultShell(): string {
+  if (isWindows) return process.env.ComSpec || 'cmd.exe'
+  return process.env.SHELL || '/bin/bash'
+}
+
 function pwshAvailable(): boolean {
   if (!pwshChecked) {
     pwshChecked = true
     try {
-      execSync('where pwsh.exe', { stdio: 'ignore', windowsHide: true })
+      execSync(isWindows ? 'where pwsh.exe' : 'which pwsh', { stdio: 'ignore', windowsHide: true })
       pwshFound = true
     } catch { /* not installed */ }
   }
@@ -31,6 +38,14 @@ function pwshAvailable(): boolean {
 }
 
 function shellFor(type: TerminalType): { executable: string; args: string[] } {
+  // cmd/powershell.exe do not exist on Linux/macOS: every terminal type maps to
+  // the login shell ($SHELL), with PowerShell 7 only when pwsh is installed.
+  if (!isWindows) {
+    if (type === 'pwsh' && pwshAvailable()) {
+      return { executable: 'pwsh', args: ['-NoLogo', '-NoProfile'] }
+    }
+    return { executable: defaultShell(), args: [] }
+  }
   switch (type) {
     case 'powershell':
       return { executable: 'powershell.exe', args: ['-NoLogo', '-NoProfile'] }
@@ -40,9 +55,9 @@ function shellFor(type: TerminalType): { executable: string; args: string[] } {
         ? { executable: 'pwsh.exe', args: ['-NoLogo', '-NoProfile'] }
         : { executable: 'powershell.exe', args: ['-NoLogo', '-NoProfile'] }
     case 'npm':
-      return { executable: process.env.ComSpec || 'cmd.exe', args: [] }
+      return { executable: defaultShell(), args: [] }
     default:
-      return { executable: process.env.ComSpec || 'cmd.exe', args: [] }
+      return { executable: defaultShell(), args: [] }
   }
 }
 

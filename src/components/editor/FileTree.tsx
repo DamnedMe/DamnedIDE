@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronRight, Folder, FolderOpen, Loader2, ChevronsUpDown, ChevronsDownUp, Trash2, FolderPlus, FilePlus, ExternalLink, Copy } from 'lucide-react'
 import { FileTypeIcon } from '../../utils/file-icon'
+import { joinPath, dirnameOf, samePath } from '../../utils/paths'
 
 interface TreeNode {
   name: string
@@ -173,7 +174,7 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
   const handleDelete = async (node: TreeNode) => {
     try {
       await window.electronAPI.fs.delete(node.path)
-      const parentPath = node.path.split(/[/\\]/).slice(0, -1).join('\\') || rootPath
+      const parentPath = dirnameOf(node.path) || rootPath
       await refreshNode(parentPath)
     } catch { /* ignore */ }
   }
@@ -182,7 +183,7 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
     const name = prompt('File name:')
     if (!name) return
     try {
-      const newPath = `${parentNode.path}\\${name}`
+      const newPath = joinPath(parentNode.path, name)
       await window.electronAPI.fs.writeFile(newPath, '')
       await refreshNode(parentNode.path)
     } catch { /* ignore */ }
@@ -192,14 +193,14 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
     const name = prompt('Folder name:')
     if (!name) return
     try {
-      const newPath = `${parentNode.path}\\${name}`
+      const newPath = joinPath(parentNode.path, name)
       await window.electronAPI.fs.mkdir(newPath)
       await refreshNode(parentNode.path)
     } catch { /* ignore */ }
   }
 
   const handleOpenFolder = (node: TreeNode) => {
-    const dirPath = node.isDirectory ? node.path : node.path.split(/[/\\]/).slice(0, -1).join('\\')
+    const dirPath = node.isDirectory ? node.path : dirnameOf(node.path)
     window.electronAPI.shell.openFolder(dirPath)
   }
 
@@ -231,13 +232,13 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
       for (const e of entries) {
         if (e.isDirectory) {
           dirs.push({
-            name: e.name, path: `${fullPath}\\${e.name}`,
+            name: e.name, path: joinPath(fullPath, e.name),
             isDirectory: true, isFile: false,
             children: [], loaded: false
           })
         } else {
           files.push({
-            name: e.name, path: `${fullPath}\\${e.name}`,
+            name: e.name, path: joinPath(fullPath, e.name),
             isDirectory: false, isFile: true
           })
         }
@@ -446,7 +447,7 @@ function buildVirtualTree(rootPath: string, filePaths: string[]): TreeNode {
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i]
       const isLast = i === parts.length - 1
-      const path = i === 0 ? `${rootPath}\\${part}` : `${parent.path}\\${part}`
+      const path = joinPath(parent.path, part)
       if (isLast) {
         parent.children = parent.children || []
         parent.children.push({ name: part, path: fullPath, isDirectory: false, isFile: true })
@@ -538,7 +539,7 @@ function TreeNodeItem({
   onContextMenu?: (e: React.MouseEvent, node: TreeNode) => void
 }) {
   const isExpanded = (isVirtual || node.loaded) && node.children && node.children.length > 0
-  const isSelected = selectedFile?.replace(/\//g, '\\') === node.path.replace(/\//g, '\\')
+  const isSelected = !!selectedFile && samePath(selectedFile, node.path)
   const nodeRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

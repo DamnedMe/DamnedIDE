@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 export type UpdateStatus =
   | 'idle'
@@ -20,6 +22,32 @@ export interface UpdateState {
   // 0-100 while downloading
   progress?: number
   error?: string
+  // native Linux package (deb/pacman): the update is installed with the
+  // distribution package manager, never by electron-updater
+  managed?: boolean
+  // human-readable instruction shown by the settings panel for managed builds
+  installHint?: string
+}
+
+type LinuxPackageType = 'appimage' | 'deb' | 'pacman' | 'rpm' | 'unknown'
+
+/**
+ * Package format of the running Linux build, from the `package-type` file the
+ * packager writes in `resources/` (see scripts/after-pack.cjs).
+ */
+function detectLinuxPackageType(): LinuxPackageType {
+  if (process.platform !== 'linux') return 'unknown'
+  if (process.env.APPIMAGE) return 'appimage'
+  try {
+    const value = readFileSync(join(process.resourcesPath, 'package-type'), 'utf-8').trim().toLowerCase()
+    if (value === 'appimage' || value === 'deb' || value === 'pacman' || value === 'rpm') return value
+  } catch { /* dev build or label missing */ }
+  return 'unknown'
+}
+
+function installHintFor(type: LinuxPackageType): string {
+  const name = type === 'unknown' ? 'il gestore pacchetti della distribuzione' : type
+  return `installa la nuova versione con il gestore pacchetti (${name}), non dall'IDE`
 }
 
 /**
@@ -27,17 +55,31 @@ export interface UpdateState {
  * provider, auto-download, periodic checks, plus a manual `update:check` that the
  * settings panel can trigger. State is broadcast on `update:state` so the UI can
  * show "verifica in corso / aggiornato / scarico la X / pronta".
+ *
+ * Native Linux packages (deb/pacman/rpm) are CHECK-ONLY. electron-updater would
+ * otherwise download the AppImage — the GitHub feed carries no pacman/deb file —
+ * and install it on quit through a SYNCHRONOUS `spawnSync(sudo/pkexec …)`: the
+ * main process blocks on the password prompt inside the `quit` event, so the
+ * window closes but the app never exits. Distro packages are updated with
+ * `pacman -U` / `apt install` (the settings panel says so), never by the IDE.
  */
 export class UpdateService {
   private current: UpdateState
   private target: () => BrowserWindow | null
+  private readonly packageType: LinuxPackageType
+  // true when the update must be installed by the distro package manager
+  private readonly managed: boolean
 
   constructor(target: () => BrowserWindow | null) {
     this.target = target
+    this.packageType = detectLinuxPackageType()
+    this.managed = app.isPackaged && process.platform === 'linux' && this.packageType !== 'appimage'
     this.current = {
       packaged: app.isPackaged,
       currentVersion: app.getVersion(),
-      status: 'idle'
+      status: 'idle',
+      managed: this.managed,
+      installHint: this.managed ? installHintFor(this.packageType) : undefined
     }
     this.registerIpc()
     if (app.isPackaged) this.start()
@@ -64,6 +106,9 @@ export class UpdateService {
       return this.current
     })
     ipcMain.handle('update:install', () => {
+      // distro packages are installed by pacman/apt: quitting here would block
+      // on a synchronous sudo/pkexec prompt and leave the process alive
+      if (this.managed) return false
       autoUpdater.quitAndInstall(false, true)
       return true
     })
@@ -80,8 +125,10 @@ export class UpdateService {
   }
 
   private start(): void {
-    autoUpdater.autoDownload = true
-    autoUpdater.autoInstallOnAppQuit = true
+    // Managed Linux builds (deb/pacman) only check: no download and, above all,
+    // no install-on-quit (it spawns sudo synchronously inside the quit event).
+    autoUpdater.autoDownload = !this.managed
+    autoUpdater.autoInstallOnAppQuit = !this.managed
     autoUpdater.logger = null
 
     autoUpdater.on('checking-for-update', () => this.set({ status: 'checking', error: undefined }))

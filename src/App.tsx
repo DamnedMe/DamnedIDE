@@ -145,8 +145,14 @@ export default function App() {
   }
 
   const handleOpenFolder = async () => {
-    const p = await window.electronAPI.dialog.openFolder()
-    if (p) await openRepo(p)
+    // Any failure (dialog error, path not a repository) must never leave the
+    // caller's flow stuck with a modal overlay covering the window.
+    try {
+      const p = await window.electronAPI.dialog.openFolder()
+      if (p) await openRepo(p)
+    } catch (e) {
+      showToast((e as Error).message || 'apertura cartella fallita', 'error')
+    }
   }
 
   // Open a folder / file handed over by the OS ("Open with DamnedIDE"): a

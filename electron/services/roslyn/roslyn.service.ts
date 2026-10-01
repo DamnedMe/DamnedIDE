@@ -42,7 +42,11 @@ const BRIDGE_TFM = 'net8.0'
 const SKIP_DIRS = new Set(['bin', 'obj', 'node_modules', 'packages', 'dist', 'out', 'TestResults'])
 
 function bridgeDir(): string {
-  return join(app.getAppPath(), 'ide-services', 'RoslynBridge')
+  // Packaged builds unpack the sidecar next to app.asar (asarUnpack): `dotnet`
+  // cannot load assemblies from inside the archive. In dev appPath is the repo.
+  const appPath = app.getAppPath()
+  const base = appPath.endsWith('app.asar') ? `${appPath}.unpacked` : appPath
+  return join(base, 'ide-services', 'RoslynBridge')
 }
 
 /**
@@ -67,6 +71,12 @@ export class RoslynService {
 
   private ensureBuilt(): Promise<boolean> {
     if (existsSync(this.dllPath())) return Promise.resolve(true)
+    // An installed build ships the compiled bridge: building at runtime would
+    // write into /opt (root-owned) and always fail — report and disable instead.
+    if (app.isPackaged) {
+      console.error('[roslyn] bridge non trovato nel package:', this.dllPath())
+      return Promise.resolve(false)
+    }
     // single-flight: two roots warming up at once must not run two dotnet builds
     this.buildPromise ??= new Promise<boolean>((resolve) => {
       execFile('dotnet', ['build', '-c', 'Release', bridgeDir()], { windowsHide: true, timeout: 300000 }, (err) => resolve(!err))

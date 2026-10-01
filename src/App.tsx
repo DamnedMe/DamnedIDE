@@ -311,13 +311,21 @@ export default function App() {
           fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)'
         }}>
           <span>🔄 nuova versione scaricata</span>
-          <button onClick={() => window.electronAPI.updater.install()}
+          <button onClick={async () => {
+            const res = await window.electronAPI.updater.install().catch(() => null)
+            if (res?.ok) {
+              setUpdateReady(false)
+              showToast("aggiornamento installato: riavvia l'IDE")
+            } else if (res?.error) {
+              showToast(res.error, 'error')
+            }
+          }}
             style={{
               padding: '5px 12px', background: 'var(--accent-color)', color: 'var(--text-inverse)',
               border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
               fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
             }}>
-            riavvia e aggiorna
+            installa aggiornamento
           </button>
         </div>
       )}

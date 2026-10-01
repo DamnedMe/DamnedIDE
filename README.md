@@ -168,7 +168,7 @@ Gli aggiornamenti OTA richiedono una versione installata tramite un installer pr
 
 Su Linux `electron-updater` sceglie l'updater in base a `resources/package-type`:
 - **AppImage** — si aggiorna da solo (richiede FUSE 2: su Arch installa `fuse2`, oppure avvia con `--appimage-extract-and-run`);
-- **.deb / .pacman (Arch Linux)** — **solo verifica**: l'IDE segnala la nuova versione, ma l'installazione resta al gestore pacchetti (`apt` / `sudo pacman -U damned-ide-<versione>.pacman`). electron-updater non scarica né installa: l'installazione all'uscita usa `sudo`/`pkexec` in modo sincrono e bloccherebbe la chiusura dell'app (e il feed GitHub non contiene un pacchetto pacman, quindi scaricherebbe l'AppImage).
+- **.deb / .pacman (Arch Linux)** — l'IDE **scarica il pacchetto della distribuzione** (il feed `latest-linux.yml` lo include) e lo installa con `pkexec pacman -U` / `pkexec dpkg -i`: polkit mostra la richiesta di password, l'installazione è asincrona e l'app non si blocca (electron-updater non viene mai usato per installare). Se il feed non contiene il pacchetto, le impostazioni ripiegano sull'aggiornamento manuale (`sudo pacman -U damned-ide-<versione>.pacman`).
 
 I pacchetti Linux dipendono solo da librerie presenti nei repository ufficiali della relativa distribuzione (per Arch: `gtk3`, `nss`, `libsecret`, `libxslt`, `minizip`, `libxtst`, `xdg-utils`, …).
 

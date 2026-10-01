@@ -166,15 +166,18 @@ const CLI_SPECS: CliSpec[] = [
     label: 'opencode',
     command: 'opencode',
     models: OPENCODE_MODELS,
-    efforts: ['minimal', 'low', 'medium', 'high', 'max'],
+    // v2 removed `--variant`: the reasoning effort is a variant of the model id
+    // (`provider/model#variant`), with the same names opencode's own picker shows
+    efforts: ['low', 'high', 'max'],
     permissionModes: ['default', 'auto'],
     versionArgs: ['--version'],
-    // `--variant` maps to the provider-specific reasoning effort
     buildArgs: (req) => {
       const args = ['run', '--format', 'json']
-      if (req.model) args.push('--model', req.model)
+      if (req.model) {
+        const model = req.effort && !req.model.includes('#') ? `${req.model}#${req.effort}` : req.model
+        args.push('--model', model)
+      }
       if (req.resume) args.push('--session', req.resume)
-      if (req.effort) args.push('--variant', req.effort)
       if (req.permissionMode === 'auto') args.push('--auto')
       return args
     },
@@ -413,9 +416,14 @@ export class AgentService {
   private sendCli(spec: CliSpec, req: AgentSendRequest, win: BrowserWindow | null): Promise<ClaudeResult> {
     return new Promise((resolve) => {
       const useShell = process.platform === 'win32'
+      // an effort stored by a previous CLI version (or for another provider) must
+      // not break the turn: only values this CLI still knows are forwarded
+      const argsFor = !!req.effort && spec.efforts.includes(req.effort)
+        ? req
+        : { ...req, effort: '' }
       let proc: ChildProcess
       try {
-        proc = spawn(useShell ? spec.command : resolveCommand(spec.command), spec.buildArgs(req), {
+        proc = spawn(useShell ? spec.command : resolveCommand(spec.command), spec.buildArgs(argsFor), {
           cwd: req.cwd || process.cwd(),
           env: { ...process.env },
           stdio: ['pipe', 'pipe', 'pipe'],

@@ -343,6 +343,10 @@ export interface AppSettings {
   theme: 'dark' | 'light'
   fontSize: number
   iconSize: number
+  // family applied to the whole IDE (UI, SQL, editors, terminal)
+  appFont: string
+  // families added by the user, selectable like the built-ins
+  customFonts: string[]
   language: 'en' | 'it'
   minimap: boolean
   tabSize: number
@@ -386,6 +390,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   fontSize: 12.5,
   iconSize: 14,
+  appFont: 'Nunito',
+  customFonts: [],
   language: 'en',
   minimap: true,
   tabSize: 2,
@@ -418,6 +424,10 @@ function loadSettings(): AppSettings {
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
+        appFont: typeof parsed.appFont === 'string' && parsed.appFont.trim() ? parsed.appFont.trim() : DEFAULT_SETTINGS.appFont,
+        customFonts: Array.isArray(parsed.customFonts)
+          ? parsed.customFonts.filter((f: unknown): f is string => typeof f === 'string' && !!f.trim()).map((f: string) => f.trim())
+          : [],
         themeColors: {
           dark: { ...DEFAULT_DARK_COLORS, ...(parsed.themeColors?.dark || {}) },
           light: { ...DEFAULT_LIGHT_COLORS, ...(parsed.themeColors?.light || {}) }

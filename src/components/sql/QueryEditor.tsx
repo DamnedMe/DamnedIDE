@@ -5,6 +5,7 @@ import { defineThemes, THEME_DARK, THEME_LIGHT } from '../editor/monaco-theme'
 import { useSettingsStore, useSqlStore, useToastStore } from '../../store'
 import { Play, Square, Loader2, Database, Plus, X, History, Pencil, Save, Trash2, Server, ChevronRight } from 'lucide-react'
 import { registerSqlAssistant } from './sqlAssistant'
+import { appFontStack } from '../../utils/fonts'
 import { SqlQuerySource, SqlWorkspaceTab } from '../../types/sql'
 
 export interface QueryExecutionContext {
@@ -358,7 +359,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
           onMount={handleMount}
           options={{
             fontSize: settings.fontSize,
-            fontFamily: 'var(--font-mono)',
+            fontFamily: appFontStack(settings.appFont),
             minimap: { enabled: false },
             lineNumbersMinChars: 3,
             scrollBeyondLastLine: false,

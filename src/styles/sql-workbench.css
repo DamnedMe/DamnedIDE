@@ -1,5 +1,5 @@
 .sql-workbench {
-  --sql-font-ui: "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+  --sql-font-ui: var(--app-font, "Segoe UI Variable", "Segoe UI", Arial, sans-serif);
   --sql-radius-panel: 10px;
   --sql-radius-control: 6px;
   --sql-transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);

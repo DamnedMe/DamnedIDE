@@ -49,5 +49,5 @@
   --radius-lg: 10px;
   --radius-xl: 14px;
 
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+  --font-mono: var(--app-font, 'Nunito', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace);
 }

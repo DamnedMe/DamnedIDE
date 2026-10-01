@@ -5,6 +5,7 @@ import { ZoomControls } from './CodeEditor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useUIStore, useSettingsStore, useDiffStore } from '../../store'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
+import { appFontStack } from '../../utils/fonts'
 import { MarkdownView } from './MarkdownView'
 
 export interface DiffViewerHandle {
@@ -33,6 +34,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null)
   const theme = useUIStore(s => s.theme)
   const themeColors = useSettingsStore(s => s.settings.themeColors)
+  const appFont = useSettingsStore(s => s.settings.appFont)
   const [mdPreview, setMdPreview] = useState(false)
   const isMarkdown = !!filePath?.toLowerCase().endsWith('.md')
 
@@ -264,7 +266,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
           onMount={handleDiffMount}
           options={{
             fontSize,
-            fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+            fontFamily: appFontStack(appFont),
             fontLigatures: false,
             mouseWheelZoom: true,
             lineNumbers: 'on',

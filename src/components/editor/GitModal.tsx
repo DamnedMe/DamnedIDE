@@ -40,7 +40,7 @@ export function GitModal({ title, text, blame, history, onClose }: GitModalProps
         {text !== undefined && (
           <pre style={{
             flex: 1, overflow: 'auto', margin: 0, padding: '10px 14px',
-            fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
             color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
             lineHeight: 1.5
           }}>{text}</pre>

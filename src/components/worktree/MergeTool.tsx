@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react'
 import { X, ChevronUp, ChevronDown, Save, Loader2, GitMerge, Check, ArrowRight, Columns2, FileDiff } from 'lucide-react'
 import { useUIStore, useSettingsStore } from '../../store'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../editor/monaco-theme'
+import { appFontStack } from '../../utils/fonts'
 import {
   detectLangForMerge, parseConflicts, applyChoices, unresolvedCount,
   type ConflictBlock, type MergeSide
@@ -28,6 +29,8 @@ function applyEditorTheme(monaco: typeof import('monaco-editor')) {
 // merged result is built live on the right and stays editable for manual fixes.
 export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeToolProps) {
   const theme = useUIStore(s => s.theme)
+  const appFont = useSettingsStore(s => s.settings.appFont)
+  const appFontSize = useSettingsStore(s => s.settings.fontSize)
   const [original, setOriginal] = useState('')
   const [choices, setChoices] = useState<Record<number, MergeSide | undefined>>({})
   // manual edits in the result pane take precedence until a choice changes
@@ -338,8 +341,8 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
                 onChange={(v) => setManual(v || '')}
                 onMount={(_e, monaco) => applyEditorTheme(monaco)}
                 options={{
-                  fontSize: 12.5,
-                  fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+                  fontSize: appFontSize,
+                  fontFamily: appFontStack(appFont),
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
                   automaticLayout: true,

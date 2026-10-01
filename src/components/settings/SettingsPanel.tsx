@@ -3,6 +3,7 @@ import { useSettingsStore, useToastStore, useWorktreeStore, useEditorStore, AppS
 import { PanelContainer } from '../layout/PanelContainer'
 import { relativeLuminance } from '../../utils/color'
 import { useI18n } from '../../i18n'
+import { APP_FONT_CHOICES, DEFAULT_APP_FONT } from '../../utils/fonts'
 import { Settings, Sun, Moon, Type, LayoutGrid, WrapText, Indent, Save, RotateCcw, AlignLeft, TextQuote, Palette, X, ChevronLeft, Languages, Images, SlidersHorizontal, PenLine, Globe, PlugZap, Bot, Plus, Trash2, RefreshCw, Loader2, AlertCircle, Check, Download } from 'lucide-react'
 import { McpPanel } from '../mcp/McpPanel'
 import { AgentSettings } from './AgentSettings'
@@ -128,7 +129,35 @@ export function SettingsPanel() {
   const addAiRule = useAiChatStore(s => s.addRule)
   const removeAiRule = useAiChatStore(s => s.removeRule)
   const [newRule, setNewRule] = useState('')
+  const [newFont, setNewFont] = useState('')
   const t = useI18n()
+
+  const fontChoices = [
+    ...APP_FONT_CHOICES.map(c => ({
+      value: c.value,
+      label: c.value === DEFAULT_APP_FONT
+        ? `${c.label} (${t('default')})`
+        : c.value === 'JetBrains Mono' ? `${c.label} (${t('current')})` : c.label
+    })),
+    ...s.customFonts.map(f => ({ value: f, label: f }))
+  ]
+
+  const addCustomFont = () => {
+    const name = newFont.trim().replace(/['"]/g, '')
+    if (!name) return
+    const exists = s.customFonts.some(f => f.toLowerCase() === name.toLowerCase()) ||
+      APP_FONT_CHOICES.some(c => c.value.toLowerCase() === name.toLowerCase())
+    updateSettings({ customFonts: exists ? s.customFonts : [...s.customFonts, name], appFont: name })
+    setNewFont('')
+    showToast(`font "${name}" applicato`)
+  }
+
+  const removeCustomFont = (name: string) => {
+    updateSettings({
+      customFonts: s.customFonts.filter(f => f !== name),
+      ...(s.appFont === name ? { appFont: DEFAULT_APP_FONT } : {})
+    })
+  }
 
   // ─── OTA: current version + manual check, kept in sync with the main process ─
   const [update, setUpdate] = useState<UpdateState | null>(null)
@@ -436,7 +465,7 @@ export function SettingsPanel() {
 
               <SettingRow icon={<Images size={13} />} label={t('icon size')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="range" min="10" max="20" step="1" value={s.iconSize}
+                  <input type="range" min="10" max="30" step="1" value={s.iconSize}
                     onChange={(e) => updateSettings({ iconSize: parseInt(e.target.value) })}
                     style={{ width: '100px', accentColor: 'var(--accent-color)' }}
                   />
@@ -445,12 +474,71 @@ export function SettingsPanel() {
                   </span>
                 </div>
               </SettingRow>
+
+              <SettingRow icon={<Type size={13} />} label={t('interface font')}>
+                <SelectInput value={s.appFont} onChange={(v) => updateSettings({ appFont: v })} options={fontChoices} />
+              </SettingRow>
+
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: '6px',
+                padding: '9px 12px', background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)'
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)',
+                  fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+                }}>
+                  <Plus size={12} /> {t('add font')}
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input value={newFont} onChange={(e) => setNewFont(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') addCustomFont() }}
+                    placeholder={t('font family')}
+                    title="nome della famiglia (Google Fonts o font installato)" data-tip-desc="type a font family name, e.g. Nunito or Fira Sans"
+                    style={{
+                      flex: 1, minWidth: 0, height: '26px', padding: '0 8px',
+                      background: 'var(--bg-input)', border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
+                      fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', outline: 'none'
+                    }}
+                  />
+                  <button onClick={addCustomFont} disabled={!newFont.trim()}
+                    title="aggiungi e applica il font" data-tip-desc="add the typed font family and apply it"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '4px', padding: '0 12px', height: '26px',
+                      background: newFont.trim() ? 'var(--accent-color)' : 'var(--bg-subtle)', border: 'none',
+                      borderRadius: 'var(--radius-sm)', color: newFont.trim() ? 'var(--text-inverse)' : 'var(--text-muted)',
+                      cursor: newFont.trim() ? 'pointer' : 'not-allowed',
+                      fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+                    }}>
+                    {t('add')}
+                  </button>
+                </div>
+                {s.customFonts.length > 0 && (
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                    {s.customFonts.map(f => (
+                      <span key={f} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 6px',
+                        background: 'var(--accent-bg)', border: '1px solid var(--border-color)',
+                        borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
+                        fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+                      }}>
+                        {f}
+                        <button onClick={() => removeCustomFont(f)} title={`${t('remove')} ${f}`} data-tip-desc="remove this custom font"
+                          style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>
+                          <X size={9} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Section>
 
             <Section title="editor" data-tip-desc="code editor panel" icon={<PenLine size={11} />}>
               <SettingRow icon={<Type size={13} />} label={t('font size')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="range" min="8" max="24" step="0.5" value={s.fontSize}
+                  <input type="range" min="8" max="30" step="0.5" value={s.fontSize}
                     onChange={(e) => updateSettings({ fontSize: parseFloat(e.target.value) })}
                     style={{ width: '100px', accentColor: 'var(--accent-color)' }}
                   />

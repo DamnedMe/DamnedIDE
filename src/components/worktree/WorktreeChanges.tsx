@@ -15,6 +15,7 @@ import { useUIStore, useSettingsStore, useToastStore } from '../../store'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
 import { joinPath } from '../../utils/paths'
+import { appFontStack } from '../../utils/fonts'
 
 function applyEditorTheme(monaco: typeof import('monaco-editor')) {
   const theme = useUIStore.getState().theme
@@ -66,6 +67,8 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const editEditorRef = useRef<any>(null)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const showToast = useToastStore(s => s.showToast)
+  const appFont = useSettingsStore(s => s.settings.appFont)
+  const appFontSize = useSettingsStore(s => s.settings.fontSize)
   const [isCommitOpen, setIsCommitOpen] = useState(false)
   const [commitMsg, setCommitMsg] = useState('')
   const [commitAndPush, setCommitAndPush] = useState(false)
@@ -898,8 +901,8 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                   }
                 }}
                 options={{
-                  fontSize: 12.5,
-                  fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+                  fontSize: appFontSize,
+                  fontFamily: appFontStack(appFont),
                   fontLigatures: false,
                   minimap: { enabled: true, maxColumn: 80, renderCharacters: false },
                   mouseWheelZoom: true,

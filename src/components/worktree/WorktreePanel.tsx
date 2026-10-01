@@ -278,8 +278,12 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
       {/* bottom: change main folder */}
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--border-subtle)', paddingTop: '4px', width: '100%', display: 'flex', justifyContent: 'center' }}>
         {stripBtn(async () => {
-          const p = await window.electronAPI.dialog.openFolder()
-          if (p) onRepoSelected(p)
+          try {
+            const p = await window.electronAPI.dialog.openFolder()
+            if (p) onRepoSelected(p)
+          } catch (e) {
+            showToast((e as Error).message || 'apertura cartella fallita', 'error')
+          }
         }, 'change main folder', <FolderOpen size={13} />, 'open a different repository folder as the main root')}
       </div>
     </div>
@@ -300,7 +304,14 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               <p style={{ margin: '0 0 4px', fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('open a git repository')}</p>
               <p style={{ margin: 0, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('to manage worktrees')}</p>
             </div>
-            <button onClick={async () => { const p = await window.electronAPI.dialog.openFolder(); if (p) onRepoSelected(p) }}
+            <button onClick={async () => {
+              try {
+                const p = await window.electronAPI.dialog.openFolder()
+                if (p) onRepoSelected(p)
+              } catch (e) {
+                showToast((e as Error).message || 'apertura cartella fallita', 'error')
+              }
+            }}
               style={{ padding: '8px 20px', background: 'var(--accent-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
               {t('open repo')}
             </button>

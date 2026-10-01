@@ -159,14 +159,13 @@ npm run package
 - `develop` e' il ramo di lavoro quotidiano.
 - Le modifiche arrivano in `main` tramite Pull Request da `develop`.
 - Ogni aggiornamento di `main` incrementa automaticamente la versione patch, crea il tag GitHub e pubblica gli installer Windows, Linux e macOS.
-- L'applicazione installata controlla gli aggiornamenti all'avvio e periodicamente, scarica la nuova versione in background e propone il riavvio per installarla.
+- L'applicazione installata controlla gli aggiornamenti all'avvio e periodicamente; su Windows, macOS e AppImage scarica la nuova versione in background e propone il riavvio per installarla.
 
 Gli aggiornamenti OTA richiedono una versione installata tramite un installer prodotto da una GitHub Release. Il pacchetto macOS viene pubblicato anche in formato `zip`, usato da `electron-updater` per l'aggiornamento automatico.
 
 Su Linux `electron-updater` sceglie l'updater in base a `resources/package-type`:
 - **AppImage** — si aggiorna da solo (richiede FUSE 2: su Arch installa `fuse2`, oppure avvia con `--appimage-extract-and-run`);
-- **.deb** — aggiornato tramite `apt`/`dpkg` (può chiedere la password), oppure reinstallato manualmente;
-- **.pacman (Arch Linux)** — aggiornato tramite `pacman -U` (può chiedere la password), oppure manualmente con `sudo pacman -U damned-ide-<versione>.pacman`.
+- **.deb / .pacman (Arch Linux)** — **solo verifica**: l'IDE segnala la nuova versione, ma l'installazione resta al gestore pacchetti (`apt` / `sudo pacman -U damned-ide-<versione>.pacman`). electron-updater non scarica né installa: l'installazione all'uscita usa `sudo`/`pkexec` in modo sincrono e bloccherebbe la chiusura dell'app (e il feed GitHub non contiene un pacchetto pacman, quindi scaricherebbe l'AppImage).
 
 I pacchetti Linux dipendono solo da librerie presenti nei repository ufficiali della relativa distribuzione (per Arch: `gtk3`, `nss`, `libsecret`, `libxslt`, `minizip`, `libxtst`, `xdg-utils`, …).
 

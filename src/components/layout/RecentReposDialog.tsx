@@ -14,7 +14,9 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
       position: 'fixed', inset: 0, background: 'var(--bg-overlay)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 200, backdropFilter: 'blur(2px)'
-    }}>
+    }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onSkip() }}
+    >
       <div style={{
         background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
         borderRadius: 'var(--radius-lg)', width: '460px', padding: '22px',

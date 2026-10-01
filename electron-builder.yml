@@ -7,6 +7,10 @@ files:
   - out/**/*
   - resources/icon.ico
   - resources/icon.png
+  # Sidecar Roslyn già compilato: senza di questo la navigazione C# (F12,
+  # references, hover) è disabilitata nell'app installata. Va anche in
+  # asarUnpack: `dotnet` non può leggere dentro app.asar.
+  - ide-services/RoslynBridge/bin/Release/net8.0/**/*
 # afterPack hook: labels the package for electron-updater (only when the
 # DAMNED_PACKAGE_TYPE env var is set — used for the pacman-only build)
 afterPack: scripts/after-pack.cjs
@@ -27,6 +31,7 @@ asarUnpack:
   - "**/node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*"
   - "**/*.node"
   - "**/*.dll"
+  - "ide-services/**/*"
 # node-pty has no prebuilt for electron ABI 119 and source builds fail on Windows;
 # dev and packaged run the same Electron 28, so reuse the compiled binaries as-is
 npmRebuild: false
@@ -41,13 +46,17 @@ linux:
     - AppImage
     - deb
     - pacman
-  icon: resources/icon.png
+  # Set di PNG denominati NxN: electron-builder ricava la dimensione dal nome e
+  # installa le icone in hicolor/<NxN>/apps/. Con un singolo PNG la dimensione
+  # resta 0 e l'icona finisce in hicolor/0x0 (non visibile su Arch/GNOME/KDE).
+  icon: resources/icons
 # electron-builder derives the pacman dependencies from the ELF NEEDED entries,
 # which yields names that do not exist in the Arch repositories (http-parser,
 # libappindicator-gtk3, re2, snappy, libvpx, ffmpeg...). This is the Arch-valid
 # set (same intent as the curated .deb depends).
 pacman:
   depends:
+    - alsa-lib
     - c-ares
     - gtk3
     - libevent

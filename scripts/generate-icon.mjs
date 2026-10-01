@@ -1,5 +1,11 @@
-// Genera resources/icon.ico (16,32,48,64,128,256) e resources/icon.png (512)
-// dal logo (PNG se presente, altrimenti SVG). Esegui: node scripts/generate-icon.mjs
+// Genera resources/icon.ico (16,32,48,64,128,256), resources/icon.png (512) e
+// resources/icons/<N>x<N>.png (set Linux) dal logo (PNG se presente, altrimenti
+// SVG). Esegui: node scripts/generate-icon.mjs
+//
+// Il set denominato NxN serve a electron-builder per installare le icone nelle
+// cartelle freedesktop corrette (hicolor/512x512/apps/...): con il solo
+// resources/icon.png la dimensione non è deducibile e finisce in hicolor/0x0,
+// che nessun desktop environment legge (icona assente su Arch/GNOME/KDE).
 import { readFile, writeFile, mkdir, stat } from 'fs/promises'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
@@ -60,4 +66,14 @@ await writeFile(join(outDir, 'icon.ico'), ico)
 const png512 = await sharp(source).resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
 await writeFile(join(outDir, 'icon.png'), png512)
 
-console.log('OK: resources/icon.ico', ico.length, 'bytes; resources/icon.png', png512.length, 'bytes')
+// Freedesktop icon set for the Linux packages: the filename carries the size,
+// so electron-builder installs every icon in hicolor/<NxN>/apps/.
+const linuxSizes = [16, 24, 32, 48, 64, 128, 256, 512]
+const iconsDir = join(outDir, 'icons')
+await mkdir(iconsDir, { recursive: true })
+for (const size of linuxSizes) {
+  const buf = await sharp(source).resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+  await writeFile(join(iconsDir, `${size}x${size}.png`), buf)
+}
+
+console.log(`OK: resources/icon.ico ${ico.length} bytes; resources/icon.png ${png512.length} bytes; resources/icons (${linuxSizes.join(', ')})`)

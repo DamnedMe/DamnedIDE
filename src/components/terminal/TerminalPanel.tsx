@@ -9,6 +9,27 @@ import { Monitor, ExternalLink, Plus, X, ChevronDown } from 'lucide-react'
 
 type ShellType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
 
+const isWindowsPlatform = window.electronAPI.platform === 'win32'
+
+// cmd.exe / powershell.exe do not exist on Linux/macOS: there the picker offers
+// the login shell (mapped to $SHELL in the main process) and PowerShell 7 when
+// pwsh is installed.
+const SHELL_CHOICES: { type: ShellType; label: string }[] = isWindowsPlatform
+  ? [
+      { type: 'cmd', label: 'CMD' },
+      { type: 'powershell', label: 'PowerShell' },
+      { type: 'pwsh', label: 'PowerShell Dev' },
+      { type: 'npm', label: 'NPM' }
+    ]
+  : [
+      { type: 'cmd', label: 'Shell' },
+      { type: 'pwsh', label: 'PowerShell' }
+    ]
+
+function shellLabel(type: ShellType): string {
+  return SHELL_CHOICES.find(c => c.type === type)?.label || type
+}
+
 interface Tab {
   id: string
   type: ShellType
@@ -202,13 +223,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
   }
 
   const addTab = (type: ShellType) => {
-    const labels: Record<ShellType, string> = {
-      cmd: 'CMD',
-      powershell: 'PS',
-      pwsh: 'PW7',
-      npm: 'NPM'
-    }
-    const tab: Tab = { id: `tab_${Date.now()}`, type, title: labels[type] }
+    const tab: Tab = { id: `tab_${Date.now()}`, type, title: shellLabel(type) }
     setTabs(prev => [...prev, tab])
     setActiveTabId(tab.id)
     setShowTypeMenu(false)
@@ -347,7 +362,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
                     borderRadius: 'var(--radius-md)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                     padding: '4px 0', minWidth: '160px'
                   }}>
-                    {(['cmd', 'powershell', 'pwsh', 'npm'] as ShellType[]).map(t => (
+                    {SHELL_CHOICES.map(({ type: t, label }) => (
                       <div key={t} onClick={() => addTab(t)} style={{
                         padding: '5px 14px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
                         cursor: 'pointer', color: 'var(--text-primary)',
@@ -355,7 +370,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
                       }}
                         onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                        {t === 'cmd' ? 'CMD' : t === 'powershell' ? 'PowerShell' : t === 'pwsh' ? 'PowerShell Dev' : 'NPM'}
+                        {label}
                       </div>
                     ))}
                   </div>

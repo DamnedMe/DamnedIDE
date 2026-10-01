@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Loader2, X, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, FileCode, Layers, Trash2 } from 'lucide-react'
 import { useAdoStore, useEditorStore, useToastStore } from '../../store'
+import { joinPath } from '../../utils/paths'
 
 interface CompleteWorktreeDialogProps {
   worktreePath: string
@@ -233,7 +234,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
   }
 
   const openConflictInEditor = (file: string) => {
-    setEditorNav({ rootPath: worktreePath, filePath: `${worktreePath}\\${file}`, line: 1 })
+    setEditorNav({ rootPath: worktreePath, filePath: joinPath(worktreePath, file), line: 1 })
   }
 
   const stepIcon = (s: StepLog) => {

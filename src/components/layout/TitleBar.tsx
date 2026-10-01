@@ -13,6 +13,7 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
   return (
     <div style={{
       position: 'relative',
+      zIndex: 300, // above modal overlays (200): window controls stay clickable
       display: 'flex', alignItems: 'center',
       height: '32px', background: 'var(--bg-titlebar)',
       borderBottom: '1px solid var(--border-color)',

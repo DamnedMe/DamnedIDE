@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, clipboard, nativeImage } from 'electron'
 import { join, normalize, extname } from 'path'
+import { pathToFileURL } from 'url'
 import { readdir, readFile, writeFile, stat, rm, mkdir } from 'fs/promises'
 import { exec } from 'child_process'
 import { GitService } from './services/git/git.service'
@@ -25,6 +26,14 @@ let mcpService: McpService | null = null
 let claudeService: ClaudeService | null = null
 let agentService: AgentService | null = null
 
+// Linux: the xdg-desktop-portal file chooser can open behind the window and
+// swallow input from the second call onward (electron#32857) — the "change main
+// folder" dialog then looks frozen. Requiring a portal version that does not
+// exist makes Electron fall back to the native GTK/KDE dialog.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('xdg-portal-required-version', '99')
+}
+
 // IPC wrapper: rejects with a clean one-line Error (no mssql stack trace) so the
 // dev console does not flood with "Error occurred in handler for 'sql:...'".
 function ipc<TArgs extends unknown[], TResult>(
@@ -44,7 +53,11 @@ function ipc<TArgs extends unknown[], TResult>(
 }
 
 function appIcon(): Electron.NativeImage {
-  return nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.ico'))
+  // nativeImage only decodes ICO on Windows: on Linux/macOS passing the .ico
+  // yields an empty image, so the window/taskbar icon silently disappears.
+  const iconFile = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+  const image = nativeImage.createFromPath(join(app.getAppPath(), 'resources', iconFile))
+  return image.isEmpty() ? nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png')) : image
 }
 
 // ─── Open with DamnedIDE (folder / .md from Explorer, `damned-ide <path>`) ────
@@ -139,9 +152,30 @@ app.whenReady().then(() => {
   })
 })
 
+// A single failing teardown step (a wedged pty, a CLI refusing to die, a
+// watcher throwing) must never leave the process alive with no window: every
+// step is isolated, so `app.quit()` is always reached.
+function runCleanup(): void {
+  const steps: [string, () => void][] = [
+    ['terminals', destroyAllTerminals],
+    ['processes', stopAllProcesses],
+    ['roslyn', () => roslynService?.stop()],
+    ['mcp', () => mcpService?.disconnectAll()],
+    ['agents', () => agentService?.cancelAll()],
+    ['watchers', closeAllWatchers],
+    ['scheduled deletes', cancelScheduledDeletes]
+  ]
+  for (const [name, run] of steps) {
+    try {
+      run()
+    } catch (err) {
+      console.error(`[quit] ${name} cleanup failed:`, (err as Error)?.message || err)
+    }
+  }
+}
+
 app.on('window-all-closed', () => {
-  destroyAllTerminals()
-  stopAllProcesses()
+  runCleanup()
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -150,13 +184,7 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   // Any quit path (window-all-closed, update restart, app.quit) must tear down
   // running processes and terminals, otherwise spawned apps keep their ports.
-  stopAllProcesses()
-  destroyAllTerminals()
-  roslynService?.stop()
-  mcpService?.disconnectAll()
-  agentService?.cancelAll()
-  closeAllWatchers()
-  cancelScheduledDeletes()
+  runCleanup()
 })
 function registerIpcHandlers(
   git: GitService,
@@ -561,7 +589,7 @@ function registerIpcHandlers(
 
     const url = process.env.ELECTRON_RENDERER_URL
       ? `${process.env.ELECTRON_RENDERER_URL}#/panel/${panelId}`
-      : `file://${join(__dirname, '../renderer/index.html')}#/panel/${panelId}`
+      : `${pathToFileURL(join(__dirname, '../renderer/index.html')).href}#/panel/${panelId}`
 
     detached.loadURL(url)
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { GitFileStatus } from '../../types/git'
 import { FileDiffList } from '../git/FileDiffList'
+import { joinPath } from '../../utils/paths'
 import { ListPlus, RefreshCw, Loader2, GitCompare } from 'lucide-react'
 
 interface ChangesPanelProps {
@@ -85,7 +86,7 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
     try {
       if (inUnstaged && !inStaged) {
         original = await window.electronAPI.git.showRef(repoPath, file, 'HEAD')
-        modified = await window.electronAPI.fs.readFile(`${repoPath}\\${file}`)
+        modified = await window.electronAPI.fs.readFile(joinPath(repoPath, file))
       } else if (inStaged) {
         original = await window.electronAPI.git.showRef(repoPath, file, 'HEAD')
         modified = await window.electronAPI.git.showRef(repoPath, file, ':')
@@ -123,8 +124,8 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
           onUnstage={handleUnstage}
           onViewDiff={handleViewDiff}
           activeDiffFile={activeFile}
-          onCopyPath={(file) => window.electronAPI.clipboard.write(`${repoPath.replace(/[\\/]+$/, '')}\\${file.replace(/\//g, '\\')}`)}
-          onReveal={(file) => window.electronAPI.shell.showItemInFolder(`${repoPath.replace(/[\\/]+$/, '')}\\${file.replace(/\//g, '\\')}`)}
+          onCopyPath={(file) => window.electronAPI.clipboard.write(joinPath(repoPath, file))}
+          onReveal={(file) => window.electronAPI.shell.showItemInFolder(joinPath(repoPath, file))}
         />
       </div>
     )

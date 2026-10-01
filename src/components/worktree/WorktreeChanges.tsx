@@ -14,6 +14,7 @@ import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../ed
 import { useUIStore, useSettingsStore, useToastStore } from '../../store'
 import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnostics } from '../../utils/csharp-diagnostics'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
+import { joinPath } from '../../utils/paths'
 
 function applyEditorTheme(monaco: typeof import('monaco-editor')) {
   const theme = useUIStore.getState().theme
@@ -84,7 +85,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
 
   useEffect(() => {
     if (!diffFile) return
-    onFileSelected?.(`${worktreePath}\\${diffFile}`)
+    onFileSelected?.(joinPath(worktreePath, diffFile))
   }, [diffFile])
 
   const loadStatus = useCallback(async (opts?: { keepSelection?: boolean }) => {
@@ -221,14 +222,12 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   }
 
   const handleCopyPath = (filePath: string) => {
-    const root = worktreePath.replace(/[\\/]+$/, '')
-    window.electronAPI.clipboard.write(`${root}\\${filePath.replace(/\//g, '\\')}`)
+    window.electronAPI.clipboard.write(joinPath(worktreePath, filePath))
   }
 
   // open Explorer/Finder on the file's folder, with the file selected
   const handleReveal = (filePath: string) => {
-    const root = worktreePath.replace(/[\\/]+$/, '')
-    window.electronAPI.shell.showItemInFolder(`${root}\\${filePath.replace(/\//g, '\\')}`)
+    window.electronAPI.shell.showItemInFolder(joinPath(worktreePath, filePath))
   }
 
   const handleStageAll = async () => {

@@ -147,7 +147,11 @@ export function SettingsPanel() {
       if (!st.packaged) showToast('gli aggiornamenti OTA valgono solo per la versione installata', 'info')
       else if (st.status === 'up-to-date') showToast('sei già alla versione più recente')
       else if (st.status === 'error') showToast(st.error || 'verifica aggiornamenti fallita', 'error')
-      else if (st.status === 'available') showToast(`nuova versione ${st.version} in scaricamento`)
+      else if (st.status === 'available') {
+        showToast(st.managed
+          ? `nuova versione ${st.version} disponibile — ${st.installHint || 'aggiorna con il gestore pacchetti'}`
+          : `nuova versione ${st.version} in scaricamento`)
+      }
     } catch (e) {
       showToast((e as Error).message || 'verifica aggiornamenti fallita', 'error')
     } finally {
@@ -159,6 +163,17 @@ export function SettingsPanel() {
   const updateStatusText = (st: UpdateState | null): string => {
     if (!st) return '…'
     if (!st.packaged) return "versione di sviluppo: gli aggiornamenti OTA sono attivi solo nell'app installata"
+    // managed (deb/pacman): the IDE only checks, the package manager installs
+    if (st.managed) {
+      switch (st.status) {
+        case 'idle': return `versione installata ${st.currentVersion}`
+        case 'checking': return 'verifica in corso…'
+        case 'available': return `nuova versione ${st.version} disponibile — ${st.installHint || 'aggiorna con il gestore pacchetti'}`
+        case 'up-to-date': return `sei alla versione più recente (${st.currentVersion})`
+        case 'error': return `errore: ${st.error || 'verifica non riuscita'}`
+        default: break
+      }
+    }
     switch (st.status) {
       case 'idle': return `versione installata ${st.currentVersion}`
       case 'checking': return 'verifica in corso…'

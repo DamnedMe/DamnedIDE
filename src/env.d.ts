@@ -82,6 +82,9 @@ interface UpdateState {
   version?: string
   progress?: number
   error?: string
+  // native Linux package: installed by pacman/apt, not by electron-updater
+  managed?: boolean
+  installHint?: string
 }
 
 interface ClaudeResult {

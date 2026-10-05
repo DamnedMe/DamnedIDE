@@ -290,7 +290,32 @@ interface Window {
       onOutput: (callback: (id: string, data: string) => void) => () => void
       onExit: (callback: (id: string, code: number | null) => void) => () => void
     }
+    remote: {
+      status: () => Promise<import('./services/remote/remote.service').RemoteStatus>
+      start: (options: { port?: number; host?: string; tls?: { certPath: string; keyPath: string } }) => Promise<import('./services/remote/remote.service').RemoteStatus>
+      stop: () => Promise<import('./services/remote/remote.service').RemoteStatus>
+      beginPairing: () => Promise<RemotePairingStart>
+      pending: () => Promise<RemotePendingPairing[]>
+      resolvePairing: (id: string, accepted: boolean) => Promise<void>
+      devices: () => Promise<RemoteDeviceInfo[]>
+      revoke: (id: string) => Promise<RemoteDeviceInfo[]>
+      setScopes: (id: string, scopes: RemoteScopeName[]) => Promise<RemoteDeviceInfo[]>
+      revokeAll: () => Promise<RemoteDeviceInfo[]>
+      setWorkspace: (patch: Partial<Omit<RemoteWorkspaceSnapshot, 'revision'>>) => Promise<RemoteWorkspaceSnapshot>
+      setSqlConnections: (connections: RemoteSqlConnectionInfo[]) => Promise<void>
+      broadcast: (topic: 'git.changed' | 'sql.execution', data: unknown) => Promise<void>
+      onApply: (cb: (change: RemoteApplyChange) => void) => () => void
+      onEvent: (cb: (payload: { event: string; payload: unknown }) => void) => () => void
+    }
   }
 }
+
+type RemoteScopeName = import('./shared/remote/protocol').RemoteScope
+type RemoteDeviceInfo = import('./shared/remote/protocol').DeviceInfo
+type RemotePairingStart = import('./shared/remote/protocol').PairingStart
+type RemotePendingPairing = { id: string; name: string; platform: string; code: string; requestedAt: number }
+type RemoteWorkspaceSnapshot = import('./shared/remote/protocol').WorkspaceSnapshot
+type RemoteSqlConnectionInfo = import('./shared/remote/protocol').RemoteSqlConnection
+type RemoteApplyChange = import('./shared/remote/protocol').RemoteApply
 
 type TerminalTypeEnum = 'cmd' | 'powershell' | 'pwsh' | 'npm'

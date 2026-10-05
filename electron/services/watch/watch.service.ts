@@ -10,9 +10,20 @@ interface WatchedRoot {
 
 const roots = new Map<string, WatchedRoot>()
 
+const changeListeners = new Set<(root: string) => void>()
+
+/** Subscribe to filesystem change notifications (used by the remote bridge). */
+export function onFsChanged(listener: (root: string) => void): () => void {
+  changeListeners.add(listener)
+  return () => changeListeners.delete(listener)
+}
+
 function emit(root: string): void {
   for (const w of BrowserWindow.getAllWindows()) {
     try { w.webContents.send('fs:changed', { root }) } catch { /* window closed */ }
+  }
+  for (const listener of changeListeners) {
+    try { listener(root) } catch { /* ignore */ }
   }
 }
 

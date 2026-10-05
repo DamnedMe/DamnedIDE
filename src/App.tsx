@@ -52,6 +52,8 @@ export default function App() {
   const modifiedCount = gitFiles.filter(f => !f.staged).length
   const selectedWorktree = useWorktreeStore(s => s.selectedWorktree)
   const setEditorRootPath = useEditorStore(s => s.setEditorRootPath)
+  const editorNav = useEditorStore(s => s.editorNav)
+  const sqlConnections = useSqlStore(s => s.connections)
   const themesDefined = useRef(false)
   const recentRepos = useRecentReposStore(s => s.repos)
   const addRepo = useRecentReposStore(s => s.addRepo)
@@ -180,6 +182,59 @@ export default function App() {
   useEffect(() => {
     window.electronAPI.app.initialTarget().then((t) => { if (t) handleOpenTarget(t) }).catch(() => { /* no target */ })
     return window.electronAPI.app.onOpenPath(handleOpenTarget)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ─── DamnedCloud: mirror the desktop workspace to the remote bridge ────────
+  useEffect(() => {
+    window.electronAPI.remote?.setWorkspace({
+      repoPath,
+      selectedWorktree,
+      activePanel,
+      editorNav
+    }).catch(() => { /* bridge not active */ })
+  }, [repoPath, selectedWorktree, activePanel, editorNav])
+
+  // SQL connection metadata (sanitised) so paired devices can browse the
+  // databases already open on the desktop without ever receiving credentials.
+  useEffect(() => {
+    window.electronAPI.remote?.setSqlConnections(
+      sqlConnections.map(c => ({ id: c.id, label: c.label, server: c.server, database: c.database, isConnected: c.isConnected }))
+    ).catch(() => { /* bridge not active */ })
+  }, [sqlConnections])
+
+  // Notify paired devices when git state changes so their lists stay fresh.
+  useEffect(() => {
+    window.electronAPI.remote?.broadcast('git.changed', { repoPath }).catch(() => { /* bridge not active */ })
+  }, [gitStatus, gitFiles, repoPath])
+
+  // Apply UI changes requested by a remote device (mirror).
+  useEffect(() => {
+    const off = window.electronAPI.remote?.onApply((change) => {
+      switch (change.type) {
+        case 'workspace.setRepo':
+          void openRepo(change.repoPath)
+          break
+        case 'workspace.openWorktree':
+          useWorktreeStore.getState().selectWorktree(change.path)
+          setActivePanel('worktree')
+          break
+        case 'editor.open':
+          setEditorRootPath(change.rootPath)
+          useEditorStore.getState().setEditorNav({
+            rootPath: change.rootPath,
+            filePath: change.filePath,
+            line: change.line ?? 1,
+            previewMd: change.previewMd
+          })
+          setActivePanel('editor')
+          break
+        case 'panel':
+          setActivePanel(change.panel as PanelId)
+          break
+      }
+    })
+    return off
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

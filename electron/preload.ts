@@ -5,6 +5,15 @@ import type { McpServerConfig, McpTool } from './services/mcp/mcp.service'
 import type { ClaudeResult, ClaudeAuthStatus } from './services/ai/claude.service'
 import type { AgentSendRequest, AgentProviderInfo } from './services/ai/agent.service'
 import type { UpdateState } from './services/update/update.service'
+import type { RemoteStatus } from './services/remote/remote.service'
+import type {
+  DeviceInfo,
+  PairingStart,
+  RemoteScope,
+  RemoteSqlConnection,
+  WorkspaceSnapshot
+} from '../src/shared/remote/protocol'
+import type { RemoteApply } from '../src/shared/remote/protocol'
 
 const electronAPI = {
   // lets the renderer hide/gate Windows-only features (LocalDB, Windows auth…)
@@ -248,6 +257,34 @@ const electronAPI = {
       const handler = (_e: Electron.IpcRendererEvent, id: string, code: number | null) => callback(id, code)
       ipcRenderer.on('process:exit', handler)
       return () => ipcRenderer.removeListener('process:exit', handler)
+    }
+  },
+  remote: {
+    status: (): Promise<RemoteStatus> => ipcRenderer.invoke('remote:status'),
+    start: (options: { port?: number; host?: string; tls?: { certPath: string; keyPath: string } }): Promise<RemoteStatus> =>
+      ipcRenderer.invoke('remote:start', options),
+    stop: (): Promise<RemoteStatus> => ipcRenderer.invoke('remote:stop'),
+    beginPairing: (): Promise<PairingStart> => ipcRenderer.invoke('remote:pairing:begin'),
+    pending: (): Promise<{ id: string; name: string; platform: string; code: string; requestedAt: number }[]> =>
+      ipcRenderer.invoke('remote:pairing:pending'),
+    resolvePairing: (id: string, accepted: boolean): Promise<void> => ipcRenderer.invoke('remote:pairing:resolve', id, accepted),
+    devices: (): Promise<DeviceInfo[]> => ipcRenderer.invoke('remote:devices'),
+    revoke: (id: string): Promise<DeviceInfo[]> => ipcRenderer.invoke('remote:device:revoke', id),
+    setScopes: (id: string, scopes: RemoteScope[]): Promise<DeviceInfo[]> => ipcRenderer.invoke('remote:device:scopes', id, scopes),
+    revokeAll: (): Promise<DeviceInfo[]> => ipcRenderer.invoke('remote:devices:revokeAll'),
+    setWorkspace: (patch: Partial<Omit<WorkspaceSnapshot, 'revision'>>): Promise<WorkspaceSnapshot> =>
+      ipcRenderer.invoke('remote:workspace:set', patch),
+    setSqlConnections: (connections: RemoteSqlConnection[]): Promise<void> => ipcRenderer.invoke('remote:sql:connections', connections),
+    broadcast: (topic: 'git.changed' | 'sql.execution', data: unknown): Promise<void> => ipcRenderer.invoke('remote:broadcast', topic, data),
+    onApply: (cb: (change: RemoteApply) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, change: RemoteApply) => cb(change)
+      ipcRenderer.on('remote:apply', handler)
+      return () => ipcRenderer.removeListener('remote:apply', handler)
+    },
+    onEvent: (cb: (payload: { event: string; payload: unknown }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: { event: string; payload: unknown }) => cb(payload)
+      ipcRenderer.on('remote:event', handler)
+      return () => ipcRenderer.removeListener('remote:event', handler)
     }
   }
 }

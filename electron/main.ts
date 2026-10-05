@@ -20,12 +20,15 @@ import { UpdateService } from './services/update/update.service'
 import { watchRoot, unwatchRoot, closeAllWatchers } from './services/watch/watch.service'
 import { openTargetFromArgv, resolveOpenTarget, type OpenTarget } from './services/open/open-target'
 import { buildXlsx } from './services/export/xlsx.service'
+import { RemoteService } from './services/remote/remote.service'
+import type { RemoteSqlConnection, RemoteScope, WorkspaceSnapshot } from '../src/shared/remote/protocol'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
 let mcpService: McpService | null = null
 let claudeService: ClaudeService | null = null
 let agentService: AgentService | null = null
+let remoteService: RemoteService | null = null
 
 // Linux: the xdg-desktop-portal file chooser can open behind the window and
 // swallow input from the second call onward (electron#32857) — the "change main
@@ -77,6 +80,13 @@ function sendOpenTarget(target: OpenTarget): void {
     })
   } else {
     try { w.webContents.send('app:openPath', target) } catch { pendingOpenTarget = target }
+  }
+}
+
+/** Send an event to every open renderer (main + detached windows). */
+function sendToRenderer(channel: string, payload: unknown): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    try { w.webContents.send(channel, payload) } catch { /* window closed */ }
   }
 }
 
@@ -139,7 +149,23 @@ app.whenReady().then(() => {
   agentService = new AgentService(claudeService)
   roslynService = new RoslynService()
 
+  remoteService = new RemoteService({
+    userDataDir: app.getPath('userData'),
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    git: gitService,
+    worktree: worktreeService,
+    diff: diffService,
+    sql: sqlService
+  })
+  // Mirror remote-originated UI changes back into the renderer.
+  remoteService.setApplyHandler((change) => sendToRenderer('remote:apply', change))
+  for (const event of ['pairing-request', 'pairing-resolved', 'device-changed', 'log']) {
+    remoteService.on(event, (payload: unknown) => sendToRenderer('remote:event', { event, payload }))
+  }
+
   registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService, claudeService, agentService)
+  registerRemoteIpc(remoteService)
   const fromArgv = argvOpenTarget(process.argv)
   if (fromArgv) pendingOpenTarget = fromArgv
   createWindow()
@@ -163,6 +189,7 @@ function runCleanup(): void {
     ['roslyn', () => roslynService?.stop()],
     ['mcp', () => mcpService?.disconnectAll()],
     ['agents', () => agentService?.cancelAll()],
+    ['remote', () => { remoteService?.stop(); remoteService?.dispose() }],
     ['watchers', closeAllWatchers],
     ['scheduled deletes', cancelScheduledDeletes]
   ]
@@ -652,4 +679,30 @@ function registerIpcHandlers(
   ipcMain.handle('ai:models', (_e, provider: AgentProviderId) => agent.listModels(provider))
   ipcMain.handle('ai:send', (_e, req: AgentSendRequest) => agent.send(req, mainWindow))
   ipcMain.handle('ai:cancel', (_e, chatKey: string) => { agent.cancel(chatKey) })
+}
+
+// ─── DamnedCloud remote bridge ───────────────────────────────────────────────
+function registerRemoteIpc(remote: RemoteService): void {
+  ipcMain.handle('remote:status', () => remote.status())
+  ipcMain.handle('remote:start', (_e, options: { port?: number; host?: string; tls?: { certPath: string; keyPath: string } }) => remote.start(options))
+  ipcMain.handle('remote:stop', async () => {
+    await remote.stop()
+    return remote.status()
+  })
+  ipcMain.handle('remote:pairing:begin', () => remote.beginPairing())
+  ipcMain.handle('remote:pairing:pending', () => remote.listPending())
+  ipcMain.handle('remote:pairing:resolve', (_e, id: string, accepted: boolean) => { remote.resolvePairing(id, accepted) })
+
+  ipcMain.handle('remote:devices', () => remote.listDevices())
+  ipcMain.handle('remote:device:revoke', (_e, id: string) => { remote.revokeDevice(id); return remote.listDevices() })
+  ipcMain.handle('remote:device:scopes', (_e, id: string, scopes: RemoteScope[]) => {
+    remote.updateScopes(id, scopes)
+    return remote.listDevices()
+  })
+  ipcMain.handle('remote:devices:revokeAll', () => { remote.revokeAll(); return remote.listDevices() })
+
+  ipcMain.handle('remote:workspace:set', (_e, patch: Partial<Omit<WorkspaceSnapshot, 'revision'>>) => remote.setWorkspace(patch))
+  ipcMain.handle('remote:sql:connections', (_e, connections: RemoteSqlConnection[]) => { remote.setSqlConnections(connections) })
+  ipcMain.handle('remote:broadcast', (_e, topic: 'git.changed' | 'sql.execution', data: unknown) => remote.broadcast(topic, data))
+  ipcMain.handle('remote:apply:ack', () => { /* reserved */ })
 }

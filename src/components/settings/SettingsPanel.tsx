@@ -4,9 +4,10 @@ import { PanelContainer } from '../layout/PanelContainer'
 import { relativeLuminance } from '../../utils/color'
 import { useI18n } from '../../i18n'
 import { APP_FONT_CHOICES, DEFAULT_APP_FONT } from '../../utils/fonts'
-import { Settings, Sun, Moon, Type, LayoutGrid, WrapText, Indent, Save, RotateCcw, AlignLeft, TextQuote, Palette, X, ChevronLeft, Languages, Images, SlidersHorizontal, PenLine, Globe, PlugZap, Bot, Plus, Trash2, RefreshCw, Loader2, AlertCircle, Check, Download } from 'lucide-react'
+import { Settings, Sun, Moon, Type, LayoutGrid, WrapText, Indent, Save, RotateCcw, AlignLeft, TextQuote, Palette, X, ChevronLeft, Languages, Images, SlidersHorizontal, PenLine, Globe, PlugZap, Bot, Plus, Trash2, RefreshCw, Loader2, AlertCircle, Check, Download, Smartphone } from 'lucide-react'
 import { McpPanel } from '../mcp/McpPanel'
 import { AgentSettings } from './AgentSettings'
+import { RemotePanel } from './RemotePanel'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { useAiChatStore } from '../../store'
 
@@ -125,6 +126,7 @@ export function SettingsPanel() {
   const [showColors, setShowColors] = useState(false)
   const [showMcp, setShowMcp] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
+  const [showRemote, setShowRemote] = useState(false)
   const aiRules = useAiChatStore(s => s.rules)
   const addAiRule = useAiChatStore(s => s.addRule)
   const removeAiRule = useAiChatStore(s => s.removeRule)
@@ -287,7 +289,20 @@ export function SettingsPanel() {
           padding: '4px 8px 10px', borderBottom: '1px solid var(--border-subtle)',
           flexShrink: 0
         }}>
-          {showAgents ? (
+          {showRemote ? (
+            <>
+              <button onClick={() => setShowRemote(false)} title="back" data-tip-desc="go back to the previous view"
+                style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
+                <ChevronLeft size={13} />
+              </button>
+              <Smartphone size={14} style={{ color: 'var(--accent-color)' }} />
+              <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                DamnedCloud — accesso remoto
+              </span>
+            </>
+          ) : showAgents ? (
             <>
               <button onClick={() => setShowAgents(false)} title="back" data-tip-desc="go back to the previous view"
                 style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
@@ -336,7 +351,9 @@ export function SettingsPanel() {
           )}
         </div>
 
-        {showAgents ? (
+        {showRemote ? (
+          <RemotePanel />
+        ) : showAgents ? (
           <AgentSettings />
         ) : showMcp ? (
           <McpPanel />
@@ -642,6 +659,21 @@ export function SettingsPanel() {
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
                 <PlugZap size={12} />
                 Server MCP (client di strumenti)
+              </button>
+            </Section>
+
+            <Section title="mobile" data-tip-desc="associate the DamnedCloud app and control the IDE remotely" icon={<Smartphone size={11} />}>
+              <button onClick={() => setShowRemote(true)} style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '8px 14px', height: '32px',
+                background: 'var(--accent-bg)', border: '1px solid var(--accent-color)',
+                borderRadius: 'var(--radius-md)', color: 'var(--accent-color)',
+                cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--text-inverse)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent-bg)'; e.currentTarget.style.color = 'var(--accent-color)' }}>
+                <Smartphone size={12} />
+                DamnedCloud — associa telefono
               </button>
             </Section>
 

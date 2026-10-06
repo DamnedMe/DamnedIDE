@@ -70,7 +70,9 @@ export class RemoteService extends EventEmitter {
   async start(options: { port?: number; host?: string; tls?: { certPath: string; keyPath: string } } = {}): Promise<RemoteStatus> {
     await this.stop()
     const port = options.port || DEFAULT_PORT
-    const host = options.host || (await this.pickHost())
+    const net = await this.pickNetwork()
+    const host = options.host || net.bind
+    const advertised = options.host || net.advertise
     let tls: WsServerOptions['tls']
     if (options.tls) {
       tls = { cert: readFileSync(options.tls.certPath, 'utf-8'), key: readFileSync(options.tls.keyPath, 'utf-8') }
@@ -98,7 +100,7 @@ export class RemoteService extends EventEmitter {
     )
 
     await this.server.start({ host, port, tls })
-    this.connection = { host, port, tls: !!tls }
+    this.connection = { host: advertised, port, tls: !!tls }
 
     if (!this.unsubscribeFs) {
       this.unsubscribeFs = onFsChanged((root) => this.broadcast('fs.changed', { root }))
@@ -212,19 +214,21 @@ export class RemoteService extends EventEmitter {
 
   // ─── Internals ────────────────────────────────────────────────────────────
 
-  private async pickHost(): Promise<string> {
+  private async pickNetwork(): Promise<{ bind: string; advertise: string }> {
     const ts = await getTailscaleStatus()
     if (ts.running && ts.ipv4) {
       this.warning = undefined
-      return ts.dnsName || ts.ipv4
+      // Bind to the concrete tailnet IP (stable), advertise the MagicDNS name
+      // (survives IP changes on the phone side).
+      return { bind: ts.ipv4, advertise: ts.dnsName || ts.ipv4 }
     }
     const lan = getLanIp()
     if (lan) {
       this.warning = 'Tailscale non rilevato: il bridge è raggiungibile solo sulla rete locale.'
-      return lan
+      return { bind: lan, advertise: lan }
     }
     this.warning = 'Nessuna interfaccia Tailscale/LAN: il bridge è raggiungibile solo in locale.'
-    return '127.0.0.1'
+    return { bind: '127.0.0.1', advertise: '127.0.0.1' }
   }
 
   private unsubscribeWorkspace: (() => void) | null = null

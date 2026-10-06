@@ -284,17 +284,19 @@ export type RemoteCommandResult<K extends RemoteCommand> = RemoteCommandMap[K]['
 
 /** base64url (no padding) encode, usable in both Node and the browser. */
 export function toBase64Url(input: string): string {
-  const b64 =
-    typeof btoa === 'function'
-      ? btoa(unescape(encodeURIComponent(input)))
-      : Buffer.from(input, 'utf-8').toString('base64')
+  const bytes = new TextEncoder().encode(input)
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
+  const b64 = btoa(binary)
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 export function fromBase64Url(input: string): string {
   const b64 = input.replace(/-/g, '+').replace(/_/g, '/')
   const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
-  return typeof atob === 'function' ? decodeURIComponent(escape(atob(padded))) : Buffer.from(padded, 'base64').toString('utf-8')
+  const binary = atob(padded)
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
 }
 
 export function isEnvelope(value: unknown): value is Envelope {

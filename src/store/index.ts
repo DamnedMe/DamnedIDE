@@ -402,10 +402,11 @@ function saveThemeDefaults(d: ThemeDefaults) {
   try { localStorage.setItem(THEME_DEFAULTS_KEY, JSON.stringify(d)) } catch { /* ignore */ }
 }
 
+// First-install defaults: the configuration chosen as the IDE standard.
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
-  fontSize: 12.5,
-  iconSize: 14,
+  fontSize: 20,
+  iconSize: 28,
   appFont: 'Nunito',
   customFonts: [],
   language: 'en',
@@ -413,10 +414,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   tabSize: 2,
   autoSave: false,
   lineNumbers: 'on',
-  wordWrap: 'off',
-  fontLigatures: false,
+  wordWrap: 'on',
+  fontLigatures: true,
   navKeybindings: 'vs-studio',
-  accentColor: '#00ffff',
+  accentColor: '#00aaff',
   themeColors: {
     dark: { ...DEFAULT_DARK_COLORS },
     light: { ...DEFAULT_LIGHT_COLORS }

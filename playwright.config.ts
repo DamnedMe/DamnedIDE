@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
-  testDir: './tests/sql-e2e',
+  testDir: './tests',
   outputDir: './test-results/sql-playwright',
   timeout: 30_000,
   expect: { timeout: 5_000 },

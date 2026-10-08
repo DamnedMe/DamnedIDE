@@ -13,7 +13,7 @@ import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ToastHost } from './components/layout/ToastHost'
 import { TooltipHost } from './components/layout/TooltipHost'
 import { RecentReposDialog } from './components/layout/RecentReposDialog'
-import { useUIStore, useGitStore, useSettingsStore, useAdoStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore } from './store'
+import { useUIStore, useGitStore, useSettingsStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
 import { appFontStack, ensureFontLoaded } from './utils/fonts'
@@ -90,15 +90,6 @@ export default function App() {
     root.style.setProperty('--bg-tag', hexToRgba(accentColor, 0.08))
     root.style.setProperty('--accent-glow', hexToRgba(accentColor, 0.1))
   }, [accentColor])
-
-  // Initialize the ADO service in the main process from a persisted connection,
-  // so ADO features work from any panel without visiting Azure DevOps first.
-  useEffect(() => {
-    const conn = useAdoStore.getState().connection
-    if (conn?.isConnected && conn.organization && conn.token) {
-      window.electronAPI.ado.connect(conn.organization, conn.token).catch(() => {})
-    }
-  }, [])
 
   // Propose opening a recent repo at startup (up to the last 5 opened).
   useEffect(() => {
@@ -306,7 +297,8 @@ export default function App() {
       case 'git':
         return <GitPanel repoPath={repoPath} />
       case 'ado':
-        return <AdoPanel />
+        // keyed: switching repository starts from that repository's connection
+        return <AdoPanel key={repoPath ?? ''} repoPath={repoPath} />
       case 'sql':
         return <SqlPanel />
       case 'editor':

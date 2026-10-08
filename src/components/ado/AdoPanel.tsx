@@ -6,42 +6,27 @@ import { WorkItemDetail } from './WorkItemDetail'
 import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 import { CreatePrDialog } from './CreatePrDialog'
-import { useAdoStore } from '../../store'
+import { useAdoStore, adoConnectionFor, loadLegacyAdoConnection } from '../../store'
 import { AdoConnection, AdoPullRequest, AdoPullRequestDetail } from '../../types/ado'
 import { TerminalDock } from '../terminal/TerminalDock'
-import { Network, Key, FolderOpen, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
+import { basenameOf } from '../../utils/paths'
+import { Network, PanelLeftClose, PanelLeftOpen, Plus, Settings } from 'lucide-react'
 
-export function AdoPanel() {
-  const { connection, setConnection, workItems, setWorkItems, pullRequests, setPullRequests, isLoading, setLoading } = useAdoStore()
+export function AdoPanel({ repoPath }: { repoPath: string | null }) {
+  const { connections, setConnection, workItems, setWorkItems, pullRequests, setPullRequests } = useAdoStore()
+  const connection = adoConnectionFor(connections, repoPath)
+  const project = connection?.project ?? ''
+  const repo = connection?.repository ?? ''
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<number | null>(null)
   const [selectedPr, setSelectedPr] = useState<AdoPullRequestDetail | null>(null)
   const [leftCollapsed, setLeftCollapsed] = useState(false)
   const [showCreatePr, setShowCreatePr] = useState(false)
-  const [org, setOrg] = useState(connection?.organization || '')
-  const [project, setProject] = useState(connection?.project || '')
-  const [repo, setRepo] = useState(connection?.repository || '')
-  const [token, setToken] = useState('')
-
-  const handleConnect = async () => {
-    if (!org || !token) return
-    setLoading(true)
-    try {
-      await window.electronAPI.ado.connect(org, token)
-      const conn: AdoConnection = { organization: org, project, repository: repo, token, isConnected: true }
-      setConnection(conn)
-
-      if (project) {
-        const items = await window.electronAPI.ado.workItems(project)
-        setWorkItems(items)
-      }
-      if (project && repo) {
-        const prs = await window.electronAPI.ado.pullRequests(project, repo)
-        setPullRequests(prs)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
+  const [editing, setEditing] = useState(false)
+  const showForm = !connection || editing
+  // every hook stays above the early returns: a hook count that changes between
+  // the form and the connected view crashes React (black screen on save)
+  const leftRef = useRef<HTMLDivElement>(null)
+  const [leftHeight, setLeftHeight] = useState(0)
 
   const handleSelectPr = async (pr: AdoPullRequest) => {
     setSelectedWorkItemId(null)
@@ -65,70 +50,21 @@ export function AdoPanel() {
     window.electronAPI.ado.pullRequests(project, repo).then(setPullRequests).catch(() => {})
   }
 
-  // Re-initialize the ADO service in the main process from a persisted connection
+  // Point the ADO service in the main process at this repository's connection
+  // and (re)load its lists: on open and after every save.
   useEffect(() => {
-    if (!connection?.isConnected) return
+    if (!connection) return
+    let cancelled = false
     window.electronAPI.ado.connect(connection.organization, connection.token)
-      .then(ok => {
-        if (!ok) return
-        const p = connection.project
-        const r = connection.repository
-        if (p) window.electronAPI.ado.workItems(p).then(setWorkItems).catch(() => {})
-        if (p && r) window.electronAPI.ado.pullRequests(p, r).then(setPullRequests).catch(() => {})
+      .then(() => {
+        if (cancelled) return
+        const { project: p, repository: r } = connection
+        if (p) window.electronAPI.ado.workItems(p).then(setWorkItems).catch(() => setWorkItems([]))
+        if (p && r) window.electronAPI.ado.pullRequests(p, r).then(setPullRequests).catch(() => setPullRequests([]))
       })
       .catch(() => {})
-  }, [])
-
-  if (!connection?.isConnected) {
-    return (
-      <PanelContainer>
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{
-            flex: 1, minHeight: 0, overflow: 'auto',
-            maxWidth: '420px',
-            margin: '0 auto',
-            padding: '32px 0'
-          }}>
-            <div style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-secondary)' }}>
-              <Network size={32} strokeWidth={1} style={{ marginBottom: '12px' }} />
-              <p style={{ margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>Connettiti ad Azure DevOps</p>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-                Organization
-                <input value={org} onChange={e => setOrg(e.target.value)} placeholder="es. revoltech" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-                Project
-                <input value={project} onChange={e => setProject(e.target.value)} placeholder="es. Themis_Platform" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-                Repository
-                <input value={repo} onChange={e => setRepo(e.target.value)} placeholder="es. Themis-API" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-                Personal Access Token
-                <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="PAT..." style={inputStyle} />
-              </label>
-              <button onClick={handleConnect} disabled={isLoading} style={{
-                padding: '8px 16px',
-                background: isLoading ? 'var(--bg-disabled)' : 'var(--accent-color)',
-                color: '#fff', border: 'none', borderRadius: '4px',
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 500, marginTop: '8px'
-              }}>
-                {isLoading ? 'Connessione...' : 'Connetti'}
-              </button>
-            </div>
-          </div>
-          <TerminalDock repoPath={null} />
-        </div>
-      </PanelContainer>
-    )
-  }
-
-  const leftRef = useRef<HTMLDivElement>(null)
-  const [leftHeight, setLeftHeight] = useState(0)
+    return () => { cancelled = true }
+  }, [connection])
 
   useEffect(() => {
     const el = leftRef.current
@@ -138,7 +74,35 @@ export function AdoPanel() {
     const obs = new ResizeObserver(update)
     obs.observe(el)
     return () => obs.disconnect()
-  }, [leftCollapsed])
+  }, [leftCollapsed, showForm])
+
+  if (!repoPath || showForm) {
+    // a new repository starts from the last saved connection (same org/PAT, usually)
+    const template = connection ?? Object.values(connections).pop() ?? loadLegacyAdoConnection()
+    return (
+      <PanelContainer>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          {repoPath ? (
+            <AdoConnectForm
+              repoName={basenameOf(repoPath)}
+              initial={{ ...template, repository: connection?.repository || basenameOf(repoPath) }}
+              onSave={(conn) => { setConnection(repoPath, conn); setEditing(false) }}
+              onCancel={connection ? () => setEditing(false) : undefined}
+            />
+          ) : (
+            <div style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: '12px', color: 'var(--text-secondary)', fontSize: 'calc(13px * var(--ui-text-scale, 1))'
+            }}>
+              <Network size={32} strokeWidth={1} />
+              apri un repository: la connessione Azure DevOps si configura per repository
+            </div>
+          )}
+          <TerminalDock repoPath={null} />
+        </div>
+      </PanelContainer>
+    )
+  }
 
   return (
     <PanelContainer>
@@ -171,6 +135,16 @@ export function AdoPanel() {
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--success-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
             <Plus size={14} />
+          </button>
+          <button onClick={() => setEditing(true)} title="configure" data-tip-desc="Azure DevOps connection of this repository"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '22px', height: '22px', background: 'none', border: 'none',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
+            <Settings size={13} />
           </button>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -218,6 +192,105 @@ export function AdoPanel() {
         <CreatePrDialog project={project} repo={repo} onClose={() => setShowCreatePr(false)} onCreated={handlePrCreated} />
       )}
     </PanelContainer>
+  )
+}
+
+/** Connection form for one repository: saved only once Azure DevOps answers with its repository. */
+function AdoConnectForm({ repoName, initial, onSave, onCancel }: {
+  repoName: string
+  initial: Partial<AdoConnection>
+  onSave: (conn: AdoConnection) => void
+  onCancel?: () => void
+}) {
+  const [org, setOrg] = useState(initial.organization || '')
+  const [project, setProject] = useState(initial.project || '')
+  const [repo, setRepo] = useState(initial.repository || '')
+  const [token, setToken] = useState(initial.token || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSave = async () => {
+    const o = org.trim(), p = project.trim(), r = repo.trim()
+    if (!o || !p || !r || !token || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      await window.electronAPI.ado.connect(o, token)
+      // a wrong organization/project/PAT must not be saved as a working connection
+      const repos = await window.electronAPI.ado.repositories(p)
+      if (repos.length === 0) {
+        setError('nessuna repository leggibile: controlla organization, project e PAT (scope Code: read)')
+        return
+      }
+      const match = repos.find(x => x.toLowerCase() === r.toLowerCase())
+      if (!match) {
+        setError(`repository "${r}" non trovata in ${p}. Disponibili: ${repos.join(', ')}`)
+        return
+      }
+      onSave({ organization: o, project: p, repository: match, token, isConnected: true })
+    } catch (e) {
+      setError((e as Error).message || 'connessione fallita')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const ready = !!(org.trim() && project.trim() && repo.trim() && token) && !saving
+  return (
+    <div style={{
+      flex: 1, minHeight: 0, overflow: 'auto',
+      maxWidth: '420px', width: '100%',
+      margin: '0 auto',
+      padding: '32px 0'
+    }}>
+      <div style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-secondary)' }}>
+        <Network size={32} strokeWidth={1} style={{ marginBottom: '12px' }} />
+        <p style={{ margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>Connetti <b>{repoName}</b> ad Azure DevOps</p>
+        <p style={{ margin: '4px 0 0', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>la configurazione viene salvata per questo repository</p>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+          Organization
+          <input value={org} onChange={e => setOrg(e.target.value)} placeholder="es. revoltech" style={inputStyle} />
+        </label>
+        <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+          Project
+          <input value={project} onChange={e => setProject(e.target.value)} placeholder="es. Themis_Platform" style={inputStyle} />
+        </label>
+        <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+          Repository
+          <input value={repo} onChange={e => setRepo(e.target.value)} placeholder="es. Themis-API" style={inputStyle} />
+        </label>
+        <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+          Personal Access Token
+          <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="PAT..." style={inputStyle} />
+        </label>
+        {error && (
+          <div style={{
+            padding: '8px 10px', background: 'var(--error-bg)', color: 'var(--error-color)',
+            borderRadius: '4px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', lineHeight: 1.5
+          }}>{error}</div>
+        )}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          {onCancel && (
+            <button onClick={onCancel} style={{
+              flex: 1, padding: '8px 16px', background: 'var(--bg-card)', color: 'var(--text-secondary)',
+              border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer',
+              fontSize: 'calc(13px * var(--ui-text-scale, 1))'
+            }}>Annulla</button>
+          )}
+          <button onClick={handleSave} disabled={!ready} style={{
+            flex: 1, padding: '8px 16px',
+            background: ready ? 'var(--accent-color)' : 'var(--bg-disabled)',
+            color: '#fff', border: 'none', borderRadius: '4px',
+            cursor: ready ? 'pointer' : 'not-allowed',
+            fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 500
+          }}>
+            {saving ? 'Verifica...' : 'Salva'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

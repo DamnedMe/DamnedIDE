@@ -45,33 +45,50 @@ interface GitState {
 }
 
 interface AdoState {
-  connection: AdoConnection | null
+  /** One Azure DevOps connection per local repository, keyed by adoRepoKey(repoPath). */
+  connections: Record<string, AdoConnection>
   workItems: AdoWorkItem[]
   pullRequests: AdoPullRequest[]
-  isLoading: boolean
-  setConnection: (connection: AdoConnection | null) => void
+  setConnection: (repoPath: string, connection: AdoConnection) => void
   setWorkItems: (workItems: AdoWorkItem[]) => void
   setPullRequests: (prs: AdoPullRequest[]) => void
-  setLoading: (loading: boolean) => void
 }
 
-const ADO_CONNECTION_KEY = 'damnedide_ado_connection'
+const ADO_CONNECTIONS_KEY = 'damnedide_ado_connections'
+// single global connection used before the per-repository one: only a form prefill now
+const ADO_LEGACY_CONNECTION_KEY = 'damnedide_ado_connection'
 
-function loadAdoConnection(): AdoConnection | null {
+/** The same repository opened as `C:\x\` or `c:/x` is one entry. */
+export function adoRepoKey(repoPath: string): string {
+  return repoPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+export function adoConnectionFor(connections: Record<string, AdoConnection>, repoPath: string | null): AdoConnection | null {
+  return repoPath ? connections[adoRepoKey(repoPath)] ?? null : null
+}
+
+function loadAdoConnections(): Record<string, AdoConnection> {
   try {
-    const raw = localStorage.getItem(ADO_CONNECTION_KEY)
+    const raw = localStorage.getItem(ADO_CONNECTIONS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (parsed && parsed.isConnected) return parsed as AdoConnection
+      if (parsed && typeof parsed === 'object') return parsed
     }
   } catch { /* ignore */ }
-  return null
+  return {}
 }
 
-function saveAdoConnection(conn: AdoConnection | null) {
+export function loadLegacyAdoConnection(): AdoConnection | null {
   try {
-    if (conn) localStorage.setItem(ADO_CONNECTION_KEY, JSON.stringify(conn))
-    else localStorage.removeItem(ADO_CONNECTION_KEY)
+    const raw = localStorage.getItem(ADO_LEGACY_CONNECTION_KEY)
+    return raw ? JSON.parse(raw) as AdoConnection : null
+  } catch { return null }
+}
+
+function saveAdoConnections(connections: Record<string, AdoConnection>) {
+  try {
+    localStorage.setItem(ADO_CONNECTIONS_KEY, JSON.stringify(connections))
+    localStorage.removeItem(ADO_LEGACY_CONNECTION_KEY)
   } catch { /* ignore */ }
 }
 
@@ -189,17 +206,16 @@ export const useGitStore = create<GitState>((set) => ({
 }))
 
 export const useAdoStore = create<AdoState>((set) => ({
-  connection: loadAdoConnection(),
+  connections: loadAdoConnections(),
   workItems: [],
   pullRequests: [],
-  isLoading: false,
-  setConnection: (connection) => {
-    saveAdoConnection(connection)
-    set({ connection })
-  },
+  setConnection: (repoPath, connection) => set((s) => {
+    const connections = { ...s.connections, [adoRepoKey(repoPath)]: connection }
+    saveAdoConnections(connections)
+    return { connections }
+  }),
   setWorkItems: (workItems) => set({ workItems }),
-  setPullRequests: (pullRequests) => set({ pullRequests }),
-  setLoading: (loading) => set({ isLoading: loading })
+  setPullRequests: (pullRequests) => set({ pullRequests })
 }))
 
 export const useSqlStore = create<SqlState>((set) => ({

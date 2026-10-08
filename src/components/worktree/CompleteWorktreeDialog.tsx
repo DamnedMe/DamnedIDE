@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Loader2, X, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, FileCode, Layers, Trash2 } from 'lucide-react'
-import { useAdoStore, useEditorStore, useToastStore } from '../../store'
+import { useAdoStore, adoConnectionFor, useEditorStore, useToastStore } from '../../store'
 import { joinPath } from '../../utils/paths'
 
 interface CompleteWorktreeDialogProps {
@@ -29,7 +29,10 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
   const [autoComplete, setAutoComplete] = useState(false)
   const [stackInfo, setStackInfo] = useState<WorktreeStackInfo | null>(null)
   const [removingChild, setRemovingChild] = useState(false)
-  const ado = useAdoStore(s => s.connection)
+  const [repoListFailed, setRepoListFailed] = useState(false)
+  // the connection saved for this repository (Azure DevOps panel)
+  const ado = useAdoStore(s => adoConnectionFor(s.connections, repoPath))
+  const adoReady = !!(ado?.organization && ado.project && ado.token)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const showToast = useToastStore(s => s.showToast)
 
@@ -74,39 +77,71 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
   const mergeRef = stackInfo && stackInfo.state === 'open' ? stackInfo.mergeRef : 'origin/develop'
   const absorbed = stackInfo?.state === 'absorbed'
 
+  /** Removes this worktree like the list does: its own children go back to develop first. */
+  const disposeWorktree = async (done: string): Promise<boolean> => {
+    const branch = await window.electronAPI.git.currentBranch(worktreePath)
+    const affected = branch
+      ? await window.electronAPI.worktree.retargetChildren(repoPath, branch).catch(() => [] as string[])
+      : []
+    const res = await window.electronAPI.worktree.remove(repoPath, worktreePath)
+    if (!res.ok) { showToast(`worktree non rimosso: ${res.error || 'rimozione fallita'}`, 'error'); return false }
+    if (res.warning) showToast(res.warning, 'error')
+    else showToast(affected.length > 0 ? `${done} (${affected.length} figli riportati su develop)` : done)
+    return true
+  }
+
   /** Absorbed child: its work is already in the parent, so the worktree is disposable. */
   const removeAbsorbedChild = async () => {
     setRemovingChild(true)
     try {
-      // same guard as the list: its own children go back to develop first
-      const branch = await window.electronAPI.git.currentBranch(worktreePath)
-      const affected = branch
-        ? await window.electronAPI.worktree.retargetChildren(repoPath, branch).catch(() => [] as string[])
-        : []
-      const res = await window.electronAPI.worktree.remove(repoPath, worktreePath)
-      if (!res.ok) { showToast(res.error || 'rimozione fallita', 'error'); return }
-      if (res.warning) showToast(res.warning, 'error')
-      else showToast(affected.length > 0
-        ? `worktree figlio rimosso (${affected.length} figli riportati su develop)`
-        : 'worktree figlio rimosso')
-      onDone()
+      if (await disposeWorktree('worktree figlio rimosso')) onDone()
     } finally {
       setRemovingChild(false)
     }
   }
 
+  /** After the PR: drop a stale stack link, then remove the worktree when nothing is left on its branch. */
+  const afterPr = async () => {
+    const branch = await window.electronAPI.git.currentBranch(worktreePath).catch(() => '')
+    // promotion: the base was develop (parent already merged) → drop the link
+    if (stacked && targetBranch === 'develop' && branch) {
+      try {
+        await window.electronAPI.worktree.clearLink(repoPath, branch)
+        setStackInfo(null)
+        showToast('worktree promosso su develop (legame con il padre rimosso)')
+      } catch { /* non bloccante */ }
+    }
+    if (!branch || !worktreePath.includes('.worktrees')) return // the main checkout stays
+    const [status, stack] = await Promise.all([
+      window.electronAPI.git.status(worktreePath),
+      window.electronAPI.worktree.stack(repoPath)
+    ]).catch(() => [null, null])
+    // uncommitted or unpushed work, or worktrees stacked on it: keep it
+    if (!status || !status.isClean || !status.tracking || status.ahead > 0) return
+    if (!stack || stack.some(i => i.parent === branch)) {
+      showToast('worktree mantenuto: ha worktree impilati sopra')
+      return
+    }
+    if (await disposeWorktree('worktree completato e rimosso')) onDone()
+  }
+
+  const retryPr = async () => {
+    if (await createPr()) await afterPr()
+  }
+
   useEffect(() => {
-    if (!ado?.isConnected || !ado.organization || !ado.project) return
+    if (!ado || !adoReady) return
     window.electronAPI.ado.connect(ado.organization, ado.token)
       .then(() => window.electronAPI.ado.repositories(ado.project))
       .then(list => {
         setRepos(list)
+        setRepoListFailed(list.length === 0)
         if (list.length > 0) {
           const repoName = repoPath.split(/[\\/]/).pop() || ''
-          setRepo(list.includes(repoName) ? repoName : ado.repository && list.includes(ado.repository) ? ado.repository : list[0])
+          setRepo(ado.repository && list.includes(ado.repository) ? ado.repository : list.includes(repoName) ? repoName : list[0])
         }
       })
-      .catch(() => {})
+      .catch(() => setRepoListFailed(true))
   }, [])
 
   const updateStep = (index: number, patch: Partial<StepLog>) => {
@@ -215,15 +250,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
         prOk = await createPr()
       }
       setCompleted(prOk)
-      // promotion: the base was develop (parent already merged) → drop the link
-      if (prOk && stacked && targetBranch === 'develop') {
-        try {
-          const branch = await window.electronAPI.git.currentBranch(worktreePath)
-          if (branch) await window.electronAPI.worktree.clearLink(repoPath, branch)
-          setStackInfo(null)
-          showToast('worktree promosso su develop (legame con il padre rimosso)')
-        } catch { /* non bloccante */ }
-      }
+      if (prOk) await afterPr()
       setIsRunning(false)
     } catch (e) {
       const i = steps.findIndex(s => s.status === 'running')
@@ -274,6 +301,23 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {(!adoReady || repoListFailed) && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '8px 10px',
+              background: 'var(--warning-bg)', border: '1px solid var(--warning-color)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--warning-color)',
+              fontSize: 'calc(10px * var(--ui-text-scale, 1))', lineHeight: 1.6
+            }}>
+              <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                {!adoReady
+                  ? <>Azure DevOps non è configurato per questo repository: la pull request non verrà creata.</>
+                  : <>Azure DevOps non restituisce le repository del project <b>{ado?.project}</b> (PAT scaduto o project errato?): la pull request fallirà.</>}
+                {' '}Configuralo nel pannello Azure DevOps prima di avviare, oppure procedi solo con commit, push e merge.
+              </span>
+            </div>
+          )}
+
           {stacked && !absorbed && stackInfo && (
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '8px 10px',
@@ -426,7 +470,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                   borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
                   fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
                 }}>close</button>
-                <button onClick={createPr} disabled={isRunning}
+                <button onClick={retryPr} disabled={isRunning}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px',
                     background: isRunning ? 'var(--bg-disabled)' : 'var(--warning-color)',
@@ -454,7 +498,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
                     cursor: message.trim() && !isRunning && !absorbed ? 'pointer' : 'not-allowed',
                     fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                   }}>
-                  {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : 'start'}
+                  {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : adoReady ? 'start' : 'start senza PR'}
                 </button>
               </>
             )}

@@ -62,7 +62,7 @@ export function Sidebar({ tabs, activeTab, onTabChange, onOpenFolder }: SidebarP
       background: 'var(--bg-sidebar)',
       borderRight: '1px solid var(--border-color)',
       paddingTop: '8px',
-      gap: '2px',
+      gap: '6px',
       flexShrink: 0,
       alignItems: 'center'
     }}>

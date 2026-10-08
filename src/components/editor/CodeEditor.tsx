@@ -25,7 +25,7 @@ import {
   PanelLeftClose, PanelLeftOpen, FolderTree, Search,
   ChevronRight, Asterisk, Regex, CaseSensitive, SeparatorHorizontal,
   Play, Hammer, Square, RotateCw, GitCompare,
-  ArrowLeft, ArrowRight, XCircle, AlertTriangle, Eye, Copy, Loader2
+  ArrowLeft, ArrowRight, XCircle, AlertTriangle, Eye, Copy, Loader2, Save
 } from 'lucide-react'
 
 type LeftPanel = 'explorer' | 'search' | 'changes'
@@ -168,6 +168,10 @@ export function CodeEditor() {
   const browserOpenedRef = useRef(false)
   const [gitModal, setGitModal] = useState<{ title: string; text?: string; blame?: { hash: string; author: string; date: string; line: string }[]; history?: { hash: string; date: string; message: string; authorName: string }[] } | null>(null)
   const openFileRef = useRef<(f: string, l?: number, fromNavigation?: boolean) => void>(() => {})
+  // Latest save function: Monaco commands and window shortcuts are registered once
+  // (mount / stable effects), so they must call through this ref instead of closing
+  // over a stale render's openFiles/activeFile state.
+  const saveActiveFileRef = useRef<() => void>(() => {})
   const rootPathRef = useRef<string | null>(null)
   const previousRootPathRef = useRef<string | null>(null)
   const navBackRef = useRef<NavEntry[]>([])
@@ -396,12 +400,12 @@ export function CodeEditor() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
-        saveActiveFile()
+        saveActiveFileRef.current()
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  })
+  }, [])
 
   // ─── File operations ───────────────────────────────
   const openFile = useCallback(async (filePath: string, line?: number, fromNavigation = false) => {
@@ -462,6 +466,7 @@ export function CodeEditor() {
       if (editor && monaco) updateModifiedDecorations(editor, monaco, file.path)
     } catch { /* ignore */ }
   }
+  saveActiveFileRef.current = saveActiveFile
 
   const goToSymbol = async (kind: 'definition' | 'implementation', symbolOverride?: string) => {
     const editor = editorRef.current
@@ -677,7 +682,7 @@ export function CodeEditor() {
       trackHoverModel(editor.getModel(), activeFileRef.current)
     })
     try {
-      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveActiveFile())
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveActiveFileRef.current())
       editor.addCommand(monaco.KeyCode.F12, () => goToSymbol('definition'))
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.F12, () => goToSymbol('implementation'))
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.F12, () => findReferences())
@@ -793,6 +798,7 @@ export function CodeEditor() {
   }
 
   const activeContent = openFiles.find(f => f.path === activeFile)?.content ?? ''
+  const activeFileDirty = openFiles.find(f => f.path === activeFile)?.dirty ?? false
 
   const [projectKind, setProjectKind] = useState<'dotnet' | 'node' | null>(null)
   const [dotnetProject, setDotnetProject] = useState<string | null>(null)
@@ -1399,6 +1405,29 @@ export function CodeEditor() {
             <ArrowRight size={11} />
           </button>
         </div>
+        {activeFile && (
+          <div style={{ display: 'flex', gap: '1px', flexShrink: 0, padding: '0 2px', borderRight: '1px solid var(--border-subtle)' }}>
+            <button
+              onClick={() => saveActiveFileRef.current()}
+              disabled={!activeFileDirty}
+              title="save (Ctrl+S)"
+              data-tip-desc="save the active file to disk (Ctrl+S)"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: '22px', height: '18px', padding: 0,
+                background: 'transparent', border: '1px solid transparent',
+                borderRadius: 'var(--radius-sm)',
+                color: activeFileDirty ? 'var(--accent-color)' : 'var(--text-muted)',
+                cursor: activeFileDirty ? 'pointer' : 'not-allowed',
+                opacity: activeFileDirty ? 1 : 0.4
+              }}
+              onMouseEnter={(e) => { if (activeFileDirty) e.currentTarget.style.color = 'var(--accent-color)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = activeFileDirty ? 'var(--accent-color)' : 'var(--text-muted)' }}
+            >
+              <Save size={11} />
+            </button>
+          </div>
+        )}
         <ZoomControls fontSize={fontSize} onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={zoomReset} />
       </div>
 

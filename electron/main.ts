@@ -21,6 +21,7 @@ import { watchRoot, unwatchRoot, closeAllWatchers } from './services/watch/watch
 import { openTargetFromArgv, resolveOpenTarget, type OpenTarget } from './services/open/open-target'
 import { buildXlsx } from './services/export/xlsx.service'
 import { RemoteService } from './services/remote/remote.service'
+import { loadSharedStorage, setSharedItem } from './services/storage/shared-storage'
 import type { RemoteSqlConnection, RemoteScope, WorkspaceSnapshot } from '../src/shared/remote/protocol'
 
 let mainWindow: BrowserWindow | null = null
@@ -103,6 +104,27 @@ app.on('open-file', (event, filePath) => {
   if (target) sendOpenTarget(target)
 })
 
+/** localStorage copy shared by every instance (services/storage/shared-storage.ts). */
+function registerSharedStorageIpc(): void {
+  const file = join(app.getPath('userData'), 'renderer-storage.json')
+  // sync: the preload seeds localStorage before the renderer's stores read it
+  ipcMain.on('storage:load', (e, local: Record<string, string>) => {
+    try {
+      e.returnValue = loadSharedStorage(file, local)
+    } catch (err) {
+      console.error('[storage] load failed:', (err as Error).message)
+      e.returnValue = local
+    }
+  })
+  ipcMain.on('storage:set', (_e, key: string, value: string | null) => {
+    try {
+      setSharedItem(file, key, value)
+    } catch (err) {
+      console.error('[storage] write failed:', (err as Error).message)
+    }
+  })
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -166,6 +188,7 @@ app.whenReady().then(() => {
 
   registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService, claudeService, agentService)
   registerRemoteIpc(remoteService)
+  registerSharedStorageIpc()
   const fromArgv = argvOpenTarget(process.argv)
   if (fromArgv) pendingOpenTarget = fromArgv
   createWindow()

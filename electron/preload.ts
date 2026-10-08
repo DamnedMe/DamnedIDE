@@ -286,8 +286,26 @@ const electronAPI = {
       ipcRenderer.on('remote:event', handler)
       return () => ipcRenderer.removeListener('remote:event', handler)
     }
+  },
+  // mirror of localStorage shared by every instance (src/shared-storage.ts)
+  storage: {
+    set: (key: string, value: string | null): void => ipcRenderer.send('storage:set', key, value)
   }
 }
+
+// Seed localStorage from the copy shared by every IDE instance before the app's
+// stores read it: only the first instance gets Chromium's own localStorage.
+try {
+  const local: Record<string, string> = {}
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key !== null) local[key] = localStorage.getItem(key) ?? ''
+  }
+  const merged = ipcRenderer.sendSync('storage:load', local) as Record<string, string>
+  for (const [key, value] of Object.entries(merged)) {
+    if (local[key] !== value) localStorage.setItem(key, value)
+  }
+} catch { /* no shared copy: the instance keeps its own storage */ }
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI)
 

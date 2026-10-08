@@ -221,7 +221,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
 
   const stripBtn = (onClick: () => void, title: string, children: React.ReactNode, tipDesc?: string) => (
     <button onClick={onClick} title={title} data-tip-desc={tipDesc}
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0, borderRadius: 'var(--radius-sm)' }}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0, borderRadius: 'var(--radius-sm)' }}
       onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
       onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
       {children}
@@ -230,18 +230,19 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
 
   const ToolStrip = (
     <div style={{
-      width: '44px', flexShrink: 0, background: 'var(--bg-card)',
+      // grows with the IDE text scale, like the badges it holds
+      width: 'calc(24px * var(--ui-text-scale, 1) + 28px)', flexShrink: 0, background: 'var(--bg-card)',
       border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      padding: '6px 2px', gap: '4px', overflow: 'hidden'
+      padding: '8px 4px', gap: '8px', overflow: 'hidden'
     }}>
       {/* top buttons */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)', paddingBottom: '4px', marginBottom: '2px', width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', width: '100%' }}>
         {stripBtn(() => setListCollapsed(!listCollapsed), listCollapsed ? 'show panel' : 'collapse panel', listCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />, 'collapse or expand the list panel')}
         {stripBtn(loadWorktrees, 'refresh', <RefreshCw size={11} />, 'reload the worktree list')}
       </div>
       {/* worktree tabs */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', overflow: 'auto', padding: '0 2px', width: '100%' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', overflow: 'auto', padding: '2px 0', width: '100%' }}>
         {entries.filter(e => !hiddenPaths.has(e.path)).map((entry) => {
           const isMain = !entry.path.includes('.worktrees')
           const isSelected = selectedWorktree === entry.path
@@ -253,13 +254,14 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               onContextMenu={(e) => { e.preventDefault(); setStripMenu({ x: e.clientX, y: e.clientY, entry }) }}
               title={entry.branch || entry.head.substring(0, 7)} data-tip-desc="select this worktree"
               style={{
-                width: '30px', height: '22px', borderRadius: '4px', flexShrink: 0,
+                width: 'calc(24px * var(--ui-text-scale, 1) + 14px)', height: 'calc(12px * var(--ui-text-scale, 1) + 12px)',
+                borderRadius: '6px', flexShrink: 0,
                 background: isSelected ? 'var(--bg-active)' : 'transparent',
                 border: `1.5px solid ${isSelected
                   ? (isBugfix ? 'var(--warning-color)' : 'var(--accent-color)')
                   : (isBugfix ? 'var(--warning-color)' : 'var(--border-color)')}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontWeight: 700,
+                cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700,
                 fontFamily: 'var(--font-mono)', color: isBugfix ? 'var(--warning-color)' : (isSelected ? 'var(--accent-color)' : 'var(--text-muted)'),
                 transition: 'all 0.15s ease'
               }}
@@ -269,14 +271,14 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               onMouseLeave={(e) => {
                 if (!isSelected) { e.currentTarget.style.borderColor = isBugfix ? 'var(--warning-color)' : 'var(--border-color)'; e.currentTarget.style.color = isBugfix ? 'var(--warning-color)' : 'var(--text-muted)' }
               }}>
-              {isMain ? 'main' : label.substring(0, 4)}
+              {isMain ? 'main' : (label || entry.head).substring(0, 4)}
             </div>
           )
         })}
         {stripBtn(() => setShowNewWorktree(true), 'new worktree', <Plus size={13} />, 'create a feature or bugfix worktree')}
       </div>
       {/* bottom: change main folder */}
-      <div style={{ flexShrink: 0, borderTop: '1px solid var(--border-subtle)', paddingTop: '4px', width: '100%', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ flexShrink: 0, borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', width: '100%', display: 'flex', justifyContent: 'center' }}>
         {stripBtn(async () => {
           try {
             const p = await window.electronAPI.dialog.openFolder()

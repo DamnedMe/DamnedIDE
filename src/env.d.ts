@@ -111,6 +111,9 @@ interface Window {
   electronAPI: {
     // 'win32' | 'darwin' | 'linux'
     platform: string
+    storage: {
+      set: (key: string, value: string | null) => void
+    }
     ai: {
       status: () => Promise<ClaudeAuthStatus>
       test: (provider?: AgentProviderId | ClaudeBackend, backend?: ClaudeBackend, model?: string) => Promise<ClaudeResult>

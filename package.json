@@ -30,6 +30,7 @@
     "test:fs-watch": "node --experimental-strip-types scripts/fs-watch.check.ts",
     "test:open-target": "node --experimental-strip-types scripts/open-target.check.ts",
     "test:remote-protocol": "node --experimental-strip-types scripts/remote-protocol.check.ts",
+    "test:shared-storage": "node --experimental-strip-types scripts/shared-storage.check.ts",
     "test:sql-ui": "node --experimental-strip-types scripts/sql-ui-regression.mjs",
     "test:sql-guards": "node --experimental-strip-types scripts/sql-linux-guards.check.ts",
     "test:sql-insert": "node --experimental-strip-types scripts/sql-insert.check.ts",

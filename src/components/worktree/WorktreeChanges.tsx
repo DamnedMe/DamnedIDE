@@ -1,10 +1,9 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import { GitFileStatus } from '../../types/git'
 import { FileDiffList } from '../git/FileDiffList'
 import { DiffViewer } from '../editor/DiffViewer'
 import type { DiffViewerHandle } from '../editor/DiffViewer'
 import { useEditorStore } from '../../store'
-import { ResizableSplitter } from '../layout/ResizableSplitter'
 import { Modal } from '../layout/Modal'
 import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye, GitCommitHorizontal, Download, Upload, Check, ArrowRightLeft, AlertTriangle, Undo2 } from 'lucide-react'
 import { MergeTool } from './MergeTool'
@@ -16,6 +15,9 @@ import { applyCSharpDiagnostics, clearCSharpDiagnostics, scheduleCSharpDiagnosti
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
 import { joinPath } from '../../utils/paths'
 import { appFontStack } from '../../utils/fonts'
+import { FileFilterBar } from '../editor/CodeEditor'
+import { compileFileFilter, matchPathOrName } from '../../utils/file-filter'
+import type { FileFilterMode } from '../../utils/file-filter'
 
 function applyEditorTheme(monaco: typeof import('monaco-editor')) {
   const theme = useUIStore.getState().theme
@@ -32,13 +34,34 @@ interface WorktreeChangesProps {
   onToggleCheck: (filePath: string, state: 'ok' | 'ko' | null) => void
   onFileSelected?: (filePath: string | null) => void
   handleRef?: React.MutableRefObject<WorktreeChangesHandle | null>
+  /** git state changed (commit, pull, push, transfer, status): the worktree paths touched, undefined = every branch (remote refs moved) */
+  onGitChanged?: (paths?: string[]) => void
+  /** ahead/behind of this worktree's branch vs its upstream, shown next to pull/push */
+  sync?: { ahead: number; behind: number } | null
+  /** places the parts: the caller owns the layout, this component keeps the state (and stays mounted) */
+  layout: (parts: WorktreeChangesParts) => ReactNode
+}
+
+export interface WorktreeChangesParts {
+  /** toolbar, commit/transfer forms, filter, conflicts and rows */
+  list: ReactNode
+  /** diff / edit pane */
+  diff: ReactNode
+  /** changed files (staged + unstaged) */
+  count: number
+  /** unresolved conflicts (not in count) */
+  conflicts: number
+  /** git status unreadable: shown in place of the list */
+  statusError: string | null
+  /** pull ↓n / push ↑n, gated by the running git operation */
+  syncButtons: ReactNode
 }
 
 export interface WorktreeChangesHandle {
   openFile: (absPath: string) => void
 }
 
-export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCheck, onFileSelected, handleRef }: WorktreeChangesProps) {
+export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCheck, onFileSelected, handleRef, onGitChanged, sync, layout }: WorktreeChangesProps) {
   const [files, setFiles] = useState<GitFileStatus[]>([])
   const [stagedFiles, setStagedFiles] = useState<GitFileStatus[]>([])
   const [unstagedFiles, setUnstagedFiles] = useState<GitFileStatus[]>([])
@@ -80,6 +103,22 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const [moveStagedOnly, setMoveStagedOnly] = useState(false)
   const [discardTarget, setDiscardTarget] = useState<{ file: string; staged: boolean; untracked: boolean } | null>(null)
   const [isDiscarding, setIsDiscarding] = useState(false)
+  // a failed read of the working-tree side, shown instead of an empty diff
+  const [diffError, setDiffError] = useState<string | null>(null)
+  // file filter on the relative path (regex by default, unanchored); local to
+  // the panel, not persisted. Conflicts, stage-all and commit ignore it.
+  const [filterText, setFilterText] = useState('')
+  const [filterMode, setFilterMode] = useState<FileFilterMode>('regex')
+  const [filterCase, setFilterCase] = useState(false)
+  const [filterSpace, setFilterSpace] = useState(false)
+  const match = useMemo(
+    () => compileFileFilter(filterText ? { query: filterText, mode: filterMode, caseSensitive: filterCase, spaceSensitive: filterSpace } : null),
+    [filterText, filterMode, filterCase, filterSpace]
+  )
+  const shown = matchPathOrName(match)
+  const visStaged = stagedFiles.filter(f => shown(f.path))
+  const visUnstaged = unstagedFiles.filter(f => shown(f.path))
+  const visFiles = files.filter(f => shown(f.path))
 
   const updateEditorNav = (line: number | null) => {
     if (!diffFile || line == null) return
@@ -145,6 +184,21 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     setDiffFile(null)
   }, [loadStatus])
 
+  // Working-tree side of the diff. A staged file missing on disk falls back to
+  // its index version (as ChangesPanel does); any other failure comes back as
+  // an error so the pane says so instead of rendering an empty diff.
+  const readModified = async (path: string, staged: boolean): Promise<{ text: string; error: string | null }> => {
+    try {
+      return { text: await window.electronAPI.fs.readFile(`${worktreePath}/${path}`), error: null }
+    } catch (e) {
+      const indexed = staged ? await window.electronAPI.git.showRef(worktreePath, path, ':').catch(() => '') : ''
+      if (indexed) return { text: indexed, error: null }
+      const msg = ((e as Error).message || String(e)).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '')
+      return { text: '', error: `impossibile leggere il file: ${msg}` }
+    }
+  }
+  const noRead = { text: '', error: null }
+
   // Reload the open diff from disk without touching the current selection.
   const reloadActiveDiff = async () => {
     const path = diffFileRef.current
@@ -157,24 +211,29 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     }
     const needsOriginal = !f.isNew
     const needsModified = !f.isDeleted
-    const [original, modified] = await Promise.all([
+    const [original, read] = await Promise.all([
       needsOriginal ? window.electronAPI.git.showFile(worktreePath, path).catch(() => '') : Promise.resolve(''),
-      needsModified ? window.electronAPI.fs.readFile(`${worktreePath}/${path}`).catch(() => '') : Promise.resolve('')
+      needsModified ? readModified(path, filesRef.current.some(x => x.path === path && x.staged)) : Promise.resolve(noRead)
     ])
+    if (diffFileRef.current !== path) return // another file was opened meanwhile
     setDiffOriginal(original)
-    setDiffModified(modified)
+    setDiffModified(read.text)
+    setDiffError(read.error)
   }
 
   const loadStatusRef = useRef(loadStatus)
   loadStatusRef.current = loadStatus
   const reloadActiveDiffRef = useRef(reloadActiveDiff)
   reloadActiveDiffRef.current = reloadActiveDiff
+  const onGitChangedRef = useRef(onGitChanged)
+  onGitChangedRef.current = onGitChanged
 
   // Auto-refresh: edits made in the worktree (agent CLI, another editor, the
   // terminal) are reflected without clicking refresh or reselecting the worktree.
   useEffect(() => {
     window.electronAPI.fs.watch(worktreePath)
     let timer: number | undefined
+    let gitTimer: number | undefined
     const normalize = (p: string) => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
     const target = normalize(worktreePath)
     const off = window.electronAPI.fs.onChanged(({ root }) => {
@@ -183,10 +242,14 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
       timer = window.setTimeout(async () => {
         await loadStatusRef.current({ keepSelection: true })
         await reloadActiveDiffRef.current()
+        // the list colors follow the dirty state, at a calmer pace than the file list
+        if (gitTimer) clearTimeout(gitTimer)
+        gitTimer = window.setTimeout(() => onGitChangedRef.current?.([worktreePath]), 1500)
       }, 250)
     })
     return () => {
       if (timer) clearTimeout(timer)
+      if (gitTimer) clearTimeout(gitTimer)
       off()
       window.electronAPI.fs.unwatch(worktreePath)
     }
@@ -244,6 +307,8 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     try {
       await fn()
       showToast(okMsg)
+      // pull moves the remote refs of every branch; the rest touch this worktree (and the transfer target)
+      onGitChanged?.(id === 'pull' ? undefined : id === 'transfer' ? [worktreePath, moveTarget] : [worktreePath])
     } catch (e) {
       showToast((e as Error).message || 'operazione fallita', 'error')
     } finally {
@@ -263,7 +328,6 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     loadStatus()
   }
 
-  const handleFetch = () => runGit('fetch', () => window.electronAPI.git.fetch(worktreePath), 'fetched')
   const handlePull = () => runGit('pull', () => window.electronAPI.git.pull(worktreePath), 'pulled')
   const handlePush = () => runGit('push', () => window.electronAPI.git.push(worktreePath), 'pushed')
 
@@ -303,11 +367,12 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     }
     diffFileRef.current = filePath
     setDiffFile(filePath)
-    setSelectedIndex(files.findIndex(f => f.path === filePath))
+    setSelectedIndex(visFiles.findIndex(f => f.path === filePath))
     setIsEditing(false)
     setIsLoadingDiff(true)
     setDiffOriginal('')
     setDiffModified('')
+    setDiffError(null)
     // restore the file's own scroll (if already viewed), else jump to the line
     // the main editor is on when the same file is open there
     const nav = useEditorStore.getState().editorNav
@@ -320,24 +385,27 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     setDiffInitialLine(stored ?? navLine)
     try {
       const file = files.find(f => f.path === filePath)
-      const fsPath = `${worktreePath}/${filePath}`
 
       // File nuovo → niente originale; file eliminato → niente modificato
       const needsOriginal = !file?.isNew
       const needsModified = !file?.isDeleted
 
-      const [original, modified] = await Promise.all([
+      const [original, read] = await Promise.all([
         needsOriginal
           ? window.electronAPI.git.showFile(worktreePath, filePath).catch(() => '')
           : Promise.resolve(''),
         needsModified
-          ? window.electronAPI.fs.readFile(fsPath).catch(() => '')
-          : Promise.resolve('')
+          ? readModified(filePath, files.some(f => f.path === filePath && f.staged))
+          : Promise.resolve(noRead)
       ])
+      // arrow-key navigation fires reads back to back: a late answer for a file
+      // the user already left must not overwrite the one now on screen
+      if (diffFileRef.current !== filePath) return
       setDiffOriginal(original)
-      setDiffModified(modified)
+      setDiffModified(read.text)
+      setDiffError(read.error)
     } finally {
-      setIsLoadingDiff(false)
+      if (diffFileRef.current === filePath) setIsLoadingDiff(false)
     }
   }
 
@@ -361,6 +429,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     setIsLoadingDiff(true)
     setDiffOriginal('')
     setDiffModified('')
+    setDiffError(null)
     try {
       const content = await window.electronAPI.fs.readFile(`${worktreePath}/${rel}`).catch(() => '')
       setEditedContent(content)
@@ -433,34 +502,28 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     return m[path.split('.').pop()?.toLowerCase() || ''] || 'plaintext'
   }
 
-  if (isLoading && files.length === 0) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100%', background: 'var(--bg-card)',
-        border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)'
-      }}>
-        <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-color)' }} />
-      </div>
-    )
-  }
+  // the first load and an unreadable status replace only the list: the caller's
+  // layout (diff pane, file tree, terminal) stays mounted
+  const statusPane = isLoading && files.length === 0 ? (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'
+    }}>
+      <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-color)' }} />
+    </div>
+  ) : error ? (
+    <div style={{
+      margin: '10px', padding: '14px', color: 'var(--error-color)',
+      background: 'var(--error-bg)', border: '1px solid var(--error-color)',
+      borderRadius: 'var(--radius-md)', display: 'flex',
+      alignItems: 'flex-start', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
+      fontFamily: 'var(--font-mono)'
+    }}>
+      <AlertCircle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+      {error}
+    </div>
+  ) : null
 
-  if (error) {
-    return (
-      <div style={{
-        padding: '14px', color: 'var(--error-color)',
-        background: 'var(--error-bg)', border: '1px solid var(--error-color)',
-        borderRadius: 'var(--radius-md)', display: 'flex',
-        alignItems: 'flex-start', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
-        fontFamily: 'var(--font-mono)'
-      }}>
-        <AlertCircle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
-        {error}
-      </div>
-    )
-  }
-
-  const renderZone = (label: string, list: GitFileStatus[], accent: string) => {
+  const renderZone = (label: string, list: GitFileStatus[], accent: string, total = list.length) => {
     if (list.length === 0) return null
     return (
       <div style={{ flexShrink: 0 }}>
@@ -469,7 +532,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
           borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-subtle)'
         }}>
-          {label} — {list.length}
+          {label} — {filterText ? `${list.length}/${total}` : list.length}
         </div>
         <FileDiffList
           files={list}
@@ -487,22 +550,41 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     )
   }
 
-  const gitBtn = (id: string, title: string, icon: React.ReactNode, onClick: () => void, tipDesc?: string) => (
+  // header buttons: one git operation at a time; the counts are vs the last fetch
+  const syncBtn = (id: 'pull' | 'push', label: string, icon: ReactNode, onClick: () => void, tipDesc: string, tag: ReactNode, accent = false) => (
     <button
       onClick={onClick}
       disabled={busy !== null}
-      title={title}
+      title={id}
       data-tip-desc={tipDesc}
       style={{
-        display: 'flex', background: 'none', border: 'none',
-        color: 'var(--text-muted)', cursor: busy !== null ? 'not-allowed' : 'pointer',
-        padding: '2px', opacity: busy !== null ? 0.4 : 1
+        display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0,
+        height: 'calc(11px * var(--ui-text-scale, 1) + 12px)', padding: '0 10px',
+        background: 'transparent', border: `1px solid ${accent ? 'var(--accent-color)' : 'var(--border-color)'}`,
+        borderRadius: 'var(--radius-sm)', color: accent ? 'var(--accent-color)' : 'var(--text-secondary)',
+        cursor: busy !== null ? 'not-allowed' : 'pointer', opacity: busy !== null ? 0.5 : 1,
+        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
       }}
-      onMouseEnter={(e) => { if (!busy) e.currentTarget.style.color = 'var(--accent-color)' }}
-      onMouseLeave={(e) => { if (!busy) e.currentTarget.style.color = 'var(--text-muted)' }}
+      onMouseEnter={(e) => { if (!busy) e.currentTarget.style.background = 'var(--bg-hover)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
     >
-      {busy === id ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : icon}
+      {busy === id ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : icon}
+      {label}
+      {tag}
     </button>
+  )
+
+  const behind = sync?.behind ?? 0
+  const ahead = sync?.ahead ?? 0
+  const syncButtons = (
+    <>
+      {syncBtn('pull', 'Pull', <Download size={11} />, handlePull,
+        behind > 0 ? `${behind} commit da pullare (rispetto all'ultimo fetch)` : 'pull the latest changes from the remote into this worktree',
+        behind > 0 && <span style={{ color: 'var(--warning-color)' }}>↓{behind}</span>)}
+      {syncBtn('push', 'Push', <Upload size={11} />, handlePush,
+        ahead > 0 ? `${ahead} commit da pushare (rispetto all'ultimo fetch)` : 'push the local commits of this worktree to the remote',
+        ahead > 0 && <span>↑{ahead}</span>, true)}
+    </>
   )
 
   const fileListPane = (
@@ -510,19 +592,11 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
       height: '100%', display: 'flex', flexDirection: 'column',
       background: 'var(--bg-card)', overflow: 'hidden'
     }}>
+      {/* the count lives in the caller's tab label; pull/push in its header (syncButtons) */}
       <div style={{
-        padding: '7px 12px', borderBottom: '1px solid var(--border-subtle)',
-        fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-secondary)',
-        display: 'flex', alignItems: 'center', gap: '6px',
-        textTransform: 'uppercase', letterSpacing: '0.5px',
-        fontFamily: 'var(--font-mono)', flexShrink: 0
+        padding: '5px 10px', borderBottom: '1px solid var(--border-subtle)',
+        display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0
       }}>
-        <span style={{
-          width: '5px', height: '5px', borderRadius: '50%',
-          background: files.length > 0 ? 'var(--warning-color)' : 'var(--success-color)',
-          display: 'inline-block'
-        }} />
-        changes — {files.length}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', alignItems: 'center' }}>
           <button
             onClick={handleStageAll}
@@ -562,10 +636,6 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           >
             <ArrowRightLeft size={11} />
           </button>
-          <span style={{ width: '1px', height: '10px', background: 'var(--border-subtle)', flexShrink: 0 }} />
-          {gitBtn('fetch', 'fetch', <RefreshCw size={10} />, handleFetch, 'fetch the latest changes from the remote into this worktree')}
-          {gitBtn('pull', 'pull', <Download size={10} />, handlePull, 'pull the latest changes from the remote into this worktree')}
-          {gitBtn('push', 'push', <Upload size={10} />, handlePush, 'push the local commits of this worktree to the remote')}
           <button
             onClick={() => loadStatus()}
             title="refresh" data-tip-desc="reload the current data from the repository"
@@ -714,22 +784,29 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           </div>
         </div>
       )}
+      {(files.length > 0 || filterText) && (
+        <FileFilterBar
+          value={filterText} onChange={setFilterText}
+          mode={filterMode} onModeChange={setFilterMode}
+          caseSensitive={filterCase} onCaseToggle={() => setFilterCase(c => !c)}
+          spaceSensitive={filterSpace} onSpaceToggle={() => setFilterSpace(s => !s)}
+          placeholder="filter changes (regex)..."
+        />
+      )}
       <div
         style={{ flex: 1, overflow: 'auto', minHeight: 0, outline: 'none' }}
         tabIndex={0}
         onKeyDown={(e) => {
-          if (files.length === 0) return
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            const next = Math.min(selectedIndex + 1, files.length - 1)
-            setSelectedIndex(next)
-            handleViewDiff(files[next].path)
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            const prev = Math.max(selectedIndex - 1, 0)
-            setSelectedIndex(prev)
-            handleViewDiff(files[prev].path)
-          }
+          if (visFiles.length === 0 || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
+          e.preventDefault()
+          // step through the visible (filtered) rows from the open file;
+          // selectedIndex tells apart a path listed both staged and unstaged
+          const cur = visFiles[selectedIndex]?.path === diffFileRef.current
+            ? selectedIndex
+            : visFiles.findIndex(f => f.path === diffFileRef.current)
+          const next = e.key === 'ArrowDown' ? Math.min(cur + 1, visFiles.length - 1) : Math.max(cur - 1, 0)
+          setSelectedIndex(next)
+          handleViewDiff(visFiles[next].path)
         }}
       >
         {unmergedFiles.length > 0 && (
@@ -768,11 +845,16 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
             ))}
           </div>
         )}
-        {renderZone('staged changes', stagedFiles, 'var(--success-color)')}
-        {renderZone('changes', unstagedFiles, 'var(--warning-color)')}
+        {renderZone('staged changes', visStaged, 'var(--success-color)', stagedFiles.length)}
+        {renderZone('changes', visUnstaged, 'var(--warning-color)', unstagedFiles.length)}
         {files.length === 0 && unmergedFiles.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             no changes
+          </div>
+        )}
+        {files.length > 0 && visFiles.length === 0 && (
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
+            no matching files
           </div>
         )}
       </div>
@@ -949,21 +1031,34 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                 <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diffFile}</span>
               </div>
               <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
+                {/* no edit on an unreadable file: saving would write an empty one */}
+                {!diffError && (
                 <button onClick={handleStartEdit} title="edit file" data-tip-desc="open the file in edit mode"
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '20px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer' }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.borderColor = 'var(--accent-color)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}>
                   <Pencil size={11} />
                 </button>
+                )}
               </div>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
+              {diffError ? (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '100%',
+                  padding: '16px', boxSizing: 'border-box', textAlign: 'center', wordBreak: 'break-word',
+                  color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+                }}>
+                  <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                  {diffError}
+                </div>
+              ) : (
               <DiffViewer
                 ref={diffViewerRef}
                 original={diffOriginal}
                 modified={diffModified}
                 filePath={diffFile}
-                onClose={() => setDiffFile(null)}
+                onClose={() => { diffFileRef.current = null; setDiffFile(null) }}
                 onPopOut={() => setIsDiffFullscreen(true)}
                 onVisibleLineChange={(line) => {
                   if (diffFile) scrollLinesRef.current[diffFile] = line
@@ -971,6 +1066,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                 }}
                 initialLine={diffInitialLine}
               />
+              )}
             </div>
           </>
         )
@@ -994,18 +1090,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
 
   return (
     <>
-      <div style={{
-        height: '100%',
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-color)',
-        borderRadius: 'var(--radius-md)',
-        overflow: 'hidden'
-      }}>
-        <ResizableSplitter direction="vertical" defaultSize={200} minSize={80}>
-          {fileListPane}
-          {diffPane}
-        </ResizableSplitter>
-      </div>
+      {layout({ list: statusPane ?? fileListPane, diff: diffPane, count: files.length, conflicts: unmergedFiles.length, statusError: error, syncButtons })}
 
       {isDiffFullscreen && diffFile && (
         <div style={{

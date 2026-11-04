@@ -2,12 +2,13 @@ import { ReactNode } from 'react'
 
 interface AppShellProps {
   titleBar: ReactNode
-  sidebar: ReactNode | null
   statusBar: ReactNode | null
+  /** padding around the active panel; '0' for a panel drawn edge to edge */
+  contentPadding?: string
   children: ReactNode
 }
 
-export function AppShell({ titleBar, sidebar, statusBar, children }: AppShellProps) {
+export function AppShell({ titleBar, statusBar, contentPadding = '8px 10px', children }: AppShellProps) {
   return (
     <div style={{
       display: 'flex',
@@ -20,25 +21,18 @@ export function AppShell({ titleBar, sidebar, statusBar, children }: AppShellPro
       fontFamily: 'var(--font-mono)'
     }}>
       {titleBar}
-      <div style={{
-        display: 'flex',
+      <main style={{
         flex: 1,
         minHeight: 0,
-        overflow: 'hidden'
+        minWidth: 0,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: contentPadding,
+        background: 'var(--bg-secondary)'
       }}>
-        {sidebar}
-        <main style={{
-          flex: 1,
-          minWidth: 0,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: sidebar ? '8px 10px' : '6px 8px',
-          background: 'var(--bg-secondary)'
-        }}>
-          {children}
-        </main>
-      </div>
+        {children}
+      </main>
       {statusBar}
     </div>
   )

@@ -1,12 +1,31 @@
-import { Minus, Square, X, Settings } from 'lucide-react'
+import { Minus, Square, X, Settings, FolderOpen, ChevronDown } from 'lucide-react'
+
+export interface TitleBarTab {
+  id: string
+  /** visible text */
+  label: string
+  /** tooltip title (kept stable for tests and screen readers) */
+  title: string
+  tip?: string
+}
 
 interface TitleBarProps {
+  /** shown centred when there are no tabs (detached windows) */
   title: string
   onSettings?: () => void
   settingsActive?: boolean
+  tabs?: TitleBarTab[]
+  activeTab?: string
+  onTabChange?: (id: string) => void
+  /** repository switcher: its label, and where a menu of recent folders may open */
+  repoLabel?: string
+  onRepoClick?: (anchor: { x: number; y: number }) => void
 }
 
-export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
+// grows with the IDE text size, like the tab labels it holds
+const BAR_HEIGHT = 'calc(13px * var(--ui-text-scale, 1) + 20px)'
+
+export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, onTabChange, repoLabel, onRepoClick }: TitleBarProps) {
   const dragRegion = { WebkitAppRegion: 'drag' } as React.CSSProperties
   const noDragRegion = { WebkitAppRegion: 'no-drag' } as React.CSSProperties
 
@@ -14,11 +33,11 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
     <div style={{
       position: 'relative',
       zIndex: 300, // above modal overlays (200): window controls stay clickable
-      display: 'flex', alignItems: 'center',
-      height: '32px', background: 'var(--bg-titlebar)',
+      display: 'flex', alignItems: 'stretch', gap: '4px',
+      height: BAR_HEIGHT, flexShrink: 0, background: 'var(--bg-titlebar)',
       borderBottom: '1px solid var(--border-color)',
       userSelect: 'none', ...dragRegion,
-      padding: '0 8px'
+      padding: '0 0 0 8px'
     }}>
       {onSettings && (
         <button
@@ -26,10 +45,11 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
           title="settings" data-tip-desc="open the IDE settings panel"
           data-tip="settings"
           style={{
-            ...noDragRegion, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: '22px', height: '22px', border: 'none', borderRadius: 'var(--radius-sm)',
+            ...noDragRegion, alignSelf: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 'calc(13px * var(--icon-zoom, 1) + 10px)', height: 'calc(13px * var(--icon-zoom, 1) + 10px)',
+            padding: 0, border: 'none', borderRadius: 'var(--radius-sm)', flexShrink: 0,
             background: settingsActive ? 'var(--accent-bg)' : 'transparent',
-            color: 'var(--accent-color)',
+            color: settingsActive ? 'var(--accent-color)' : 'var(--text-secondary)',
             cursor: 'pointer', transition: 'background 0.15s ease'
           }}
           onMouseEnter={(e) => { if (!settingsActive) e.currentTarget.style.background = 'var(--bg-hover)' }}
@@ -38,30 +58,88 @@ export function TitleBar({ title, onSettings, settingsActive }: TitleBarProps) {
           <Settings size={13} strokeWidth={1.5} />
         </button>
       )}
-      <span style={{
-        position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-        fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600,
-        fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', letterSpacing: '0.5px',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        maxWidth: '55%'
-      }}>
-        {title}
-      </span>
-      <div style={{ display: 'flex', marginLeft: 'auto', ...noDragRegion }}>
+
+      {onRepoClick && (
+        <button
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect()
+            onRepoClick({ x: r.left, y: r.bottom + 4 })
+          }}
+          title={repoLabel} data-tip-desc="switch to a recent repository or open another folder"
+          style={{
+            ...noDragRegion, alignSelf: 'center', display: 'flex', alignItems: 'center', gap: '6px',
+            maxWidth: '220px', minWidth: 0, flexShrink: 1, padding: '4px 10px',
+            border: 'none', borderRadius: 'var(--radius-sm)', background: 'var(--bg-input)',
+            color: 'var(--text-primary)', cursor: 'pointer',
+            fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 700
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-input)' }}
+        >
+          <FolderOpen size={13} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repoLabel}</span>
+          <ChevronDown size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+        </button>
+      )}
+
+      {tabs ? (
+        <>
+          <div style={{ width: '1px', background: 'var(--border-color)', margin: '8px 6px', flexShrink: 0 }} />
+          <nav aria-label="panels" style={{ ...noDragRegion, display: 'flex', alignItems: 'stretch', gap: '2px', minWidth: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
+            {tabs.map(tab => {
+              const active = tab.id === activeTab
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => onTabChange?.(tab.id)}
+                  title={tab.title} data-tip-desc={tab.tip}
+                  aria-current={active ? 'page' : undefined}
+                  style={{
+                    display: 'flex', alignItems: 'center', padding: '0 14px', flexShrink: 0,
+                    border: 'none', borderTop: '2px solid transparent',
+                    borderBottom: `2px solid ${active ? 'var(--accent-color)' : 'transparent'}`,
+                    background: 'transparent', cursor: 'pointer', whiteSpace: 'nowrap',
+                    color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                    fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--ui-text-scale, 1))',
+                    fontWeight: active ? 700 : 600, transition: 'color .15s ease, border-color .15s ease'
+                  }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = 'var(--text-secondary)' }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = 'var(--text-muted)' }}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
+          </nav>
+        </>
+      ) : (
+        <span style={{
+          position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+          fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600,
+          fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', letterSpacing: '0.5px',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          maxWidth: '55%'
+        }}>
+          {title}
+        </span>
+      )}
+
+      <div style={{ display: 'flex', marginLeft: 'auto', flexShrink: 0, ...noDragRegion }}>
         <WinBtn onClick={() => window.electronAPI.window.minimize()} title="minimize" tipDesc="minimize the window to the taskbar">
-          <Minus size={13} strokeWidth={1.5} />
+          <Minus size={13} strokeWidth={1.5} style={{ zoom: 1 }} />
         </WinBtn>
         <WinBtn onClick={() => window.electronAPI.window.maximize()} title="maximize" tipDesc="maximize or restore the window size">
-          <Square size={11} strokeWidth={1.5} />
+          <Square size={11} strokeWidth={1.5} style={{ zoom: 1 }} />
         </WinBtn>
         <WinBtn onClick={() => window.electronAPI.window.close()} isClose title="close" tipDesc="close the window and quit the app">
-          <X size={13} strokeWidth={1.5} />
+          <X size={13} strokeWidth={1.5} style={{ zoom: 1 }} />
         </WinBtn>
       </div>
     </div>
   )
 }
 
+// window controls keep the native size whatever the icon-size setting (zoom: 1 above)
 function WinBtn({ children, onClick, isClose, title, tipDesc }: {
   children: React.ReactNode
   onClick: () => void
@@ -72,7 +150,7 @@ function WinBtn({ children, onClick, isClose, title, tipDesc }: {
   return (
     <button onClick={onClick} title={title} data-tip-desc={tipDesc} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      width: '44px', height: '32px', border: 'none',
+      width: '46px', height: '100%', border: 'none',
       background: 'transparent', color: 'var(--text-muted)',
       cursor: 'pointer', transition: 'background 0.15s ease, color 0.15s ease'
     }}

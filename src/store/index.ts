@@ -987,6 +987,7 @@ function saveRecentRepos(list: string[]) {
 interface RecentReposState {
   repos: string[]
   addRepo: (path: string) => void
+  removeRepo: (path: string) => void
   clearRepos: () => void
 }
 
@@ -997,10 +998,15 @@ export const useRecentReposStore = create<RecentReposState>((set) => ({
     saveRecentRepos(next)
     return { repos: next }
   }),
-  clearRepos: () => {
+  removeRepo: (path) => set((s) => {
+    const next = s.repos.filter((p) => p !== path)
+    saveRecentRepos(next)
+    return { repos: next }
+  }),
+  clearRepos: () => set(() => {
     saveRecentRepos([])
     return { repos: [] }
-  }
+  })
 }))
 
 const DIFF_KEY = 'damnedide_diff'

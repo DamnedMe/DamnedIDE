@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { AppShell } from './components/layout/AppShell'
-import { TitleBar } from './components/layout/TitleBar'
-import { Sidebar, SidebarTab } from './components/layout/Sidebar'
+import { TitleBar, TitleBarTab } from './components/layout/TitleBar'
 import { StatusBar } from './components/layout/StatusBar'
 import { WorktreePanel } from './components/worktree/WorktreePanel'
 import { GitPanel } from './components/git/GitPanel'
 import { AdoPanel } from './components/ado/AdoPanel'
+import { PromotionPanel } from './components/ado/PromotionPanel'
 import { SqlPanel } from './components/sql/SqlPanel'
 import { CodeEditor } from './components/editor/CodeEditor'
 import { TerminalPanel } from './components/terminal/TerminalPanel'
@@ -13,34 +13,33 @@ import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ToastHost } from './components/layout/ToastHost'
 import { TooltipHost } from './components/layout/TooltipHost'
 import { RecentReposDialog } from './components/layout/RecentReposDialog'
+import { RecentFoldersMenu } from './components/layout/RecentFoldersMenu'
+import { GitTreeDialog } from './components/git/GitTreeDialog'
 import { useUIStore, useGitStore, useSettingsStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
 import { basenameOf } from './utils/paths'
 import { appFontStack, ensureFontLoaded, uiTextScale } from './utils/fonts'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from './components/editor/monaco-theme'
-import {
-  GitBranch,
-  Network,
-  Database,
-  Code2,
-  Boxes
-} from 'lucide-react'
 import './styles/themes/dark.css'
 import './styles/themes/light.css'
 
-type PanelId = 'worktree' | 'git' | 'ado' | 'sql' | 'editor' | 'terminal' | 'settings'
+type PanelId = 'worktree' | 'git' | 'ado' | 'release' | 'sql' | 'editor' | 'terminal' | 'settings'
 
 export default function App() {
   const [activePanel, setActivePanel] = useState<PanelId>(() => {
     try {
       const p = localStorage.getItem('damnedide_last_panel')
-      if (p && ['worktree', 'git', 'ado', 'sql', 'editor', 'settings', 'mcp'].includes(p)) return p as PanelId
+      if (p && ['worktree', 'git', 'ado', 'release', 'sql', 'editor', 'settings', 'mcp'].includes(p)) return p as PanelId
     } catch { /* ignore */ }
     return 'worktree'
   })
   const [repoPath, setRepoPath] = useState<string | null>(null)
   const [showRecent, setShowRecent] = useState(false)
+  // sidebar open-folder menu of recent repositories, anchored to the button
+  const [folderMenu, setFolderMenu] = useState<{ x: number; y: number } | null>(null)
+  // GitTree not found: its download URL, shows the download / locate dialog
+  const [gitTreeDownloadUrl, setGitTreeDownloadUrl] = useState<string | null>(null)
     const { theme, setTheme } = useUIStore()
   const settingsTheme = useSettingsStore(s => s.settings.theme)
   const accentColor = useSettingsStore(s => s.settings.accentColor)
@@ -131,23 +130,48 @@ export default function App() {
   // Opening a folder resolves its git root first (a subfolder of a working tree
   // resolves to the root) and says so when the folder is not in a repository,
   // instead of letting the worktree operations fail later.
-  const openRepo = async (path: string) => {
+  const openRepo = async (path: string): Promise<string | null> => {
     const root = await window.electronAPI.git.resolveRepoRoot(path).catch(() => null)
     if (!root) {
-      showToast(`"${path}" non è un repository git: scegli la cartella che contiene .git`, 'error')
-      return
+      // a recent folder that was moved or deleted leaves the recents list
+      const recents = useRecentReposStore.getState()
+      const wasRecent = recents.repos.includes(path)
+      if (wasRecent) recents.removeRepo(path)
+      showToast(`"${path}" non è un repository git: scegli la cartella che contiene .git${wasRecent ? ' (rimosso dai recenti)' : ''}`, 'error')
+      return null
     }
     handleRepoSelected(root)
+    return root
   }
 
-  const handleOpenFolder = async () => {
+  // Resolves to the opened repository root, or null when nothing was opened.
+  const handleOpenFolder = async (): Promise<string | null> => {
     // Any failure (dialog error, path not a repository) must never leave the
     // caller's flow stuck with a modal overlay covering the window.
     try {
       const p = await window.electronAPI.dialog.openFolder()
-      if (p) await openRepo(p)
+      if (p) return await openRepo(p)
     } catch (e) {
       showToast((e as Error).message || 'apertura cartella fallita', 'error')
+    }
+    return null
+  }
+
+  // Opens the selected worktree (or the repo root; GitTree needs a working-tree
+  // root) in GitTree. Only on a user action: restoring the last panel at
+  // startup and remote panel changes do not launch it.
+  const openInGitTree = async () => {
+    try {
+      const target = useWorktreeStore.getState().selectedWorktree ?? repoPath ?? await handleOpenFolder()
+      if (!target) return
+      const saved = useSettingsStore.getState().settings.gitTreePath
+      const res = await window.electronAPI.gitTree.open(target, saved || undefined)
+      if (res.notFound) { setGitTreeDownloadUrl(res.downloadUrl ?? ''); return }
+      if (!res.ok) { showToast(res.error || 'avvio di GitTree fallito', 'error'); return }
+      if (res.path && res.path !== saved) updateSettings({ gitTreePath: res.path })
+      showToast('aperto in GitTree')
+    } catch (e) {
+      showToast((e as Error).message || 'avvio di GitTree fallito', 'error')
     }
   }
 
@@ -273,12 +297,14 @@ export default function App() {
   }, [fontSize])
 
   const t = useI18n()
-  const tabs: SidebarTab[] = [
-    { id: 'worktree', icon: Boxes, label: t('worktree') },
-    { id: 'editor', icon: Code2, label: t('editor') },
-    { id: 'git', icon: GitBranch, label: t('git') },
-    { id: 'ado', icon: Network, label: t('ado') },
-    { id: 'sql', icon: Database, label: t('sql') }
+  // short visible labels; the title keeps t(id), the panel name used by the title and tests
+  const tabs: TitleBarTab[] = [
+    { id: 'worktree', label: 'Worktree', title: t('worktree'), tip: 'manage git worktrees (feature/bugfix)' },
+    { id: 'editor', label: 'Editor', title: t('editor'), tip: 'code editor with C# navigation and references' },
+    { id: 'git', label: 'Git', title: t('git'), tip: 'open the repository (or the selected worktree) in GitTree; stage and commit here' },
+    { id: 'ado', label: 'DevOps', title: t('ado'), tip: 'work items and pull requests from Azure DevOps' },
+    { id: 'release', label: t('Release'), title: t('release'), tip: 'promote develop → qa → prod with Azure DevOps pull requests (BE/FE)' },
+    { id: 'sql', label: 'SQL', title: t('sql'), tip: 'SQL Server connections, queries and schema' }
   ]
 
   const lastPanelRef = useRef<PanelId>('worktree')
@@ -299,6 +325,8 @@ export default function App() {
       case 'ado':
         // keyed: switching repository starts from that repository's connection
         return <AdoPanel key={repoPath ?? ''} repoPath={repoPath} />
+      case 'release':
+        return <PromotionPanel key={repoPath ?? ''} repoPath={repoPath} onConfigureAdo={() => setActivePanel('ado')} />
       case 'sql':
         return <SqlPanel />
       case 'editor':
@@ -314,8 +342,8 @@ export default function App() {
     return (
       <AppShell
         titleBar={<TitleBar title={`DamnedIDE — ${detachedPanel}`} onSettings={handleSettingsToggle} settingsActive={detachedPanel === 'settings'} />}
-        sidebar={null}
         statusBar={null}
+        contentPadding="6px 8px"
       >
         {renderPanel(detachedPanel)}
         <ToastHost />
@@ -326,8 +354,20 @@ export default function App() {
 
   return (
     <AppShell
-      titleBar={<TitleBar title={t(activePanel)} onSettings={handleSettingsToggle} settingsActive={activePanel === 'settings'} />}
-      sidebar={<Sidebar tabs={tabs} activeTab={activePanel} onTabChange={(id) => setActivePanel(id as PanelId)} onOpenFolder={handleOpenFolder} />}
+      titleBar={
+        <TitleBar
+          title={t(activePanel)}
+          onSettings={handleSettingsToggle}
+          settingsActive={activePanel === 'settings'}
+          tabs={tabs}
+          activeTab={activePanel}
+          onTabChange={(id) => { setActivePanel(id as PanelId); if (id === 'git') void openInGitTree() }}
+          repoLabel={repoPath ? basenameOf(repoPath) : t('open repo')}
+          onRepoClick={(a) => { if (recentRepos.length) setFolderMenu(a); else void handleOpenFolder() }}
+        />
+      }
+      // the worktree view is drawn edge to edge: its own strip and borders frame it
+      contentPadding={activePanel === 'worktree' ? '0' : '8px 10px'}
       statusBar={
         <StatusBar
           repoPath={repoPath}
@@ -384,6 +424,24 @@ export default function App() {
           onOpenFolder={async () => { await handleOpenFolder(); setShowRecent(false) }}
           onSkip={() => setShowRecent(false)}
           onClear={() => { clearRepos(); setShowRecent(false) }}
+        />
+      )}
+
+      {folderMenu && (
+        <RecentFoldersMenu
+          anchor={folderMenu}
+          currentPath={repoPath}
+          onOpen={(p) => void openRepo(p)}
+          onBrowse={() => void handleOpenFolder()}
+          onClose={() => setFolderMenu(null)}
+        />
+      )}
+
+      {gitTreeDownloadUrl !== null && (
+        <GitTreeDialog
+          downloadUrl={gitTreeDownloadUrl}
+          onRetry={() => { setGitTreeDownloadUrl(null); void openInGitTree() }}
+          onClose={() => setGitTreeDownloadUrl(null)}
         />
       )}
     </AppShell>

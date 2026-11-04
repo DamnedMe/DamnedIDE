@@ -1,17 +1,19 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { PanelContainer } from '../layout/PanelContainer'
 import { ResizableSplitter } from '../layout/ResizableSplitter'
-import { WorktreeList, STACK_LABELS } from './WorktreeList'
-import { WorktreeChanges, type WorktreeChangesHandle } from './WorktreeChanges'
+import { WorktreeChanges, type WorktreeChangesHandle, type WorktreeChangesParts } from './WorktreeChanges'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { CompleteWorktreeDialog } from './CompleteWorktreeDialog'
 import { NewWorktreeDialog } from './NewWorktreeDialog'
+import { WorktreeCleanupDialog } from './WorktreeCleanupDialog'
+import { worktreeTone, toneColor, overviewSummary, pbiIdFromBranch, isPbiClosed, stripLabel, STACK_LABELS } from './worktree-cleanup'
 import { FileTree } from '../editor/FileTree'
 import { FileFilterBar } from '../editor/CodeEditor'
 import { Modal } from '../layout/Modal'
-import { useWorktreeStore, useToastStore } from '../../store'
+import { useWorktreeStore, useToastStore, useAdoStore, adoConnectionFor } from '../../store'
 import { useI18n } from '../../i18n'
-import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, FolderTree, ChevronUp, ChevronDown, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge } from 'lucide-react'
+import type { AdoWorkItem } from '../../types/ado'
+import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge, Eraser, DownloadCloud, Loader2, GitBranch, Bug } from 'lucide-react'
 import { WorktreeEntry } from '../../types/worktree'
 
 type CheckState = 'ok' | 'ko'
@@ -22,21 +24,31 @@ interface WorktreePanelProps {
   onRepoSelected: (path: string) => void
 }
 
-function shortBranch(branch: string): string {
-  if (!branch) return ''
-  if (branch === 'main' || branch === 'master' || branch === 'develop') return branch
-  const parts = branch.split('/')
-  return parts[parts.length - 1] || branch
+/** The main checkout is the entry outside `.worktrees`. */
+const isMainPath = (path: string) => !path.includes('.worktrees')
+const shortRef = (branch: string) => branch.replace(/^refs\/heads\//, '')
+/** stack states where the parent link is stale: the branch can go back on develop */
+const isPromotable = (info?: WorktreeStackInfo) => !!info && (info.state === 'merged' || info.state === 'abandoned' || info.state === 'rewritten')
+
+const chip = (color: string, background: string): React.CSSProperties => ({
+  flexShrink: 0, padding: '1px 8px', borderRadius: '10px', color, background,
+  fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600, whiteSpace: 'nowrap'
+})
+
+const chainBtn: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 7px',
+  background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+  borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+  cursor: 'pointer', fontSize: 'inherit', fontFamily: 'inherit', fontWeight: 600
 }
 
 export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) {
   const { entries, setEntries, selectedWorktree, isLoading, setLoading, selectWorktree } = useWorktreeStore()
   const t = useI18n()
   const [listCollapsed, setListCollapsed] = useState(false)
+  const [leftTab, setLeftTab] = useState<'changes' | 'files'>('changes')
   const [checkMarks, setCheckMarks] = useState<CheckMarks>({})
   const [explorerSelectedFile, setExplorerSelectedFile] = useState<string | null>(null)
-  const [worktreesCollapsed, setWorktreesCollapsed] = useState(false)
-  const [filesCollapsed, setFilesCollapsed] = useState(false)
   const [fileFilter, setFileFilter] = useState('')
   const [filterMode, setFilterMode] = useState<'startsWith' | 'like' | 'regex'>('like')
   const [filterCaseSensitive, setFilterCaseSensitive] = useState(false)
@@ -46,12 +58,27 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const [removeConfirm, setRemoveConfirm] = useState<{ path: string; error?: string } | null>(null)
   const [isForcingRemove, setIsForcingRemove] = useState(false)
   const [stack, setStack] = useState<Record<string, WorktreeStackInfo>>({})
+  // git status per worktree path: strip/header colors, ahead/behind
+  const [overview, setOverview] = useState<Record<string, WorktreeOverview>>({})
+  const [showCleanup, setShowCleanup] = useState(false)
+  const [isFetchingAll, setIsFetchingAll] = useState(false)
   const [removeGuard, setRemoveGuard] = useState<{ path: string; branch: string; children: WorktreeStackInfo[] } | null>(null)
   const [retargetOnRemove, setRetargetOnRemove] = useState(true)
   const [showNewWorktree, setShowNewWorktree] = useState(false)
+  // ponytail: hidden worktrees live in memory only (lost on reload, as before); persist per repo if people rely on it
   const [hiddenPaths, setHiddenPaths] = useState<Set<string>>(new Set())
+  const [showHidden, setShowHidden] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
+  // PBI of each branch id (header title and state, badge tooltips); empty without ADO
+  const [pbiItems, setPbiItems] = useState<Record<number, AdoWorkItem>>({})
+  // bumped by every worktree list load: one ADO batch each (not one per remount)
+  const [pbiLoad, setPbiLoad] = useState(0)
+  const ado = useAdoStore(s => adoConnectionFor(s.connections, repoPath))
+  const adoReady = !!(ado?.organization && ado.project && ado.token)
   const changesHandleRef = useRef<WorktreeChangesHandle | null>(null)
+  // the repository on screen now: an answer for the previous one (switched from the title bar mid-fetch) is dropped
+  const repoRef = useRef(repoPath)
+  repoRef.current = repoPath
   const showToast = useToastStore(s => s.showToast)
 
   const filter = fileFilter
@@ -61,13 +88,20 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const refreshWorktrees = async () => {
     if (!repoPath) return
     const list = await window.electronAPI.worktree.list(repoPath)
+    if (repoRef.current !== repoPath) return
     setEntries(list)
+    setPbiLoad(n => n + 1)
+    // forget removed worktrees (a recreated one must not start hidden)
+    const isListed = (p: string) => list.some(e => e.path === p)
+    setHiddenPaths(prev => new Set([...prev].filter(isListed)))
+    const hidden = [...hiddenPaths].filter(isListed)
+    if (hidden.length === 0) setShowHidden(false)
     const selected = useWorktreeStore.getState().selectedWorktree
-    if (selected && !list.some(e => e.path === selected)) {
-      // selection vanished (e.g. worktree removed): fall back to the repository
-      // with the same name as the open folder (the main repo entry)
-      const main = list.find(e => !e.path.includes('.worktrees'))
-      selectWorktree(main ? main.path : null)
+    if (!selected || !isListed(selected)) {
+      // nothing valid selected (first load, other repository, worktree removed):
+      // the main checkout (the repository with the same name as the open folder), else the first visible
+      const visible = list.filter(e => !hidden.includes(e.path))
+      selectWorktree((visible.find(e => isMainPath(e.path)) ?? visible[0])?.path ?? null)
     }
   }
 
@@ -75,10 +109,42 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     if (!repoPath) return
     try {
       const list = await window.electronAPI.worktree.stack(repoPath)
-      setStack(Object.fromEntries(list.map(i => [i.branch, i])))
+      if (repoRef.current === repoPath) setStack(Object.fromEntries(list.map(i => [i.branch, i])))
     } catch {
-      setStack({})
+      if (repoRef.current === repoPath) setStack({})
     }
+  }
+
+  /** `paths` refreshes only those worktrees (merged into the current map). */
+  const fetchOverview = async (paths?: string[]) => {
+    if (!repoPath) return
+    try {
+      const list = await window.electronAPI.worktree.overview(repoPath, paths ? { paths } : undefined)
+      if (repoRef.current !== repoPath) return
+      const next = Object.fromEntries(list.map(o => [o.path, o]))
+      setOverview(prev => (paths ? { ...prev, ...next } : next))
+    } catch {
+      if (!paths && repoRef.current === repoPath) setOverview({})
+    }
+  }
+
+  /**
+   * One fetch updates the remote refs of every worktree; --prune drops the refs of
+   * branches deleted after their PR, so those worktrees show 'no remote' and the
+   * cleanup can offer them.
+   */
+  const handleFetchAll = async () => {
+    if (!repoPath || isFetchingAll) return
+    setIsFetchingAll(true)
+    try {
+      await window.electronAPI.git.fetch(repoPath, { prune: true })
+      showToast('fetch completato')
+    } catch (e) {
+      showToast((e as Error).message || 'fetch fallito', 'error')
+    } finally {
+      setIsFetchingAll(false)
+    }
+    if (repoRef.current === repoPath) void loadWorktrees()
   }
 
   const loadWorktrees = async () => {
@@ -87,19 +153,28 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     try {
       await window.electronAPI.worktree.prune(repoPath).catch(() => {})
       await refreshWorktrees()
+      if (repoRef.current !== repoPath) return
       setListError(null)
       void fetchStack()
+      void fetchOverview()
     } catch (e) {
-      // e.g. the opened folder is not a git repository
-      setEntries([])
-      setListError((e as Error).message)
+      if (repoRef.current !== repoPath) return
+      const { entries: listed, selectedWorktree: selected } = useWorktreeStore.getState()
+      if (selected && listed.some(x => x.path === selected)) {
+        // a refresh that fails keeps the open worktree mounted (its terminals, its diff)
+        showToast((e as Error).message || 'elenco worktree non aggiornato', 'error')
+      } else {
+        // e.g. the opened folder is not a git repository
+        setEntries([])
+        setListError((e as Error).message)
+      }
     } finally {
       setLoading(false)
     }
   }
 
   const branchOf = (path: string): string =>
-    entries.find(e => e.path === path)?.branch.replace(/^refs\/heads\//, '') || ''
+    shortRef(entries.find(e => e.path === path)?.branch || '')
 
   /** Removal with the stacked-children guard: a parent can only go if its
    *  children are re-targeted (or the user accepts leaving them orphaned). */
@@ -173,7 +248,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   /** Drop the stale stack link and align the branch on develop. */
   const handlePromote = async (entry: WorktreeEntry) => {
     if (!repoPath) return
-    const branch = entry.branch.replace(/^refs\/heads\//, '')
+    const branch = shortRef(entry.branch)
     const res = await window.electronAPI.worktree.promote(repoPath, entry.path)
     if (!res.ok) {
       if (res.conflicts?.length) showToast(`conflitti da risolvere prima di promuovere: ${res.conflicts.join(', ')}`, 'error')
@@ -185,17 +260,34 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   }
 
   const handleHide = (path: string) => {
-    setHiddenPaths(prev => new Set([...prev, path]))
+    const next = new Set(hiddenPaths).add(path)
+    setHiddenPaths(next)
     setStripMenu(null)
+    // a hidden worktree is never the selected one: back to the main checkout (or the first visible)
+    if (selectedWorktree === path) {
+      const visible = entries.filter(e => !next.has(e.path))
+      selectWorktree((visible.find(e => isMainPath(e.path)) ?? visible[0])?.path ?? null)
+    }
   }
 
   const handleUnhide = (path: string) => {
-    setHiddenPaths(prev => {
-      const next = new Set(prev)
-      next.delete(path)
-      return next
-    })
+    const next = new Set(hiddenPaths)
+    next.delete(path)
+    setHiddenPaths(next)
+    if (next.size === 0) setShowHidden(false)
     setStripMenu(null)
+  }
+
+  const handleUnhideAll = () => {
+    setHiddenPaths(new Set())
+    setShowHidden(false)
+    setStripMenu(null)
+  }
+
+  /** A hidden worktree is never the selected one: selecting it (dimmed badge, jump to parent) unhides it. */
+  const selectEntry = (path: string) => {
+    if (hiddenPaths.has(path)) handleUnhide(path)
+    selectWorktree(path)
   }
 
   const handleComplete = (entry: WorktreeEntry) => {
@@ -219,77 +311,37 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     if (repoPath) loadWorktrees()
   }, [repoPath])
 
-  const stripBtn = (onClick: () => void, title: string, children: React.ReactNode, tipDesc?: string) => (
-    <button onClick={onClick} title={title} data-tip-desc={tipDesc}
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0, borderRadius: 'var(--radius-sm)' }}
-      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
-      {children}
-    </button>
-  )
+  // One ADO batch per worktree list load (and when the connection changes);
+  // no ADO, no ids or a failure leave the map empty (branch only, no title).
+  useEffect(() => {
+    if (pbiLoad === 0) return // nothing listed yet by this mount: the store still holds the previous load
+    const ids = [...new Set(entries.map(e => pbiIdFromBranch(e.branch)).filter((id): id is number => id !== null))]
+    if (!ado?.organization || !ado.project || !ado.token || ids.length === 0) {
+      setPbiItems({})
+      return
+    }
+    const { organization, project, token } = ado
+    let cancelled = false
+    ;(async () => {
+      try {
+        await window.electronAPI.ado.connect(organization, token)
+        const list = await window.electronAPI.ado.workItemsBatch(project, ids)
+        if (!cancelled) setPbiItems(Object.fromEntries(list.map(i => [i.id, i])))
+      } catch {
+        if (!cancelled) setPbiItems({})
+      }
+    })()
+    return () => { cancelled = true }
+  }, [pbiLoad, ado?.organization, ado?.project, ado?.token])
 
-  const ToolStrip = (
-    <div style={{
-      // grows with the IDE text scale, like the badges it holds
-      width: 'calc(24px * var(--ui-text-scale, 1) + 28px)', flexShrink: 0, background: 'var(--bg-card)',
-      border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      padding: '8px 4px', gap: '8px', overflow: 'hidden'
-    }}>
-      {/* top buttons */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', width: '100%' }}>
-        {stripBtn(() => setListCollapsed(!listCollapsed), listCollapsed ? 'show panel' : 'collapse panel', listCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />, 'collapse or expand the list panel')}
-        {stripBtn(loadWorktrees, 'refresh', <RefreshCw size={11} />, 'reload the worktree list')}
-      </div>
-      {/* worktree tabs */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', overflow: 'auto', padding: '2px 0', width: '100%' }}>
-        {entries.filter(e => !hiddenPaths.has(e.path)).map((entry) => {
-          const isMain = !entry.path.includes('.worktrees')
-          const isSelected = selectedWorktree === entry.path
-          const label = shortBranch(entry.branch)
-          const isBugfix = entry.branch.includes('bugfix')
-          return (
-            <div key={entry.path}
-              onClick={() => selectWorktree(isSelected ? null : entry.path)}
-              onContextMenu={(e) => { e.preventDefault(); setStripMenu({ x: e.clientX, y: e.clientY, entry }) }}
-              title={entry.branch || entry.head.substring(0, 7)} data-tip-desc="select this worktree"
-              style={{
-                width: 'calc(24px * var(--ui-text-scale, 1) + 14px)', height: 'calc(12px * var(--ui-text-scale, 1) + 12px)',
-                borderRadius: '6px', flexShrink: 0,
-                background: isSelected ? 'var(--bg-active)' : 'transparent',
-                border: `1.5px solid ${isSelected
-                  ? (isBugfix ? 'var(--warning-color)' : 'var(--accent-color)')
-                  : (isBugfix ? 'var(--warning-color)' : 'var(--border-color)')}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700,
-                fontFamily: 'var(--font-mono)', color: isBugfix ? 'var(--warning-color)' : (isSelected ? 'var(--accent-color)' : 'var(--text-muted)'),
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (!isSelected) { e.currentTarget.style.borderColor = 'var(--text-secondary)'; e.currentTarget.style.color = 'var(--text-secondary)' }
-              }}
-              onMouseLeave={(e) => {
-                if (!isSelected) { e.currentTarget.style.borderColor = isBugfix ? 'var(--warning-color)' : 'var(--border-color)'; e.currentTarget.style.color = isBugfix ? 'var(--warning-color)' : 'var(--text-muted)' }
-              }}>
-              {isMain ? 'main' : (label || entry.head).substring(0, 4)}
-            </div>
-          )
-        })}
-        {stripBtn(() => setShowNewWorktree(true), 'new worktree', <Plus size={13} />, 'create a feature or bugfix worktree')}
-      </div>
-      {/* bottom: change main folder */}
-      <div style={{ flexShrink: 0, borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', width: '100%', display: 'flex', justifyContent: 'center' }}>
-        {stripBtn(async () => {
-          try {
-            const p = await window.electronAPI.dialog.openFolder()
-            if (p) onRepoSelected(p)
-          } catch (e) {
-            showToast((e as Error).message || 'apertura cartella fallita', 'error')
-          }
-        }, 'change main folder', <FolderOpen size={13} />, 'open a different repository folder as the main root')}
-      </div>
-    </div>
-  )
+  const browseFolder = async () => {
+    try {
+      const p = await window.electronAPI.dialog.openFolder()
+      if (p) onRepoSelected(p)
+    } catch (e) {
+      showToast((e as Error).message || 'apertura cartella fallita', 'error')
+    }
+  }
 
   if (!repoPath) {
     return (
@@ -306,14 +358,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               <p style={{ margin: '0 0 4px', fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('open a git repository')}</p>
               <p style={{ margin: 0, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('to manage worktrees')}</p>
             </div>
-            <button onClick={async () => {
-              try {
-                const p = await window.electronAPI.dialog.openFolder()
-                if (p) onRepoSelected(p)
-              } catch (e) {
-                showToast((e as Error).message || 'apertura cartella fallita', 'error')
-              }
-            }}
+            <button onClick={() => void browseFolder()}
               style={{ padding: '8px 20px', background: 'var(--accent-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
               {t('open repo')}
             </button>
@@ -324,199 +369,354 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
     )
   }
 
-  return (
-    <PanelContainer>
-      <div style={{ height: '100%', display: 'flex', gap: '4px', overflow: 'hidden' }}>
-        {ToolStrip}
-        {selectedWorktree ? (
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
-          <ResizableSplitter direction="horizontal" defaultSize={330} minSize={180} maxSize={600} collapsed={listCollapsed}>
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '4px' }}>
-                  {/* ─── Worktrees section ─── */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '4px 8px', flexShrink: 0, background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-                    fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-secondary)',
-                    fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.5px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <FolderTree size={12} />
-                      {t('worktrees')}
-                    </div>
-                    <button
-                      onClick={() => setWorktreesCollapsed(!worktreesCollapsed)}
-                      title={worktreesCollapsed ? 'expand' : 'collapse'} data-tip-desc="expand or collapse the worktrees section"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
-                      {worktreesCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-                    </button>
-                  </div>
-                  {!worktreesCollapsed && (
-                    <div style={{
-                      flex: worktreesCollapsed ? 0 : 1, minHeight: 0,
-                      background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-md)', overflow: 'hidden'
-                    }}>
-                      <WorktreeList repoPath={repoPath} entries={entries} isLoading={isLoading} onRemove={handleRemoveWorktree} onComplete={handleComplete} stack={stack} />
-                    </div>
-                  )}
-                  {/* ─── Files section ─── */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '4px 8px', flexShrink: 0, background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-                    fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-secondary)',
-                    fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.5px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <FolderOpen size={12} />
-                      {t('files')}
-                    </div>
-                    <button
-                      onClick={() => setFilesCollapsed(!filesCollapsed)}
-                      title={filesCollapsed ? 'expand' : 'collapse'} data-tip-desc="expand or collapse the files section"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
-                      {filesCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-                    </button>
-                  </div>
-                  {!filesCollapsed && (
-                    <div style={{
-                      flex: 1, minHeight: 0,
-                      background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', flexDirection: 'column'
-                    }}>
-                      <FileFilterBar value={fileFilter} onChange={setFileFilter} mode={filterMode} onModeChange={setFilterMode} caseSensitive={filterCaseSensitive} onCaseToggle={() => setFilterCaseSensitive(!filterCaseSensitive)} spaceSensitive={filterSpaceSensitive} onSpaceToggle={() => setFilterSpaceSensitive(!filterSpaceSensitive)} />
-                      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                        <FileTree rootPath={selectedWorktree} onFileSelect={(f) => changesHandleRef.current?.openFile(f)} selectedFile={explorerSelectedFile} filter={filter} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                  {(() => {
-                    const selectedBranch = branchOf(selectedWorktree)
-                    const info = stack[selectedBranch]
-                    if (!info) return null
-                    const meta = STACK_LABELS[info.state]
-                    const parentEntry = entries.find(e => e.branch.replace(/^refs\/heads\//, '') === info.parent)
-                    const chainBtn: React.CSSProperties = {
-                      display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 7px',
-                      background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-                      cursor: 'pointer', fontSize: 'inherit', fontFamily: 'inherit', fontWeight: 600
-                    }
-                    return (
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
-                        padding: '3px 8px', marginBottom: '4px', background: 'var(--bg-card)',
-                        border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-                        fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0
-                      }}>
-                        <Layers size={11} style={{ color: meta.color, flexShrink: 0 }} />
-                        <span style={{ color: 'var(--text-muted)' }}>develop ›</span>
-                        <button onClick={() => parentEntry && selectWorktree(parentEntry.path)} disabled={!parentEntry}
-                          title={parentEntry ? `vai al worktree di ${info.parent}` : `${info.parent} non è aperto in un worktree`}
-                          data-tip-desc="jump to the parent worktree"
-                          style={{ ...chainBtn, color: parentEntry ? 'var(--accent-color)' : 'var(--text-muted)', cursor: parentEntry ? 'pointer' : 'default' }}>
-                          {info.parent}
-                        </button>
-                        <span style={{ color: 'var(--text-muted)' }}>›</span>
-                        <span style={{ color: 'var(--accent-color)', fontWeight: 700 }}>{selectedBranch}</span>
-                        <span title={info.detail} data-tip-desc={info.detail}
-                          style={{ padding: '0 5px', borderRadius: 'var(--radius-sm)', border: `1px solid ${meta.color}`, color: meta.color, fontWeight: 700 }}>
-                          {meta.label}
-                        </span>
-                        {info.behindParent > 0 && (
-                          <span style={{ color: 'var(--warning-color)' }}>base avanzata (+{info.behindParent})</span>
-                        )}
-                        <div style={{ flex: 1 }} />
-                        <button onClick={() => handleAlign(selectedWorktree, info)}
-                          title={`merge ${info.mergeRef} in questo worktree`} data-tip-desc="align this worktree with its base (merge)"
-                          style={chainBtn}>
-                          <GitMerge size={9} /> allinea
-                        </button>
-                        {(info.state === 'merged' || info.state === 'abandoned' || info.state === 'rewritten') && (
-                          <button onClick={() => { const e = entries.find(x => x.path === selectedWorktree); if (e) void handlePromote(e) }}
-                            title="promuovi su develop: allinea e rimuovi il legame con il padre" data-tip-desc="align on develop and drop the stack link"
-                            style={chainBtn}>
-                            promuovi
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })()}
-                  <div style={{ flex: 1, minHeight: 0 }}>
-                    <WorktreeChanges worktreePath={selectedWorktree} repoPath={repoPath} checkMarks={checkMarks[selectedWorktree] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedWorktree, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef} />
-                  </div>
-                  <TerminalDock repoPath={selectedWorktree} />
-                </div>
-              </ResizableSplitter>
+  const hiddenCount = entries.filter(e => hiddenPaths.has(e.path)).length
+  const stripEntries = showHidden ? entries : entries.filter(e => !hiddenPaths.has(e.path))
+  const selectedEntry = entries.find(e => e.path === selectedWorktree) ?? null
+  // square badges and the strip grow with the IDE text scale
+  const badgeSize = 'calc(30px * var(--ui-text-scale, 1) + 8px)'
+
+  const stripBtn = (onClick: () => void, title: string, children: React.ReactNode, tipDesc: string, accent = false) => (
+    <button onClick={onClick} title={title} data-tip-desc={tipDesc}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        width: 'calc(20px * var(--ui-text-scale, 1) + 12px)', height: 'calc(16px * var(--ui-text-scale, 1) + 12px)',
+        background: accent ? 'var(--accent-bg)' : 'none', border: 'none', borderRadius: 'var(--radius-sm)',
+        color: accent ? 'var(--accent-color)' : 'var(--text-muted)', cursor: 'pointer'
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; if (!accent) e.currentTarget.style.background = 'var(--bg-hover)' }}
+      onMouseLeave={(e) => { if (!accent) { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' } }}>
+      {children}
+    </button>
+  )
+
+  const Strip = (
+    <aside aria-label="worktrees" style={{
+      width: 'calc(30px * var(--ui-text-scale, 1) + 24px)', flexShrink: 0,
+      background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '10px 0 8px'
+    }}>
+      {/* badges: they scroll when they do not fit and push the tools to the bottom */}
+      <div style={{ flex: 1, minHeight: 0, width: '100%', overflowY: 'auto', scrollbarWidth: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+        {stripEntries.map((entry) => {
+          const isSelected = selectedWorktree === entry.path
+          const isHidden = hiddenPaths.has(entry.path)
+          const isBugfix = entry.branch.includes('bugfix')
+          const ov = overview[entry.path]
+          const ahead = ov?.ahead ?? 0
+          const behind = ov?.behind ?? 0
+          const tone = toneColor(worktreeTone(ov))
+          // dirty / not in develop win over the bugfix and selection colors (bugfix keeps its border)
+          const labelColor = tone ?? (isBugfix ? 'var(--warning-color)' : (isSelected ? 'var(--accent-color)' : 'var(--text-muted)'))
+          const borderColor = isBugfix ? 'var(--warning-color)' : (isSelected ? 'var(--accent-color)' : 'var(--border-color)')
+          const pbiId = pbiIdFromBranch(entry.branch)
+          const item = pbiId !== null ? pbiItems[pbiId] : undefined
+          const tip = [item ? `#${item.id} ${item.title}` : '', overviewSummary(ov)].filter(Boolean).join(' · ')
+          return (
+            <button key={entry.path}
+              // selecting a dimmed (hidden) badge brings it back: a hidden worktree is never selected
+              onClick={() => selectEntry(entry.path)}
+              onContextMenu={(e) => { e.preventDefault(); setStripMenu({ x: e.clientX, y: e.clientY, entry }) }}
+              title={entry.branch || entry.head.substring(0, 7)} data-tip-desc={tip || 'select this worktree'}
+              style={{
+                width: badgeSize, height: badgeSize, flexShrink: 0, padding: 0,
+                borderRadius: 'var(--radius-md)', border: `1.5px solid ${borderColor}`,
+                background: isSelected ? 'var(--accent-bg)' : 'transparent', opacity: isHidden ? 0.4 : 1,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
+                cursor: 'pointer', color: labelColor, fontFamily: 'var(--font-mono)',
+                fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontWeight: 700, lineHeight: 1.1,
+                transition: 'border-color 0.15s ease, color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!isSelected) { e.currentTarget.style.borderColor = 'var(--text-secondary)'; e.currentTarget.style.color = tone ?? 'var(--text-secondary)' }
+              }}
+              // always restore: a badge clicked while hovered keeps the hover colors otherwise
+              // (React does not re-apply an unchanged style value)
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = borderColor; e.currentTarget.style.color = labelColor }}>
+              {stripLabel(entry.branch, isMainPath(entry.path)) || entry.head.substring(0, 5)}
+              {(ahead > 0 || behind > 0) && (
+                <span style={{ display: 'flex', gap: '3px', fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontWeight: 600 }}>
+                  {ahead > 0 && <span style={{ color: 'var(--accent-color)' }}>↑{ahead}</span>}
+                  {behind > 0 && <span style={{ color: 'var(--warning-color)' }}>↓{behind}</span>}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+        {hiddenCount > 0 && stripBtn(() => setShowHidden(s => !s), showHidden ? t('hide hidden') : t('show hidden'),
+          <span style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+            {showHidden ? <Eye size={12} /> : <EyeOff size={12} />}
+            {hiddenCount}
+          </span>,
+          'show the hidden worktrees dimmed; clicking one selects it and unhides it, right-click to unhide it (or all)', showHidden)}
+        {stripBtn(loadWorktrees, 'refresh', isLoading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={13} />, 'reload the worktree list')}
+        {stripBtn(handleFetchAll, 'fetch', isFetchingAll ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <DownloadCloud size={14} />, 'fetch (with prune) once for every worktree, then reload the ↑/↓ counts')}
+        {stripBtn(() => setShowCleanup(true), t('worktree cleanup'), <Eraser size={14} />, 'list the worktrees that look useless (PBI closed, already merged) and remove them')}
+        {stripBtn(() => setShowNewWorktree(true), t('new worktree'), <Plus size={15} />, 'create a feature or bugfix worktree', true)}
+      </div>
+    </aside>
+  )
+
+  const tabBtn = (id: 'changes' | 'files', label: React.ReactNode, tipDesc: string) => {
+    const active = leftTab === id
+    return (
+      <button onClick={() => setLeftTab(id)} title={id} data-tip-desc={tipDesc} aria-pressed={active}
+        style={{
+          height: 'calc(12px * var(--ui-text-scale, 1) + 14px)', padding: '0 12px', border: 'none',
+          borderRadius: 'var(--radius-sm) var(--radius-sm) 0 0', cursor: 'pointer', whiteSpace: 'nowrap',
+          background: active ? 'var(--bg-card)' : 'transparent',
+          boxShadow: active ? 'inset 0 2px 0 var(--accent-color)' : 'none',
+          color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+          fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: active ? 700 : 600
+        }}>
+        {label}
+      </button>
+    )
+  }
+
+  /** Main column of the selected worktree: header, stack row, changes|files column, diff and terminal. */
+  const renderMain = (entry: WorktreeEntry) => ({ list, diff, count, conflicts, statusError, syncButtons }: WorktreeChangesParts) => {
+    const branch = shortRef(entry.branch)
+    const isBugfix = entry.branch.includes('bugfix')
+    const ov = overview[entry.path]
+    const tone = toneColor(worktreeTone(ov))
+    const pbiId = pbiIdFromBranch(entry.branch)
+    const item = pbiId !== null ? pbiItems[pbiId] : undefined
+    const closed = isPbiClosed(item?.state)
+    const info = stack[branch]
+    const meta = info ? STACK_LABELS[info.state] : null
+    const parentEntry = info ? entries.find(e => shortRef(e.branch) === info.parent) : undefined
+    return (
+      <>
+        <div style={{
+          height: 'calc(13px * var(--ui-text-scale, 1) + 20px)', flexShrink: 0, minWidth: 0, overflow: 'hidden',
+          display: 'flex', alignItems: 'center', gap: '8px', padding: '0 10px 0 6px',
+          borderBottom: '1px solid var(--border-color)', fontFamily: 'var(--font-mono)'
+        }}>
+          {/* a collapsed column has no splitter handle: this is the only way back */}
+          <button onClick={() => setListCollapsed(c => !c)}
+            title={listCollapsed ? 'show panel' : 'collapse panel'} data-tip-desc="collapse or expand the changes / files column"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: 'calc(14px * var(--ui-text-scale, 1) + 10px)', height: 'calc(14px * var(--ui-text-scale, 1) + 10px)', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
+            {listCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+          </button>
+          {/* a long branch truncates (after the PBI title) so pull/push/Completa PR stay on screen */}
+          <span title={entry.path} data-tip-desc={overviewSummary(ov) || 'worktree folder'}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', fontWeight: 700, fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: tone ?? 'var(--text-primary)' }}>
+            {isBugfix ? <Bug size={14} style={{ color: 'var(--warning-color)', flexShrink: 0 }} /> : <GitBranch size={14} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{branch || entry.head.substring(0, 7)}</span>
+          </span>
+          {item ? (
+            <>
+              <span title={`#${item.id} ${item.title}`} data-tip-desc={[item.type, item.assignedTo].filter(Boolean).join(' · ') || 'PBI'}
+                style={{ minWidth: 0, flexShrink: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)', fontSize: 'calc(12px * var(--ui-text-scale, 1))' }}>
+                #{item.id} {item.title}
+              </span>
+              <span title={item.state} data-tip-desc="PBI state in Azure DevOps"
+                style={closed ? chip('var(--success-color)', 'var(--success-bg)') : chip('var(--accent-color)', 'var(--accent-bg)')}>
+                {item.state}
+              </span>
+            </>
+          ) : pbiId !== null && adoReady && (
+            // ADO configured but the item did not come back (still loading, error, unknown id): the id alone
+            <span title={`#${pbiId}`} data-tip-desc="PBI not read from Azure DevOps"
+              style={{ flexShrink: 0, whiteSpace: 'nowrap', color: 'var(--text-secondary)', fontSize: 'calc(12px * var(--ui-text-scale, 1))' }}>
+              #{pbiId}
+            </span>
+          )}
+          {ov?.upstreamGone && (
+            <span title={`nessun branch remoto ${ov.upstream || ''} (rispetto all'ultimo fetch)`} data-tip-desc="mai pubblicato, oppure rimosso dopo il merge della PR"
+              style={chip('var(--text-muted)', 'var(--bg-subtle)')}>
+              no remote
+            </span>
+          )}
+          {entry.detached && (
+            <span title={t('detached')} data-tip-desc="HEAD is not on a branch" style={chip('var(--warning-color)', 'var(--warning-bg)')}>
+              {t('detached')}
+            </span>
+          )}
+          <div style={{ flex: 1 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            {syncButtons}
+            {!isMainPath(entry.path) && (
+              <button onClick={() => setCompleteTarget(entry)}
+                title="completa PR" data-tip-desc="stage, commit and push, merge the base, then open the pull request on Azure DevOps"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0,
+                  height: 'calc(11px * var(--ui-text-scale, 1) + 12px)', padding: '0 12px',
+                  background: 'var(--accent-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 700
+                }}>
+                <GitPullRequest size={12} /> Completa PR
+              </button>
+            )}
           </div>
-          ) : (
-          <div style={{ flex: 1, minWidth: 0, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            {listError ? (
-              <div style={{
-                padding: '24px', color: 'var(--error-color)', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
-                fontFamily: 'var(--font-mono)', lineHeight: 1.7, wordBreak: 'break-word'
-              }}>
-                {listError}
-              </div>
-            ) : (
-              <WorktreeList repoPath={repoPath} entries={entries} isLoading={isLoading} onRemove={handleRemoveWorktree} onComplete={handleComplete} stack={stack} />
+        </div>
+        {info && meta && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', flexShrink: 0,
+            padding: '3px 12px', borderBottom: '1px solid var(--border-color)',
+            fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+          }}>
+            <Layers size={11} style={{ color: meta.color, flexShrink: 0 }} />
+            <span style={{ color: 'var(--text-muted)' }}>develop ›</span>
+            <button onClick={() => parentEntry && selectEntry(parentEntry.path)} disabled={!parentEntry}
+              title={parentEntry ? `vai al worktree di ${info.parent}` : `${info.parent} non è aperto in un worktree`}
+              data-tip-desc="jump to the parent worktree"
+              style={{ ...chainBtn, color: parentEntry ? 'var(--accent-color)' : 'var(--text-muted)', cursor: parentEntry ? 'pointer' : 'default' }}>
+              {info.parent}
+            </button>
+            <span style={{ color: 'var(--text-muted)' }}>›</span>
+            <span style={{ color: 'var(--accent-color)', fontWeight: 700 }}>{branch}</span>
+            <span title={info.detail || meta.tip} data-tip-desc={info.detail || meta.tip}
+              style={{ padding: '0 5px', borderRadius: 'var(--radius-sm)', border: `1px solid ${meta.color}`, color: meta.color, fontWeight: 700 }}>
+              {meta.label}
+            </span>
+            {info.behindParent > 0 && (
+              <span style={{ color: 'var(--warning-color)' }}>base avanzata (+{info.behindParent})</span>
+            )}
+            <div style={{ flex: 1 }} />
+            <button onClick={() => handleAlign(entry.path, info)}
+              title={`merge ${info.mergeRef} in questo worktree`} data-tip-desc="align this worktree with its base (merge)"
+              style={chainBtn}>
+              <GitMerge size={9} /> allinea
+            </button>
+            {isPromotable(info) && (
+              <button onClick={() => void handlePromote(entry)}
+                title="promuovi su develop: allinea e rimuovi il legame con il padre" data-tip-desc="align on develop and drop the stack link"
+                style={chainBtn}>
+                promuovi
+              </button>
             )}
           </div>
         )}
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ResizableSplitter direction="horizontal" defaultSize={300} minSize={180} maxSize={600} collapsed={listCollapsed} onCollapse={() => setListCollapsed(true)}>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: '2px', padding: '6px 8px 0', flexShrink: 0 }}>
+                {/* the status error and the conflicts stay visible from the File tab */}
+                {tabBtn('changes', (
+                  <>
+                    {t('Changes')} {statusError ? <span style={{ color: 'var(--error-color)' }}>!</span> : count}
+                    {conflicts > 0 && <span style={{ color: 'var(--warning-color)' }}> · ⚠{conflicts}</span>}
+                  </>
+                ), statusError || 'pending changes of this worktree: stage, commit, transfer, diff')}
+                {tabBtn('files', t('Files'), 'every file of this worktree: open one to view or edit it')}
+              </div>
+              {/* both tabs stay mounted: the list keeps its filter, the tree its expanded folders */}
+              <div style={{ flex: 1, minHeight: 0, background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ flex: 1, minHeight: 0, display: leftTab === 'changes' ? 'flex' : 'none', flexDirection: 'column' }}>
+                  {list}
+                </div>
+                <div style={{ flex: 1, minHeight: 0, display: leftTab === 'files' ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden' }}>
+                  <FileFilterBar value={fileFilter} onChange={setFileFilter} mode={filterMode} onModeChange={setFilterMode} caseSensitive={filterCaseSensitive} onCaseToggle={() => setFilterCaseSensitive(!filterCaseSensitive)} spaceSensitive={filterSpaceSensitive} onSpaceToggle={() => setFilterSpaceSensitive(!filterSpaceSensitive)} />
+                  <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <FileTree rootPath={entry.path} onFileSelect={(f) => changesHandleRef.current?.openFile(f)} selectedFile={explorerSelectedFile} filter={filter} />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ flex: 1, minHeight: 0 }}>
+                {diff}
+              </div>
+              <TerminalDock repoPath={entry.path} />
+            </div>
+          </ResizableSplitter>
+        </div>
+      </>
+    )
+  }
+
+  return (
+    <PanelContainer>
+      <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+        {Strip}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {selectedEntry ? (
+            <WorktreeChanges worktreePath={selectedEntry.path} repoPath={repoPath} checkMarks={checkMarks[selectedEntry.path] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedEntry.path, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef}
+              onGitChanged={(paths) => void fetchOverview(paths)} sync={overview[selectedEntry.path]} layout={renderMain(selectedEntry)} />
+          ) : (
+            <div style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center',
+              color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+            }}>
+              {isLoading ? (
+                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-color)' }} />
+              ) : listError ? (
+                <span style={{ color: 'var(--error-color)', lineHeight: 1.7, wordBreak: 'break-word' }}>{listError}</span>
+              ) : entries.length === 0 ? t('no worktrees')
+                : stripEntries.length === 0 ? t('all worktrees hidden')
+                : t('select a worktree')}
+            </div>
+          )}
+        </div>
       </div>
 
-      {stripMenu && (
-        <>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setStripMenu(null)} />
-          <div style={{
-            position: 'fixed', left: stripMenu.x, top: stripMenu.y, zIndex: 200,
-            background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '180px',
-            boxShadow: 'var(--shadow-lg)', animation: 'fadeIn 0.1s ease'
-          }}>
-            {hiddenPaths.has(stripMenu.entry.path) ? (
-              <StripMenuItem icon={<Eye size={12} />} label="unhide" onClick={() => handleUnhide(stripMenu.entry.path)} />
-            ) : (
-              <StripMenuItem icon={<EyeOff size={12} />} label="hide from list" onClick={() => handleHide(stripMenu.entry.path)} />
-            )}
-            <StripMenuItem icon={<GitPullRequest size={12} />} label="completa worktree" onClick={() => handleComplete(stripMenu.entry)} />
-            {(() => {
-              const info = stack[stripMenu.entry.branch.replace(/^refs\/heads\//, '')]
-              if (!info || (info.state !== 'merged' && info.state !== 'abandoned' && info.state !== 'rewritten')) return null
-              return (
+      {stripMenu && (() => {
+        const entry = stripMenu.entry
+        const info = stack[shortRef(entry.branch)]
+        return (
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setStripMenu(null)} />
+            <div style={{
+              position: 'fixed', left: stripMenu.x, top: stripMenu.y, zIndex: 200,
+              background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '180px',
+              boxShadow: 'var(--shadow-lg)', animation: 'fadeIn 0.1s ease'
+            }}>
+              {hiddenPaths.has(entry.path) ? (
+                <>
+                  <StripMenuItem icon={<Eye size={12} />} label={t('unhide')} onClick={() => handleUnhide(entry.path)} />
+                  <StripMenuItem icon={<Eye size={12} />} label={t('unhide all')} onClick={handleUnhideAll} />
+                </>
+              ) : (
+                <StripMenuItem icon={<EyeOff size={12} />} label={t('hide from list')} onClick={() => handleHide(entry.path)} />
+              )}
+              <StripMenuItem icon={<GitPullRequest size={12} />} label={t('completa worktree')} onClick={() => handleComplete(entry)} />
+              {info && (
+                <StripMenuItem icon={<GitMerge size={12} />} label="allinea"
+                  onClick={() => { setStripMenu(null); void handleAlign(entry.path, info) }} />
+              )}
+              {isPromotable(info) && (
                 <StripMenuItem icon={<Layers size={12} />} label="promuovi su develop"
-                  onClick={() => { setStripMenu(null); void handlePromote(stripMenu.entry) }} />
-              )
-            })()}
-            {!stripMenu.entry.path.includes('.worktrees') ? null : (
-              <StripMenuItem icon={<Trash2 size={12} />} label="remove worktree" danger onClick={() => { setStripMenu(null); handleRemoveWorktree(stripMenu.entry.path) }} />
-            )}
-          </div>
-        </>
-      )}
+                  onClick={() => { setStripMenu(null); void handlePromote(entry) }} />
+              )}
+              {!isMainPath(entry.path) && (
+                <StripMenuItem icon={<Trash2 size={12} />} label={t('remove worktree')} danger onClick={() => { setStripMenu(null); handleRemoveWorktree(entry.path) }} />
+              )}
+            </div>
+          </>
+        )
+      })()}
 
       {completeTarget && (
         <CompleteWorktreeDialog
           worktreePath={completeTarget.path}
-          repoPath={repoPath!}
-          onClose={() => setCompleteTarget(null)}
+          branch={completeTarget.branch}
+          repoPath={repoPath}
+          // the flow may have committed, pushed or dropped the stack link without removing the worktree
+          onClose={() => { setCompleteTarget(null); void fetchOverview(); void fetchStack() }}
           onDone={() => { setCompleteTarget(null); loadWorktrees() }}
         />
       )}
 
-      {showNewWorktree && repoPath && (
+      {showNewWorktree && (
         <NewWorktreeDialog
           repoPath={repoPath}
           worktrees={entries}
           onClose={() => setShowNewWorktree(false)}
           onCreated={() => { setShowNewWorktree(false); loadWorktrees() }}
+        />
+      )}
+
+      {showCleanup && (
+        <WorktreeCleanupDialog
+          repoPath={repoPath}
+          onClose={() => setShowCleanup(false)}
+          onDone={() => { void loadWorktrees() }}
         />
       )}
 

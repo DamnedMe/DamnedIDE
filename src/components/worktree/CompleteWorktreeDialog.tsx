@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react'
 import { Loader2, X, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, FileCode, Layers, Trash2 } from 'lucide-react'
 import { useAdoStore, adoConnectionFor, useEditorStore, useToastStore } from '../../store'
 import { joinPath } from '../../utils/paths'
+import { pbiIdFromBranch } from './worktree-cleanup'
 
 interface CompleteWorktreeDialogProps {
   worktreePath: string
+  /** the worktree's branch: its PBI id goes in the commit / PR title */
+  branch: string
   repoPath: string
   onClose: () => void
   onDone: () => void
@@ -16,7 +19,7 @@ interface StepLog {
   detail?: string
 }
 
-export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone }: CompleteWorktreeDialogProps) {
+export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose, onDone }: CompleteWorktreeDialogProps) {
   const [message, setMessage] = useState('')
   const [steps, setSteps] = useState<StepLog[]>([])
   const [isRunning, setIsRunning] = useState(false)
@@ -36,11 +39,8 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const showToast = useToastStore(s => s.showToast)
 
-  // Work item id from the branch/path convention `feature/{id}` (NewWorktreeDialog).
-  const workItemId = (() => {
-    const m = worktreePath.match(/feature[\\/](\d+)/)
-    return m ? parseInt(m[1], 10) : null
-  })()
+  // Work item id from the branch convention `feature/{id}` or `bugfix/{id}-text` (NewWorktreeDialog).
+  const workItemId = pbiIdFromBranch(branch)
 
   // Commit/PR title with the ADO work item reference (#<id>), unless already present.
   const fullMessage = workItemId !== null && !/#\d+|AB#\d+/i.test(message)
@@ -48,7 +48,7 @@ export function CompleteWorktreeDialog({ worktreePath, repoPath, onClose, onDone
     : message.trim()
 
   // Work items to link: EVERY `#<id>` in the commit message (PBI/task/bug, N of them),
-  // falling back to the branch id `feature/{id}` when the message has none.
+  // falling back to the branch id when the message has none.
   const workItemIds = (() => {
     const ids = new Set<number>()
     for (const m of fullMessage.matchAll(/#(\d+)/g)) ids.add(parseInt(m[1], 10))

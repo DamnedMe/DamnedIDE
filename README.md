@@ -41,9 +41,10 @@
 | | |
 |---|---|
 | 🪵 **Worktree paralleli** | crea `feature/{id}` da un PBI, lavora in isolamento, senza toccare il branch principale |
-| 📦 **Strip per worktree** | lista compatta di tutti i worktree con selezione istantanea |
-| 🚀 **Completa worktree** | commit (con `#id` del work item), push, merge con develop, **creazione PR** verso develop con work item linkati |
-| 🗂️ **Cambio cartella** | pulsante folder nella sidebar per passare da una repo all'altra, con la **storia delle ultime 5 repo** |
+| 📦 **Strip per worktree** | un badge per worktree con id del PBI, ↑/↓ rispetto al remoto e colore per modifiche pendenti (rosso) o commit non in develop (blu) |
+| 🧹 **Pulizia worktree** | propone i worktree inutili (PBI Done/Removed su ADO, già in develop) e li elimina in blocco, ricontrollando che nulla vada perso |
+| 🚀 **Completa PR** | dall'intestazione del worktree: commit (con `#id` del work item), push, merge con develop, **creazione PR** verso develop con work item linkati |
+| 🗂️ **Cambio repository** | selettore nella barra del titolo, accanto alle schede dei pannelli, con la **storia delle ultime 5 repo** |
 
 </details>
 

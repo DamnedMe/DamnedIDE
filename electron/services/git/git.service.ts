@@ -64,9 +64,13 @@ export class GitService {
     unmerged: { path: string; changeType: string }[]
   }> {
     const git = this.getGit(repoPath)
-    // Default untracked mode (no -uall): git status is far cheaper on large repos
-    // because it collapses untracked directories into a single entry.
-    const out = await git.raw(['status', '--porcelain'])
+    // --untracked-files=all: files inside a new folder are listed one by one
+    // (not collapsed into a "Feature/" row) so the preview can read each of them.
+    // core.quotePath=false: non-ASCII paths come back as-is, not octal-escaped
+    // inside quotes; only names with spaces stay quoted (stripped below).
+    // ponytail: a non-ignored build folder (bin/, node_modules/) becomes thousands of rows;
+    // cap per folder if that ever shows up, .gitignore covers the usual cases.
+    const out = await git.raw(['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all'])
     const staged: { path: string; changeType: string }[] = []
     const unstaged: { path: string; changeType: string }[] = []
     const unmerged: { path: string; changeType: string }[] = []

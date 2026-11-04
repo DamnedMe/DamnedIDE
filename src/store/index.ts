@@ -358,8 +358,10 @@ export const DEFAULT_LIGHT_COLORS: ThemeColorConfig = {
 export interface AppSettings {
   theme: 'dark' | 'light'
   fontSize: number
+  // xterm font size in px, shared by every terminal (Ctrl +/-/0, Ctrl+wheel)
+  terminalFontSize: number
   iconSize: number
-  // family applied to the whole IDE (UI, SQL, editors, terminal)
+  // family applied to the whole IDE (UI, SQL, editors); terminals stay monospace
   appFont: string
   // families added by the user, selectable like the built-ins
   customFonts: string[]
@@ -406,6 +408,7 @@ function saveThemeDefaults(d: ThemeDefaults) {
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   fontSize: 20,
+  terminalFontSize: 12,
   iconSize: 28,
   appFont: 'Nunito',
   customFonts: [],
@@ -442,6 +445,7 @@ function loadSettings(): AppSettings {
         ...DEFAULT_SETTINGS,
         ...parsed,
         appFont: typeof parsed.appFont === 'string' && parsed.appFont.trim() ? parsed.appFont.trim() : DEFAULT_SETTINGS.appFont,
+        terminalFontSize: typeof parsed.terminalFontSize === 'number' && Number.isFinite(parsed.terminalFontSize) ? parsed.terminalFontSize : DEFAULT_SETTINGS.terminalFontSize,
         customFonts: Array.isArray(parsed.customFonts)
           ? parsed.customFonts.filter((f: unknown): f is string => typeof f === 'string' && !!f.trim()).map((f: string) => f.trim())
           : [],

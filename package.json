@@ -31,6 +31,7 @@
     "test:explorer-close": "node --experimental-strip-types scripts/explorer-close.check.ts",
     "test:fs-watch": "node --experimental-strip-types scripts/fs-watch.check.ts",
     "test:open-target": "node --experimental-strip-types scripts/open-target.check.ts",
+    "test:terminal": "node --experimental-strip-types scripts/terminal.check.ts",
     "test:remote-protocol": "node --experimental-strip-types scripts/remote-protocol.check.ts",
     "test:shared-storage": "node --experimental-strip-types scripts/shared-storage.check.ts",
     "test:sql-ui": "node --experimental-strip-types scripts/sql-ui-regression.mjs",

@@ -5,7 +5,8 @@ import '@xterm/xterm/css/xterm.css'
 import { PanelContainer } from '../layout/PanelContainer'
 import { useUIStore, useSettingsStore, useTerminalStore } from '../../store'
 import { hexToRgba } from '../../utils/color'
-import { appFontStack } from '../../utils/fonts'
+import { TERMINAL_FONT_STACK } from '../../utils/fonts'
+import { nextTerminalFontSize, terminalZoomKey, type TerminalZoom } from './terminal-zoom'
 import { Monitor, ExternalLink, Plus, X, ChevronDown } from 'lucide-react'
 
 type ShellType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
@@ -87,17 +88,32 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
   const disposedRef = useRef(false)
   let pendingBuffer = ''
   const accentColor = useSettingsStore(s => s.settings.accentColor)
-  const appFont = useSettingsStore(s => s.settings.appFont)
+  const terminalFontSize = useSettingsStore(s => s.settings.terminalFontSize)
   const uiTheme = useUIStore(s => s.theme)
 
-  // keep the terminal theme in sync with the IDE primary color / theme / font
+  // keep the terminal theme in sync with the IDE primary color / theme (the font
+  // stays TERMINAL_FONT_STACK: a proportional app font breaks xterm's cell grid)
   useEffect(() => {
     const t = xtermRef.current
     if (t) {
       t.options.theme = buildTermTheme(accentColor, uiTheme === 'dark')
-      t.options.fontFamily = appFontStack(appFont)
     }
-  }, [accentColor, uiTheme, appFont])
+  }, [accentColor, uiTheme])
+
+  // one global terminal zoom, persisted: xterm re-measures on the fontSize change,
+  // fit() recomputes cols/rows and onResize forwards them to the pty
+  useEffect(() => {
+    const t = xtermRef.current
+    if (!t || t.options.fontSize === terminalFontSize) return
+    t.options.fontSize = terminalFontSize
+    try { fitRef.current?.fit() } catch { /* disposed */ }
+  }, [terminalFontSize])
+
+  const applyZoom = (z: TerminalZoom) => {
+    const s = useSettingsStore.getState()
+    const next = nextTerminalFontSize(s.settings.terminalFontSize, z)
+    if (next !== s.settings.terminalFontSize) s.updateSettings({ terminalFontSize: next })
+  }
 
   const disposeTerm = () => {
     unsubRef.current?.()
@@ -127,8 +143,8 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     if (!termRef.current) return
 
     const term = new Terminal({
-      fontSize: 12,
-      fontFamily: appFontStack(appFont),
+      fontSize: useSettingsStore.getState().settings.terminalFontSize,
+      fontFamily: TERMINAL_FONT_STACK,
       theme: buildTermTheme(accentColor, uiTheme === 'dark'),
       // same default as VS Code: a TUI that paints a coloured background (list
       // selection, banners) must never end up with unreadable text on it
@@ -142,10 +158,31 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     term.open(termRef.current)
     fit.fit()
 
+    // xterm measures its cell once and never listens for web-font loads: when the
+    // mono family is still downloading the grid is sized on the fallback. Toggle
+    // fontFamily (same value fires nothing) to force a re-measure once fonts land.
+    // ponytail: one re-measure on fonts.ready; a font load that starts after this
+    // terminal opened is not tracked (add a document.fonts 'loadingdone' listener if seen).
+    document.fonts.ready.then(() => {
+      if (disposedRef.current || xtermRef.current !== term) return
+      term.options.fontFamily = 'monospace'
+      term.options.fontFamily = TERMINAL_FONT_STACK
+      try { fit.fit() } catch { /* disposed */ }
+    }).catch(() => { /* ignore */ })
+
     // Clipboard: xterm does not map Ctrl+V by default (it would send ^V to the
     // shell), which breaks pasting an API key into an agent CLI prompt.
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true
+      // Ctrl/Cmd + '+' '=' '-' '0' zoom every terminal. Always preventDefault, or
+      // Electron's default menu accelerators would zoom the whole window.
+      const zoom = terminalZoomKey(e)
+      if (zoom) {
+        e.preventDefault()
+        e.stopPropagation()
+        applyZoom(zoom)
+        return false
+      }
       const key = e.key.toLowerCase()
       const isPaste = ((e.ctrlKey || e.metaKey) && key === 'v') || (e.shiftKey && e.key === 'Insert')
       if (isPaste) {
@@ -205,6 +242,9 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
       return
     }
     sessionRef.current = id
+    // the pty is spawned at 100x30 and the first fit ran before the session
+    // existed: send the real grid so the shell wraps at the visible width
+    window.electronAPI.terminal.resize(id, term.cols, term.rows).catch(() => { /* closed */ })
     if (pendingBuffer) {
       try { term.write(pendingBuffer) } catch { /* disposed */ }
       pendingBuffer = ''
@@ -302,6 +342,28 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
     if (termRef.current) obs.observe(termRef.current)
     return () => obs.disconnect()
   }, [activeTabId])
+
+  // Ctrl/Cmd+wheel zooms; a plain wheel still scrolls. Native, non-passive and in
+  // the capture phase (React's onWheel is passive) so xterm's viewport never sees
+  // it. Deltas accumulate so a precision touchpad does not jump many steps.
+  useEffect(() => {
+    const el = termRef.current
+    if (!el) return
+    let sum = 0
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.deltaY === 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (Math.sign(e.deltaY) !== Math.sign(sum)) sum = 0
+      sum += e.deltaY
+      if (Math.abs(sum) < 50) return
+      applyZoom(sum < 0 ? 'in' : 'out')
+      sum = 0
+    }
+    el.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => el.removeEventListener('wheel', onWheel, { capture: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <PanelContainer>

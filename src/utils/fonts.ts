@@ -1,6 +1,6 @@
-// Global application font: one family for the whole IDE (UI, SQL, editors,
-// terminal). The Google Fonts are fetched on demand (and simply fall back to the
-// monospace stack when the machine is offline).
+// Global application font: one family for the whole IDE (UI, SQL, editors;
+// terminals keep TERMINAL_FONT_STACK). The Google Fonts are fetched on demand
+// (and simply fall back to the monospace stack when the machine is offline).
 
 export const DEFAULT_APP_FONT = 'Nunito'
 
@@ -33,6 +33,10 @@ export function appFontStack(family: string): string {
   const name = (family || DEFAULT_APP_FONT).trim().replace(/'/g, '')
   return `'${name}', ${MONO_FALLBACK}`
 }
+
+// xterm lays text on a fixed cell grid sized on 'W': a proportional family makes
+// it pad every narrow glyph with letter-spacing. The terminal always uses the mono stack.
+export const TERMINAL_FONT_STACK = MONO_FALLBACK
 
 /**
  * Injects the Google Fonts stylesheet for a known family, once. Unknown

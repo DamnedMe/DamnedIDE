@@ -21,6 +21,73 @@ export interface RemoveResult {
   // free and the deletion is retried in the background
   trashedPath?: string
   error?: string
+  /** removeSafe only: refused by a safety check, nothing was touched */
+  skipped?: boolean
+}
+
+/** Per-worktree status for the list (colors, ahead/behind) and the cleanup dialog. */
+export interface WorktreeOverview {
+  path: string
+  branch: string
+  /** uncommitted changes, untracked files included; null when the folder is missing or unreadable */
+  dirty: boolean | null
+  changes: number
+  /** upstream short name (origin/feature/x); null when none is configured */
+  upstream: string | null
+  /** upstream configured but its remote-tracking ref is missing: never pushed, or deleted after the merge */
+  upstreamGone: boolean
+  /** commits to push / to pull, relative to the last fetch */
+  ahead: number
+  behind: number
+  /** the branch has commits not in develop; null when develop cannot be resolved */
+  unmerged: boolean | null
+  /** the develop ref `unmerged` is computed against (origin/develop preferred) */
+  base: string | null
+  /** commits on no remote branch (only with `localOnly`): 0 means nothing would be lost */
+  localOnly?: number
+}
+
+/** Parses `%(upstream:track,nobracket)`: '', 'gone', 'ahead 1', 'behind 2', 'ahead 1, behind 2'. */
+export function parseTrack(track: string): { ahead: number; behind: number; gone: boolean } {
+  const t = (track || '').trim()
+  return {
+    ahead: Number(/ahead (\d+)/.exec(t)?.[1] ?? 0),
+    behind: Number(/behind (\d+)/.exec(t)?.[1] ?? 0),
+    gone: t === 'gone'
+  }
+}
+
+/** Runs `fn` over `items` with at most `size` calls in flight (each one spawns git processes). */
+async function inPool<T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => {
+    while (next < items.length) await fn(items[next++])
+  }))
+}
+
+/** Lines of `git status --porcelain` in a worktree; null when it is not a readable worktree. */
+async function changeCount(worktreePath: string, ignoreDeletions = false): Promise<number | null> {
+  // without its `.git` file, git would walk up and report the main repository instead
+  if (!existsSync(join(worktreePath, '.git'))) return null
+  try {
+    // background refresh: never take index.lock away from the user's own git commands
+    const out = await simpleGit(worktreePath).raw(['--no-optional-locks', 'status', '--porcelain'])
+    // the main checkout always sees the IDE's own `.worktrees/` folder as untracked;
+    // deleted tracked files (a half-done rm) are still in git, so they lose nothing
+    return out.split('\n').filter(l => l.trim() && l.trim() !== '?? .worktrees/' && !(ignoreDeletions && /^(?: D|D |DD)/.test(l))).length
+  } catch {
+    return null
+  }
+}
+
+/** Commits of a branch that no remote-tracking ref contains; undefined when unknown. */
+async function localOnlyCount(git: SimpleGit, branch: string): Promise<number | undefined> {
+  try {
+    const out = (await git.raw(['rev-list', '--count', `refs/heads/${branch}`, '--not', '--remotes'])).trim()
+    return /^\d+$/.test(out) ? Number(out) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function normalizeForCompare(p: string): string {
@@ -476,15 +543,75 @@ export class WorktreeService {
     // time — with many stacked worktrees this was the slowest panel refresh.
     const cache = newStackCache()
     const results = new Map<string, WorktreeStackInfo>()
-    let next = 0
-    const workers = Array.from({ length: Math.min(4, targets.length) }, async () => {
-      while (next < targets.length) {
-        const target = targets[next++]
-        results.set(target.branch, await parentStatus(git, target.branch, target.link, cache))
-      }
+    await inPool(targets, 4, async target => {
+      results.set(target.branch, await parentStatus(git, target.branch, target.link, cache))
     })
-    await Promise.all(workers)
     return targets.map(target => results.get(target.branch)!).filter(Boolean)
+  }
+
+  /**
+   * Status of every worktree in a few processes: one for-each-ref for upstream
+   * and ahead/behind (restricted to the worktree branches), one for the
+   * branches with commits not in develop, then `status --porcelain` per
+   * worktree in the pool. No network: counts are as fresh as the last fetch.
+   * `paths` limits the result to those worktrees; `localOnly` adds the count of
+   * commits on no remote (cleanup dialog only).
+   */
+  async overview(repoPath: string, opts: { paths?: string[]; localOnly?: boolean } = {}): Promise<WorktreeOverview[]> {
+    const git = this.getGit(repoPath)
+    const wanted = opts.paths ? new Set(opts.paths.map(normalizeForCompare)) : null
+    const entries = (await this.list(repoPath))
+      .filter(e => !e.bare && (!wanted || wanted.has(normalizeForCompare(e.path))))
+    const branchOf = (e: WorktreeEntry) => e.branch.replace(/^refs\/heads\//, '')
+    const refs = [...new Set(entries.map(branchOf).filter(Boolean))].map(b => `refs/heads/${b}`)
+    const names = (out: string) => out.split('\n').map(l => l.trim())
+      .filter(l => l.startsWith('refs/heads/')).map(l => l.slice('refs/heads/'.length))
+    const results: WorktreeOverview[] = entries.map(e => ({
+      path: e.path, branch: branchOf(e), dirty: null, changes: 0,
+      upstream: null, upstreamGone: false, ahead: 0, behind: 0, unmerged: null, base: null
+    }))
+    // the ref queries and the per-worktree status run side by side: process
+    // spawns dominate on Windows, so waiting on each in turn doubles the time
+    // ponytail: every worktree ref goes on one command line; Windows caps it at
+    // 32K chars (~500 worktrees), chunk the refs if that ever becomes real
+    const [track, { base, unmerged }] = await Promise.all([
+      (async () => {
+        const map = new Map<string, { upstream: string | null; ahead: number; behind: number; gone: boolean }>()
+        if (refs.length === 0) return map
+        const out = await git.raw(['for-each-ref', '--format=%(refname)%00%(upstream:short)%00%(upstream:track,nobracket)', ...refs]).catch(() => '')
+        for (const line of out.split('\n')) {
+          const [ref, upstream, tr] = line.split('\0')
+          if (!ref?.startsWith('refs/heads/')) continue
+          map.set(ref.slice('refs/heads/'.length), { upstream: upstream || null, ...parseTrack(tr || '') })
+        }
+        return map
+      })(),
+      (async () => {
+        const base = await resolveRef(git, 'develop')
+        if (!base || refs.length === 0) return { base, unmerged: null }
+        try {
+          return { base, unmerged: new Set(names(await git.raw(['for-each-ref', `--no-merged=${base}`, '--format=%(refname)', ...refs]))) }
+        } catch {
+          return { base, unmerged: null }
+        }
+      })(),
+      inPool(results, 4, async ov => {
+        const changes = await changeCount(ov.path)
+        ov.dirty = changes === null ? null : changes > 0
+        ov.changes = changes ?? 0
+        if (opts.localOnly && ov.branch) ov.localOnly = await localOnlyCount(git, ov.branch)
+      })
+    ])
+    for (const ov of results) {
+      const t = ov.branch ? track.get(ov.branch) : undefined
+      ov.upstream = t?.upstream ?? null
+      ov.upstreamGone = !!t?.gone
+      ov.ahead = t?.ahead ?? 0
+      ov.behind = t?.behind ?? 0
+      ov.unmerged = ov.branch && unmerged ? unmerged.has(ov.branch) : null
+      ov.base = base
+    }
+    return results
   }
 
   /** Drops the stack link of a branch (after a promotion to develop). */
@@ -565,6 +692,41 @@ export class WorktreeService {
       ok: true,
       warning: `worktree rimosso dal repository, ma la cartella non è stata eliminata (probabilmente aperta in un altro programma): ${rmError.message}`
     }
+  }
+
+  /**
+   * Removal for the bulk cleanup: right before deleting it re-checks that
+   * nothing would be lost (clean working tree, every commit on a remote) and
+   * refuses the main checkout and detached worktrees. A refusal touches nothing
+   * and returns `skipped`. Ignored files (bin/obj, local config) are deleted,
+   * like in remove(); the local branch is kept.
+   * `forceTeardown` = forced retry after a locked folder: the same checks run
+   * again (deleted tracked files from the half-done rm do not count), then it
+   * runs the teardown (close terminals) and removes with force.
+   */
+  async removeSafe(repoPath: string, worktreePath: string, forceTeardown?: () => void): Promise<RemoveResult> {
+    const skip = (error: string): RemoveResult => ({ ok: false, skipped: true, error })
+    const target = normalizeForCompare(worktreePath)
+    const entries = await this.list(repoPath)
+    if (target === normalizeForCompare(repoPath) || (entries[0] && target === normalizeForCompare(entries[0].path))) {
+      return skip('checkout principale: non rimosso')
+    }
+    const entry = entries.find(e => normalizeForCompare(e.path) === target)
+    if (!entry) return skip('non è un worktree di questo repository')
+    if (!entry.path.includes('.worktrees')) return skip('worktree fuori da .worktrees: non rimosso')
+    const branch = entry.branch.replace(/^refs\/heads\//, '')
+    if (!branch) return skip('HEAD detached: non rimosso')
+    const force = !!forceTeardown
+    const changes = await changeCount(entry.path, force)
+    // ponytail: a forced retry whose half-done rm already took `.git` cannot re-read the
+    // status; the non-forced pass just before had verified it clean, so it proceeds
+    if (changes === null && !force) return skip('stato git non leggibile: non rimosso')
+    if (changes !== null && changes > 0) return skip(`${changes} modifiche non committate: non rimosso`)
+    const localOnly = await localOnlyCount(this.getGit(repoPath), branch)
+    if (localOnly === undefined) return skip('commit locali non verificabili: non rimosso')
+    if (localOnly > 0) return skip(`${localOnly} commit non pushati: non rimosso`)
+    forceTeardown?.()
+    return this.remove(repoPath, worktreePath, force)
   }
 
   async prune(repoPath: string): Promise<void> {

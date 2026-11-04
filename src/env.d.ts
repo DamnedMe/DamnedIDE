@@ -73,6 +73,21 @@ interface WorktreeStackInfo {
   mergeRef: string
 }
 
+// electron/services/git/worktree.service.ts WorktreeOverview
+interface WorktreeOverview {
+  path: string
+  branch: string
+  dirty: boolean | null
+  changes: number
+  upstream: string | null
+  upstreamGone: boolean
+  ahead: number
+  behind: number
+  unmerged: boolean | null
+  base: string | null
+  localOnly?: number
+}
+
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'up-to-date' | 'error'
 
 interface UpdateState {
@@ -145,7 +160,7 @@ interface Window {
       log: (repoPath: string, count: number) => Promise<import('./types/git').CommitInfo[]>
       pull: (repoPath: string) => Promise<void>
       push: (repoPath: string) => Promise<void>
-      fetch: (repoPath: string) => Promise<void>
+      fetch: (repoPath: string, opts?: { prune?: boolean }) => Promise<void>
       showFile: (repoPath: string, filePath: string) => Promise<string>
       showRef: (repoPath: string, filePath: string, ref: string) => Promise<string>
       stageAll: (repoPath: string) => Promise<void>
@@ -164,7 +179,9 @@ interface Window {
       list: (repoPath: string) => Promise<WorktreeEntry[]>
       add: (repoPath: string, branch: string, path: string, base?: string) => Promise<void>
       remove: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; warning?: string; trashedPath?: string; error?: string }>
+      removeSafe: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; skipped?: boolean; warning?: string; trashedPath?: string; error?: string }>
       stack: (repoPath: string) => Promise<WorktreeStackInfo[]>
+      overview: (repoPath: string, opts?: { paths?: string[]; localOnly?: boolean }) => Promise<WorktreeOverview[]>
       retargetChildren: (repoPath: string, parentBranch: string) => Promise<string[]>
       clearLink: (repoPath: string, branch: string) => Promise<void>
       promote: (repoPath: string, worktreePath: string) => Promise<{ ok: boolean; error?: string; conflicts?: string[] }>

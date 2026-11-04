@@ -26,6 +26,7 @@
     "test:worktree-remove": "node --experimental-strip-types scripts/worktree-remove.check.ts",
     "test:worktree-add": "node --experimental-strip-types scripts/worktree-add.check.ts",
     "test:worktree-stack": "node --experimental-strip-types scripts/worktree-stack.check.ts",
+    "test:worktree-cleanup": "node --experimental-strip-types scripts/worktree-cleanup.check.ts",
     "test:perf-git": "node --experimental-strip-types scripts/perf-git.check.ts",
     "test:merge-utils": "node --experimental-strip-types scripts/merge-utils.check.ts",
     "test:ado-promotion": "node --experimental-strip-types scripts/ado-promotion.check.ts",

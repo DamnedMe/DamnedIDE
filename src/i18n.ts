@@ -84,6 +84,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     unhide: 'mostra',
     'unhide all': 'mostra tutti',
     'remove worktree': 'rimuovi worktree',
+    'worktree cleanup': 'pulizia worktree',
     'completa worktree': 'completa worktree',
     'the worktree folder is locked (probably open in a terminal, Explorer or another program)': 'la cartella del worktree è bloccata (probabilmente aperta in un terminale, Explorer o un altro programma)',
     'force removal unregisters the worktree from git; if the folder stays locked you will have to delete it manually': 'la rimozione forzata deregistra il worktree da git; se la cartella resta bloccata dovrai eliminarla a mano',

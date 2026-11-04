@@ -164,9 +164,11 @@ export class GitService {
     await git.push()
   }
 
-  async fetch(repoPath: string): Promise<void> {
+  /** prune: also drop origin/* refs of branches deleted on the remote (e.g. after a PR) */
+  async fetch(repoPath: string, opts?: { prune?: boolean }): Promise<void> {
     const git = this.getGit(repoPath)
-    await git.fetch()
+    if (opts?.prune) await git.raw(['fetch', '--prune'])
+    else await git.fetch()
   }
 
   async showFile(repoPath: string, filePath: string): Promise<string> {

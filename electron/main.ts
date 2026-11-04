@@ -262,13 +262,15 @@ function registerIpcHandlers(
   ipcMain.handle('git:log', (_e, repoPath: string, count: number) => git.log(repoPath, count))
   ipcMain.handle('git:pull', (_e, repoPath: string) => git.pull(repoPath))
   ipcMain.handle('git:push', (_e, repoPath: string) => git.push(repoPath))
-  ipcMain.handle('git:fetch', (_e, repoPath: string) => git.fetch(repoPath))
+  ipcMain.handle('git:fetch', (_e, repoPath: string, opts?: { prune?: boolean }) => git.fetch(repoPath, opts))
 
   // ─── Worktree ──────────────────────────────────────
   ipcMain.handle('worktree:list', (_e, repoPath: string) => worktree.list(repoPath))
   ipcMain.handle('worktree:add', (_e, repoPath: string, branch: string, path: string, base?: string) =>
     worktree.add(repoPath, branch, path, base))
   ipcMain.handle('worktree:stack', (_e, repoPath: string) => worktree.stack(repoPath))
+  ipcMain.handle('worktree:overview', (_e, repoPath: string, opts?: { paths?: string[]; localOnly?: boolean }) =>
+    worktree.overview(repoPath, opts))
   ipcMain.handle('worktree:retargetChildren', (_e, repoPath: string, parentBranch: string) =>
     worktree.retargetChildren(repoPath, parentBranch))
   ipcMain.handle('worktree:clearLink', (_e, repoPath: string, branch: string) => worktree.clearLink(repoPath, branch))
@@ -286,6 +288,10 @@ function registerIpcHandlers(
     if (force) destroyTerminalsUnderPath(worktreePath)
     return worktree.remove(repoPath, worktreePath, !!force)
   })
+  // bulk cleanup: re-checks clean + no local-only commits right before deleting
+  // (also on the forced retry, where terminals are closed only once the checks pass)
+  ipcMain.handle('worktree:removeSafe', (_e, repoPath: string, worktreePath: string, force?: boolean) =>
+    worktree.removeSafe(repoPath, worktreePath, force ? () => destroyTerminalsUnderPath(worktreePath) : undefined))
   ipcMain.handle('worktree:prune', (_e, repoPath: string) => worktree.prune(repoPath))
 
   // ─── Diff ──────────────────────────────────────────

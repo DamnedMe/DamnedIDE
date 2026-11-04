@@ -79,6 +79,8 @@ try {
     await worktreeService.list(repo)
     await worktreeService.stack(repo)
   })
+  await msAsync('worktree.overview', () => worktreeService.overview(repo))
+  await msAsync('worktree.overview (localOnly)', () => worktreeService.overview(repo, { localOnly: true }))
   await msAsync('worktree.add (local remote)', () => worktreeService.add(repo, 'feature/new-perf', join(repo, '.worktrees', 'new-perf')))
   await msAsync('worktree.remove (new-perf)', () => worktreeService.remove(repo, join(repo, '.worktrees', 'new-perf'), true))
 } finally {

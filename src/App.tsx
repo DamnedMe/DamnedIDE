@@ -16,7 +16,8 @@ import { RecentReposDialog } from './components/layout/RecentReposDialog'
 import { useUIStore, useGitStore, useSettingsStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
-import { appFontStack, ensureFontLoaded } from './utils/fonts'
+import { basenameOf } from './utils/paths'
+import { appFontStack, ensureFontLoaded, uiTextScale } from './utils/fonts'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from './components/editor/monaco-theme'
 import {
   GitBranch,
@@ -268,8 +269,7 @@ export default function App() {
   }, [appFont])
 
   useEffect(() => {
-    const scale = Math.min(2.4, Math.max(0.5, fontSize / 12.5))
-    document.documentElement.style.setProperty('--ui-text-scale', String(scale))
+    document.documentElement.style.setProperty('--ui-text-scale', String(uiTextScale(fontSize)))
   }, [fontSize])
 
   const t = useI18n()

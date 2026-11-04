@@ -7,6 +7,7 @@ import { Play, Square, Loader2, Database, Plus, X, History, Pencil, Save, Trash2
 import { registerSqlAssistant } from './sqlAssistant'
 import { appFontStack } from '../../utils/fonts'
 import { SqlQuerySource, SqlWorkspaceTab } from '../../types/sql'
+import { useSqlSectionZoom } from './useSqlSectionZoom'
 
 export interface QueryExecutionContext {
   connectionId?: string
@@ -68,6 +69,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
   const { isRunning } = useSqlStore()
   const settings = useSettingsStore(s => s.settings)
   const showToast = useToastStore(s => s.showToast)
+  const sectionZoom = useSqlSectionZoom<HTMLElement>('editor')
 
   useEffect(() => { tabsRef.current = tabs }, [tabs])
   useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
@@ -275,7 +277,8 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
   }
 
   return (
-    <section className="sql-query-editor sql-surface" aria-label="Query editor" style={{
+    <section ref={sectionZoom.ref} className="sql-query-editor sql-surface" aria-label="Query editor" style={{
+      ...sectionZoom.style,
       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', overflow: 'hidden',
       display: 'flex', flex: 1, flexDirection: 'column',
@@ -358,7 +361,9 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
           theme={settings.theme === 'dark' ? THEME_DARK : THEME_LIGHT}
           onMount={handleMount}
           options={{
-            fontSize: settings.fontSize,
+            // section zoom (Ctrl+wheel on the editor); Monaco's own mouseWheelZoom stays
+            // off because its zoom is global and would rescale every editor in the IDE
+            fontSize: settings.fontSize * sectionZoom.zoom,
             fontFamily: appFontStack(settings.appFont),
             minimap: { enabled: false },
             lineNumbersMinChars: 3,

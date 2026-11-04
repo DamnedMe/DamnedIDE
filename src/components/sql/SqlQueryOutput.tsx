@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { AlertCircle, Check, Clock3, Loader2, MessageSquareText, Table2 } from 'lucide-react'
 import { SqlExecutionResult } from '../../types/sql'
+import { useSqlSectionZoom } from './useSqlSectionZoom'
 
 export type SqlQueryMessageTone = 'running' | 'success' | 'error' | 'info'
 
@@ -38,6 +39,8 @@ function tabStyle(active: boolean): React.CSSProperties {
 
 export function SqlQueryOutput({ execution, messages, running, selected, onSelected, children }: SqlQueryOutputProps) {
   const [, setTick] = useState(0)
+  // one zoom for tabs, messages and results grid (ResultViewer reads the same 'output' level)
+  const sectionZoom = useSqlSectionZoom<HTMLElement>('output')
   useEffect(() => {
     if (!running) return
     const timer = window.setInterval(() => setTick(value => value + 1), 200)
@@ -55,7 +58,7 @@ export function SqlQueryOutput({ execution, messages, running, selected, onSelec
         : 'Ready'
 
   return (
-    <section className="sql-query-output" aria-label="SQL query output" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+    <section ref={sectionZoom.ref} className="sql-query-output" aria-label="SQL query output" style={{ ...sectionZoom.style, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div className="sql-query-output__tabs" role="tablist" aria-label="query output" style={{
         height: 29, display: 'flex', alignItems: 'stretch', flexShrink: 0,
         background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderBottom: 0,

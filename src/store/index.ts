@@ -6,8 +6,10 @@ import {
   SqlConnection,
   SqlExecutionResult,
   SqlColumnInfo,
-  SqlRecentConnection
+  SqlRecentConnection,
+  SqlZoomSection
 } from '../types/sql'
+import { normalizeSqlZoom } from '../components/sql/sqlZoom'
 
 interface UIState {
   activePanel: string
@@ -308,6 +310,34 @@ export const useSqlRecentStore = create<SqlRecentState>((set) => ({
     saveSqlRecent([])
     return { recent: [] }
   }
+}))
+
+// Per-section Ctrl+wheel zoom of the SQL workbench (1 = 100%), persisted like the diff zoom
+const SQL_ZOOM_KEY = 'damnedide_sql_zoom'
+
+type SqlZoomLevels = Record<SqlZoomSection, number>
+
+interface SqlZoomState extends SqlZoomLevels {
+  setZoom: (section: SqlZoomSection, value: number) => void
+}
+
+function loadSqlZoom(): SqlZoomLevels {
+  try {
+    const raw = localStorage.getItem(SQL_ZOOM_KEY)
+    const p = raw ? JSON.parse(raw) : null
+    return { explorer: normalizeSqlZoom(p?.explorer), editor: normalizeSqlZoom(p?.editor), output: normalizeSqlZoom(p?.output) }
+  } catch {
+    return { explorer: 1, editor: 1, output: 1 }
+  }
+}
+
+export const useSqlZoomStore = create<SqlZoomState>((set) => ({
+  ...loadSqlZoom(),
+  setZoom: (section, value) => set((s) => {
+    const next: SqlZoomLevels = { explorer: s.explorer, editor: s.editor, output: s.output, [section]: normalizeSqlZoom(value) }
+    try { localStorage.setItem(SQL_ZOOM_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+    return next
+  })
 }))
 
 export interface ThemeColorConfig {

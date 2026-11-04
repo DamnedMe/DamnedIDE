@@ -38,6 +38,7 @@ import type { BackupSource, DataTierAction } from '../../shared/sqlBackup'
 import type { QueryExecutionContext } from './QueryEditor'
 import { buildExplicitSelect } from './sqlQueryUtils'
 import { localSqlAssistant } from './sqlAssistant'
+import { useSqlSectionZoom } from './useSqlSectionZoom'
 
 interface DatabaseExplorerProps {
   connections: SqlConnection[]
@@ -86,6 +87,7 @@ export function DatabaseExplorer({
   onRunQuery, onLoadQuery, onAskConfirmSelectAll, onSetActiveDatabase, onOpenDiagram, onAskRowLimit, onServerInfo, onBackupDatabase, onDataTier, onImportDatabase, trackOperation
 }: DatabaseExplorerProps) {
   const { cache, setEntry, invalidate, invalidateConnection } = useSqlExplorerStore()
+  const sectionZoom = useSqlSectionZoom<HTMLElement>('explorer')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
   const [search, setSearch] = useState('')
@@ -521,7 +523,8 @@ export function DatabaseExplorer({
   )
 
   return (
-    <aside className="sql-object-explorer sql-surface" aria-label="Object explorer" style={{
+    <aside ref={sectionZoom.ref} className="sql-object-explorer sql-surface" aria-label="Object explorer" style={{
+      ...sectionZoom.style,
       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', overflow: 'hidden', height: '100%',
       display: 'flex', flexDirection: 'column'

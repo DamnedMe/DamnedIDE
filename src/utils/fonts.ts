@@ -53,3 +53,8 @@ export function ensureFontLoaded(family: string): void {
   link.href = `https://fonts.googleapis.com/css2?family=${name.replace(/ /g, '+')}:wght@400;600;700&display=swap`
   document.head.appendChild(link)
 }
+
+/** IDE text scale (--ui-text-scale) for the settings font size: 12.5px = 1. */
+export function uiTextScale(fontSize: number): number {
+  return Math.min(2.4, Math.max(0.5, fontSize / 12.5))
+}

@@ -5,8 +5,9 @@ import { buildDeleteStatement, buildInsertEntries, buildInsertStatement, buildUp
 import { DateTimePicker } from './DateTimePicker'
 import { calculateColumnMetrics, calculateVisibleRange } from './sqlGridUtils'
 import { SqlGridFilter, SqlGridFilterOperator, SqlGridQueryState } from '../../types/sql'
-import { useSettingsStore, useToastStore } from '../../store'
+import { useSettingsStore, useSqlZoomStore, useToastStore } from '../../store'
 import { appFontStack } from '../../utils/fonts'
+import { clampSqlZoom, sqlZoomBounds, SQL_ZOOM_MAX_FONT, SQL_ZOOM_MIN_FONT, stepSqlZoom } from './sqlZoom'
 
 type CellKind = 'guid' | 'date' | 'boolean' | 'number' | 'string'
 
@@ -38,9 +39,6 @@ const DEFAULT_COL_W = 160
 const ROW_H = 26
 const ROW_WINDOW_BUFFER = 8
 const ROW_WINDOW_GUARD = 2
-const MIN_FONT_SIZE = 8
-const MAX_FONT_SIZE = 32
-const ZOOM_STEP = 1.1
 
 function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
   const esc = (v: unknown) => {
@@ -455,9 +453,6 @@ const tinyGridButton: React.CSSProperties = {
 
 export function ResultViewer({ execution, getResultTableName, onJoinRequest, onFilterRequest, onClear, onExecuteSql, onDeleteRequest, columnInfo, onCheckExists, gridQueryState, gridQuerySupported, onGridQueryStateChange }: ResultViewerProps) {
   const [activeSet, setActiveSet] = useState(0)
-  // The grid text size starts from the IDE setting; the dedicated zoom (1 = 100%)
-  // then scales it up or down without touching the rest of the UI.
-  const [zoom, setZoom] = useState(1)
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
   const [colWidths, setColWidths] = useState<Record<string, number>>({})
   const [pinned, setPinned] = useState<string[]>([])
@@ -479,6 +474,9 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const showToast = useToastStore(s => s.showToast)
   const settingsFontSize = useSettingsStore(s => s.settings.fontSize)
   const appFont = useSettingsStore(s => s.settings.appFont)
+  // The grid text size starts from the IDE setting; the output section zoom
+  // (1 = 100%, Ctrl+wheel on the output section, Ctrl +/-/0, toolbar) scales it.
+  const zoom = clampSqlZoom(useSqlZoomStore(s => s.output), sqlZoomBounds(settingsFontSize))
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
   const autofitCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -546,7 +544,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const columns = result?.columns || []
 
   const zoomScale = zoom
-  const fontSize = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, settingsFontSize * zoom))
+  const fontSize = Math.min(SQL_ZOOM_MAX_FONT, Math.max(SQL_ZOOM_MIN_FONT, settingsFontSize * zoom))
   const rowHeight = Math.max(22, Math.round(ROW_H * zoomScale))
   const defaultColumnWidth = Math.round(DEFAULT_COL_W * zoomScale)
   const scaledColWidths = useMemo(
@@ -648,14 +646,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const pinnedLeft = (col: string): number => columnMetrics.pinnedLeft[col] ?? 0
 
   const changeZoom = useCallback((delta: number) => {
-    setZoom(current => {
-      const next = delta > 0 ? current * ZOOM_STEP : current / ZOOM_STEP
-      // keep the resulting font inside [MIN_FONT_SIZE, MAX_FONT_SIZE] so the
-      // percentage shown in the toolbar always matches the real grid zoom
-      const minZoom = Math.min(1, MIN_FONT_SIZE / settingsFontSize)
-      const maxZoom = Math.max(1, MAX_FONT_SIZE / settingsFontSize)
-      return Math.min(maxZoom, Math.max(minZoom, next))
-    })
+    // the bounds keep the font inside the 8..32px range, so the toolbar
+    // percentage always matches the real grid zoom
+    const bounds = sqlZoomBounds(settingsFontSize)
+    const { output, setZoom } = useSqlZoomStore.getState()
+    setZoom('output', stepSqlZoom(clampSqlZoom(output, bounds), delta, bounds))
   }, [settingsFontSize])
 
   const formatValue = useCallback((col: string, v: unknown): string => {
@@ -713,7 +708,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         changeZoom(-1)
       } else if (event.key === '0') {
         event.preventDefault()
-        setZoom(1)
+        useSqlZoomStore.getState().setZoom('output', 1)
       }
     }
     window.addEventListener('keydown', handler)
@@ -1299,11 +1294,6 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
           role="grid"
           aria-label="query results grid"
           aria-keyshortcuts="Control++ Control+- Control+0"
-          onWheel={(event) => {
-            if (!(event.ctrlKey || event.metaKey)) return
-            event.preventDefault()
-            changeZoom(event.deltaY < 0 ? 1 : -1)
-          }}
           onScroll={(e) => {
             const el = e.currentTarget
             pendingScrollTopRef.current = el.scrollTop

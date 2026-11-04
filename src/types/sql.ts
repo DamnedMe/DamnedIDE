@@ -163,6 +163,9 @@ export interface SqlRecentConnection {
 
 export type SqlQuerySource = 'editor' | 'context-menu' | 'diagram' | 'grid' | 'foreign-key' | 'mutation' | 'history' | 'favorite'
 
+/** SQL workbench sections with their own Ctrl+wheel zoom: side, top and bottom. */
+export type SqlZoomSection = 'explorer' | 'editor' | 'output'
+
 export interface SqlWorkspaceTab {
   id: string
   title: string

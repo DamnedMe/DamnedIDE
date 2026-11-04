@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, ReactNode } from 'react'
+import { dragSplitSize } from './splitter-math'
 
 interface ResizableSplitterProps {
   direction: 'horizontal' | 'vertical'
@@ -6,6 +7,10 @@ interface ResizableSplitterProps {
   minSize?: number
   maxSize?: number
   collapsed?: boolean
+  /** opt-in: dragging the first pane below `collapseAt` asks the caller to collapse it */
+  onCollapse?: () => void
+  /** raw size in px below which the drag snaps closed (default minSize / 2) */
+  collapseAt?: number
   children: [ReactNode, ReactNode]
 }
 
@@ -15,6 +20,8 @@ export function ResizableSplitter({
   minSize = 100,
   maxSize,
   collapsed = false,
+  onCollapse,
+  collapseAt,
   children
 }: ResizableSplitterProps) {
   const [size, setSize] = useState(defaultSize)
@@ -65,11 +72,13 @@ export function ResizableSplitter({
 
   useEffect(() => {
     if (!isDragging) return
+    // a mousemove can arrive before the collapsed prop removes these listeners
+    let snapped = false
 
     const handleMouseMove = (e: MouseEvent) => {
+      if (snapped) return
       const currentPos = direction === 'horizontal' ? e.clientX : e.clientY
       const delta = currentPos - startPosRef.current
-      let newSize = startSizeRef.current + delta
 
       const containerSize = containerRef.current
         ? (direction === 'horizontal'
@@ -77,11 +86,21 @@ export function ResizableSplitter({
           : containerRef.current.getBoundingClientRect().height)
         : 800
 
-      if (minSize !== undefined) newSize = Math.max(minSize, newSize)
-      if (maxSize !== undefined) newSize = Math.min(maxSize, newSize)
-      newSize = Math.max(40, Math.min(containerSize - 40, newSize))
-
-      setSize(newSize)
+      const next = dragSplitSize(startSizeRef.current + delta, {
+        minSize, maxSize, containerSize, collapseAt, collapsible: !!onCollapse
+      })
+      if (next.collapse) {
+        // reopening restores the width the pane had before this drag
+        snapped = true
+        sizeRef.current = startSizeRef.current
+        setSize(startSizeRef.current)
+        setIsDragging(false)
+        // the handle unmounts, so onMouseLeave would never clear the hover
+        setIsHovered(false)
+        onCollapse?.()
+        return
+      }
+      setSize(next.size)
     }
 
     const handleMouseUp = () => setIsDragging(false)
@@ -92,7 +111,7 @@ export function ResizableSplitter({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, direction, minSize, maxSize])
+  }, [isDragging, direction, minSize, maxSize, collapseAt, onCollapse])
 
   const isH = direction === 'horizontal'
 

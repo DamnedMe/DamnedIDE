@@ -179,6 +179,7 @@ interface Window {
       connect: (org: string, token: string) => Promise<boolean>
       workItems: (project: string) => Promise<import('./types/ado').AdoWorkItem[]>
       workItem: (project: string, id: number) => Promise<import('./types/ado').AdoWorkItem | null>
+      workItemsBatch: (project: string, ids: number[]) => Promise<import('./types/ado').AdoWorkItem[]>
       pullRequests: (project: string, repo: string) => Promise<import('./types/ado').AdoPullRequest[]>
       pullRequestDetail: (project: string, repo: string, prId: number) => Promise<import('./types/ado').AdoPullRequestDetail | null>
       pullRequestFiles: (project: string, repo: string, prId: number) => Promise<import('./types/ado').AdoPullRequestFile[]>
@@ -188,8 +189,8 @@ interface Window {
       repositories: (project: string) => Promise<string[]>
       commitsBetween: (project: string, repo: string, source: string, target: string) => Promise<{ commitId: string; message: string; author: string }[]>
       setVote: (project: string, repo: string, prId: number, vote: number) => Promise<boolean>
-      completePr: (project: string, repo: string, prId: number, sourceCommitId: string) => Promise<boolean>
-      createPr: (project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; workItemIds?: number[] }) => Promise<{ id: number; title: string; mode: 'autocomplete' | 'completed' | 'open' } | null>
+      completePr: (project: string, repo: string, prId: number, sourceCommitId: string, deleteSourceBranch?: boolean) => Promise<boolean>
+      createPr: (project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; deleteSourceBranch?: boolean; forceComplete?: boolean; workItemIds?: number[] }) => Promise<{ id: number; title: string; mode: 'autocomplete' | 'completed' | 'open'; url: string } | null>
     }
     sql: {
       connect: (config: import('./types/sql').SqlConnectionConfig) => Promise<string>

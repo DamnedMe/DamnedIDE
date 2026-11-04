@@ -297,6 +297,7 @@ function registerIpcHandlers(
   ipcMain.handle('ado:connect', (_e, org: string, token: string) => ado.connect(org, token))
   ipcMain.handle('ado:workItems', (_e, project: string) => ado.getWorkItems(project))
   ipcMain.handle('ado:workItem', (_e, project: string, id: number) => ado.getWorkItem(project, id))
+  ipcMain.handle('ado:workItemsBatch', (_e, project: string, ids: number[]) => ado.getWorkItemsBatch(project, ids))
   ipcMain.handle('ado:pullRequests', (_e, project: string, repo: string) => ado.getPullRequests(project, repo))
   ipcMain.handle('ado:pullRequestDetail', (_e, project: string, repo: string, prId: number) => ado.getPullRequestDetail(project, repo, prId))
   ipcMain.handle('ado:pullRequestFiles', (_e, project: string, repo: string, prId: number) => ado.getPullRequestFiles(project, repo, prId))
@@ -306,8 +307,8 @@ function registerIpcHandlers(
   ipcMain.handle('ado:repositories', (_e, project: string) => ado.getRepositories(project))
   ipcMain.handle('ado:commitsBetween', (_e, project: string, repo: string, source: string, target: string) => ado.getCommitsBetween(project, repo, source, target))
   ipcMain.handle('ado:setVote', (_e, project: string, repo: string, prId: number, vote: number) => ado.setVote(project, repo, prId, vote))
-  ipcMain.handle('ado:completePr', (_e, project: string, repo: string, prId: number, sourceCommitId: string) => ado.completePr(project, repo, prId, sourceCommitId))
-  ipcMain.handle('ado:createPr', (_e, project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean }) => ado.createPullRequest(project, repo, opts))
+  ipcMain.handle('ado:completePr', (_e, project: string, repo: string, prId: number, sourceCommitId: string, deleteSourceBranch?: boolean) => ado.completePr(project, repo, prId, sourceCommitId, deleteSourceBranch))
+  ipcMain.handle('ado:createPr', (_e, project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; deleteSourceBranch?: boolean; forceComplete?: boolean; workItemIds?: number[] }) => ado.createPullRequest(project, repo, opts))
 
   // ─── SQL Server ────────────────────────────────────
   ipcMain.handle('sql:connect', ipc((config: SqlConnectionConfig) => sql.connect(config)))

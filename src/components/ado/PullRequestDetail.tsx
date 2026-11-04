@@ -3,6 +3,7 @@ import { Loader2, GitPullRequest, GitCompare, FileCode, FilePlus, FileMinus, Fil
 import { DiffViewer } from '../editor/DiffViewer'
 import { useToastStore } from '../../store'
 import { AdoPullRequestDetail, AdoPullRequestFile, AdoPullRequestThread } from '../../types/ado'
+import { isLongLivedBranch } from '../../shared/adoPromotion'
 
 interface PullRequestDetailProps {
   project: string
@@ -67,7 +68,8 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
       let ok = false
       if (action === 'complete') {
         if (!window.electronAPI.ado.completePr) throw new Error('API PR non disponibile: riavvia l\'app.')
-        ok = await window.electronAPI.ado.completePr(project, repo, pr.id, pr.sourceCommitId)
+        // completing a promotion PR (develop → qa, qa → main) must never delete the source
+        ok = await window.electronAPI.ado.completePr(project, repo, pr.id, pr.sourceCommitId, !isLongLivedBranch(pr.sourceBranch))
       } else {
         if (!window.electronAPI.ado.setVote) throw new Error('API PR non disponibile: riavvia l\'app.')
         ok = await window.electronAPI.ado.setVote(project, repo, pr.id, action === 'approve' ? 10 : -10)

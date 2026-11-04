@@ -104,6 +104,7 @@ const electronAPI = {
     connect: (org: string, token: string) => ipcRenderer.invoke('ado:connect', org, token),
     workItems: (project: string) => ipcRenderer.invoke('ado:workItems', project),
     workItem: (project: string, id: number) => ipcRenderer.invoke('ado:workItem', project, id),
+    workItemsBatch: (project: string, ids: number[]) => ipcRenderer.invoke('ado:workItemsBatch', project, ids),
     pullRequests: (project: string, repo: string) => ipcRenderer.invoke('ado:pullRequests', project, repo),
     pullRequestDetail: (project: string, repo: string, prId: number) => ipcRenderer.invoke('ado:pullRequestDetail', project, repo, prId),
     pullRequestFiles: (project: string, repo: string, prId: number) => ipcRenderer.invoke('ado:pullRequestFiles', project, repo, prId),
@@ -113,8 +114,8 @@ const electronAPI = {
     repositories: (project: string) => ipcRenderer.invoke('ado:repositories', project),
     commitsBetween: (project: string, repo: string, source: string, target: string) => ipcRenderer.invoke('ado:commitsBetween', project, repo, source, target),
     setVote: (project: string, repo: string, prId: number, vote: number) => ipcRenderer.invoke('ado:setVote', project, repo, prId, vote),
-    completePr: (project: string, repo: string, prId: number, sourceCommitId: string) => ipcRenderer.invoke('ado:completePr', project, repo, prId, sourceCommitId),
-    createPr: (project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; workItemIds?: number[] }) => ipcRenderer.invoke('ado:createPr', project, repo, opts)
+    completePr: (project: string, repo: string, prId: number, sourceCommitId: string, deleteSourceBranch?: boolean) => ipcRenderer.invoke('ado:completePr', project, repo, prId, sourceCommitId, deleteSourceBranch),
+    createPr: (project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; deleteSourceBranch?: boolean; forceComplete?: boolean; workItemIds?: number[] }) => ipcRenderer.invoke('ado:createPr', project, repo, opts)
   },
   sql: {
     connect: (config: SqlConnectionConfig) => ipcRenderer.invoke('sql:connect', config),

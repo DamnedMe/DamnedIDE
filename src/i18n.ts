@@ -11,6 +11,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     worktree: 'Worktree',
     git: 'Git',
     ado: 'Azure DevOps',
+    release: 'Rilascio',
+    Release: 'Rilascio',
     sql: 'SQL Server',
     editor: 'Editor',
     terminal: 'Terminale',

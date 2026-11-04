@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { WorktreeEntry, WorktreeWithStatus } from '../types/worktree'
 import { GitStatus, GitFileStatus, BranchInfo, CommitInfo } from '../types/git'
 import { AdoConnection, AdoWorkItem, AdoPullRequest } from '../types/ado'
+import type { PromotionConfig } from '../shared/adoPromotion'
 import {
   SqlConnection,
   SqlExecutionResult,
@@ -218,6 +219,23 @@ export const useAdoStore = create<AdoState>((set) => ({
   }),
   setWorkItems: (workItems) => set({ workItems }),
   setPullRequests: (pullRequests) => set({ pullRequests })
+}))
+
+const ADO_PROMOTION_KEY = 'damnedide_ado_promotion'
+
+interface PromotionState {
+  /** release promotion settings (FE repository, branch overrides) per promotionConfigKey(org, project) */
+  configs: Record<string, PromotionConfig>
+  setConfig: (key: string, config: PromotionConfig) => void
+}
+
+export const usePromotionStore = create<PromotionState>((set) => ({
+  configs: loadJson<Record<string, PromotionConfig>>(ADO_PROMOTION_KEY, {}),
+  setConfig: (key, config) => set((s) => {
+    const configs = { ...s.configs, [key]: config }
+    saveJson(ADO_PROMOTION_KEY, configs)
+    return { configs }
+  })
 }))
 
 export const useSqlStore = create<SqlState>((set) => ({

@@ -1,3 +1,5 @@
+import { isLongLivedBranch } from '../../../src/shared/adoPromotion'
+
 export interface AdoWorkItem {
   id: number
   title: string
@@ -157,6 +159,34 @@ export class AdoService {
     }
   }
 
+  /** Title/type/state of many work items in one call per 200 ids; missing ids are dropped. */
+  async getWorkItemsBatch(project: string, ids: number[]): Promise<AdoWorkItem[]> {
+    if (!this.baseUrl) throw new Error('Non connesso ad Azure DevOps')
+    const unique = [...new Set(ids.filter(id => Number.isInteger(id) && id > 0))]
+    const out: AdoWorkItem[] = []
+    const fields = 'System.Id,System.Title,System.WorkItemType,System.State,System.AssignedTo'
+    for (let i = 0; i < unique.length; i += 200) {
+      const chunk = unique.slice(i, i + 200).join(',')
+      const url = `${this.baseUrl}/${encodeURIComponent(project)}/_apis/wit/workitems?ids=${chunk}&fields=${fields}&errorPolicy=omit&api-version=7.0`
+      const res = await fetch(url, { headers: this.authHeaders() })
+      if (!res.ok) throw new Error(`ADO API error: ${res.status}`)
+      const data = await res.json()
+      for (const wi of (data.value || []) as ({ id: number; fields?: Record<string, any> } | null)[]) {
+        if (!wi) continue
+        const f = wi.fields || {}
+        out.push({
+          id: wi.id,
+          title: f['System.Title'] || '',
+          type: f['System.WorkItemType'] || '',
+          state: f['System.State'] || '',
+          assignedTo: f['System.AssignedTo']?.displayName || '',
+          url: `${this.baseUrl}/${encodeURIComponent(project)}/_workitems/edit/${wi.id}`
+        })
+      }
+    }
+    return out
+  }
+
   async getPullRequests(project: string, repo: string): Promise<AdoPullRequest[]> {
     if (!this.baseUrl) throw new Error('Non connesso ad Azure DevOps')
 
@@ -303,7 +333,8 @@ export class AdoService {
   }
 
   async getCommitsBetween(project: string, repo: string, sourceRef: string, targetRef: string): Promise<{ commitId: string; message: string; author: string }[]> {
-    const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(sourceRef)}&searchCriteria.itemVersion.versionType=branch&searchCriteria.compareVersion.version=${encodeURIComponent(targetRef)}&searchCriteria.compareVersion.versionType=branch&api-version=7.0`
+    // ponytail: one page of 1000 commits (no paging); a bigger promotion lists only the newest 1000
+    const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(sourceRef)}&searchCriteria.itemVersion.versionType=branch&searchCriteria.compareVersion.version=${encodeURIComponent(targetRef)}&searchCriteria.compareVersion.versionType=branch&searchCriteria.$top=1000&api-version=7.0`
     const res = await fetch(url, { headers: this.authHeaders() })
     if (!res.ok) return []
     const data = await res.json()
@@ -446,8 +477,13 @@ export class AdoService {
     description: string
     autoComplete: boolean
     deleteSourceBranch?: boolean
+    /** false: only arm auto-complete, never self-approve nor complete with a policy bypass (default true) */
+    forceComplete?: boolean
     workItemIds?: number[]
-  }): Promise<{ id: number; title: string; mode: 'autocomplete' | 'completed' | 'open' } | null> {
+  }): Promise<{ id: number; title: string; mode: 'autocomplete' | 'completed' | 'open'; url: string } | null> {
+    // a merge never deletes develop/qa/main unless the caller asks for it explicitly
+    const deleteSourceBranch = opts.deleteSourceBranch ?? !isLongLivedBranch(opts.sourceRef)
+    const forceComplete = opts.forceComplete ?? true
     const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests?api-version=7.0`
     const body: Record<string, unknown> = {
       sourceRefName: `refs/heads/${opts.sourceRef}`,
@@ -473,10 +509,17 @@ export class AdoService {
     const data = await res.json()
     const prId = data.pullRequestId as number
     const sourceCommitId = (data.lastMergeSourceCommit?.commitId as string) || ''
+    const prUrl = `${this.baseUrl}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repo)}/pullrequest/${prId}`
 
     if (opts.autoComplete && prId) {
+      const armOpts = { title: opts.title, deleteSourceBranch }
       // 1) arm auto-complete with a dedicated PATCH and verify it actually took
-      let armed = await this.armAutoComplete(project, repo, prId, opts)
+      let armed = await this.armAutoComplete(project, repo, prId, armOpts)
+      if (!armed && !forceComplete) {
+        // promotion PRs: branch policies decide, the PR just stays open
+        console.error('[ado] createPr: auto-complete non armato, PR lasciata aperta (forceComplete=false)')
+        return { id: prId, title: data.title as string || '', mode: 'open', url: prUrl }
+      }
       if (!armed) {
         // ADO refuses auto-complete when the PR has no required reviewers/policies:
         // add the current user as a REQUIRED reviewer on this PR, then retry arming.
@@ -484,22 +527,22 @@ export class AdoService {
         if (me) {
           const added = await this.addRequiredReviewer(project, repo, prId, me.id)
           console.error(`[ado] createPr: reviewer richiesto aggiunto e approvato=${added} per armare l'auto-complete`)
-          if (added) armed = await this.armAutoComplete(project, repo, prId, opts)
+          if (added) armed = await this.armAutoComplete(project, repo, prId, armOpts)
         }
       }
       if (armed) {
-        return { id: prId, title: data.title as string || '', mode: 'autocomplete' }
+        return { id: prId, title: data.title as string || '', mode: 'autocomplete', url: prUrl }
       }
       console.error('[ado] createPr: auto-complete non armabile, completo direttamente')
       // 2) last resort: complete directly so develop gets the merge
-      const completed = await this.completePrDirect(project, repo, prId, sourceCommitId, opts.deleteSourceBranch ?? true)
+      const completed = await this.completePrDirect(project, repo, prId, sourceCommitId, deleteSourceBranch)
       if (completed) {
-        return { id: prId, title: data.title as string || '', mode: 'completed' }
+        return { id: prId, title: data.title as string || '', mode: 'completed', url: prUrl }
       }
       console.error('[ado] createPr: complete diretta fallita')
-      return { id: prId, title: data.title as string || '', mode: 'open' }
+      return { id: prId, title: data.title as string || '', mode: 'open', url: prUrl }
     }
 
-    return { id: prId, title: data.title as string || '', mode: 'open' }
+    return { id: prId, title: data.title as string || '', mode: 'open', url: prUrl }
   }
 }

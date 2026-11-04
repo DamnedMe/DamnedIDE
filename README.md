@@ -70,6 +70,7 @@
 | 🔗 **PBI / Bug / Task** | ricerca e dettaglio dei work item |
 | 🔀 **Pull Request** | lista, dettaglio, **approve/reject/complete**, creazione con auto-complete opzionale e link ai work item |
 | 🏷️ **Work item nei commit** | i commit del flusso worktree riportano `#id` → associazioni automatiche |
+| 🚀 **Rilascio develop → qa → prod** | menu *Rilascio*: PR di promozione per BE, FE o entrambi, con i work item dei commit collegati, controllo delle PR già attive, conferma per la produzione; i branch develop/qa non vengono mai cancellati e le policy non vengono bypassate |
 
 </details>
 

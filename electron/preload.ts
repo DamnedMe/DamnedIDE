@@ -234,6 +234,9 @@ const electronAPI = {
     showItemInFolder: (path: string) => ipcRenderer.invoke('shell:showItemInFolder', path),
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
   },
+  gitTree: {
+    open: (repoPath: string, saved?: string) => ipcRenderer.invoke('gittree:open', repoPath, saved)
+  },
   app: {
     initialTarget: (): Promise<{ path: string; isDirectory: boolean } | null> => ipcRenderer.invoke('app:initialTarget'),
     onOpenPath: (cb: (target: { path: string; isDirectory: boolean }) => void) => {

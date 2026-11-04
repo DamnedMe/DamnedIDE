@@ -422,6 +422,8 @@ export interface AppSettings {
   fontLigatures: boolean
   navKeybindings: 'vs-studio' | 'vs-code'
   accentColor: string
+  // GitTree executable picked by the user or last detected ('' = detect)
+  gitTreePath: string
   themeColors: {
     dark: ThemeColorConfig
     light: ThemeColorConfig
@@ -469,6 +471,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   fontLigatures: true,
   navKeybindings: 'vs-studio',
   accentColor: '#00aaff',
+  gitTreePath: '',
   themeColors: {
     dark: { ...DEFAULT_DARK_COLORS },
     light: { ...DEFAULT_LIGHT_COLORS }

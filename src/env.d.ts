@@ -280,6 +280,9 @@ interface Window {
       showItemInFolder: (path: string) => Promise<void>
       openExternal: (url: string) => Promise<void>
     }
+    gitTree: {
+      open: (repoPath: string, saved?: string) => Promise<{ ok: boolean; error?: string; notFound?: boolean; path?: string; downloadUrl?: string }>
+    }
     app: {
       initialTarget: () => Promise<{ path: string; isDirectory: boolean } | null>
       onOpenPath: (cb: (target: { path: string; isDirectory: boolean }) => void) => () => void

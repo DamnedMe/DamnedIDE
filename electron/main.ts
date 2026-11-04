@@ -19,6 +19,7 @@ import { AgentService, AgentSendRequest, AgentProviderId } from './services/ai/a
 import { UpdateService } from './services/update/update.service'
 import { watchRoot, unwatchRoot, closeAllWatchers } from './services/watch/watch.service'
 import { openTargetFromArgv, resolveOpenTarget, type OpenTarget } from './services/open/open-target'
+import { findGitTree, launchGitTree, GITTREE_DOWNLOAD_URL } from './services/gitclient/gittree'
 import { buildXlsx } from './services/export/xlsx.service'
 import { RemoteService } from './services/remote/remote.service'
 import { loadSharedStorage, setSharedItem } from './services/storage/shared-storage'
@@ -444,6 +445,13 @@ function registerIpcHandlers(
 
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {
     await shell.openExternal(url)
+  })
+
+  // GitTree: external git client, opened on a working-tree root via its deep link
+  ipcMain.handle('gittree:open', async (_e, repoPath: string, saved?: string) => {
+    const exe = findGitTree(saved)
+    if (!exe) return { ok: false, notFound: true, downloadUrl: GITTREE_DOWNLOAD_URL }
+    return { ...(await launchGitTree(exe, repoPath)), path: exe }
   })
 
   ipcMain.on('clipboard:write', (_e, text: string) => {

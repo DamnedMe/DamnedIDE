@@ -10,6 +10,11 @@ export const dict: Record<Lang, Record<string, string>> = {
   it: {
     worktree: 'Worktree',
     git: 'Git',
+    'GitTree not found': 'GitTree non trovato',
+    'the Git entry opens the repository in GitTree, which is not installed in the usual locations. Download it, or locate it if it is installed elsewhere: the choice is remembered.': 'la voce Git apre il repository in GitTree, che non è installato nei percorsi abituali. Scaricalo, oppure individualo se è installato altrove: la scelta viene ricordata.',
+    'download GitTree': 'scarica GitTree',
+    'locate GitTree…': 'individua GitTree…',
+    'select the GitTree executable': "seleziona l'eseguibile di GitTree",
     ado: 'Azure DevOps',
     release: 'Rilascio',
     Release: 'Rilascio',

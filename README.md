@@ -163,7 +163,8 @@ npm run package
 
 - `develop` e' il ramo di lavoro quotidiano.
 - Le modifiche arrivano in `main` tramite Pull Request da `develop`.
-- Ogni aggiornamento di `main` incrementa automaticamente la versione patch, crea il tag GitHub e pubblica gli installer Windows, Linux e macOS.
+- Ogni aggiornamento di `main` incrementa automaticamente la versione patch, crea il tag GitHub e pubblica gli installer Windows, Linux e macOS. Se la build macOS fallisce (ad esempio per mancanza di runner macOS su GitHub), la release esce comunque con Windows e Linux e macOS arriva con la release successiva.
+- Una release rimasta in bozza si ricompila da *Actions → Release → Run workflow* con `release_tag` (es. `v0.0.22`) e `source_ref` uguale al tag; una release già pubblicata non si può ricompilare.
 - L'applicazione installata controlla gli aggiornamenti all'avvio e periodicamente; su Windows, macOS e AppImage scarica la nuova versione in background e propone il riavvio per installarla.
 
 Gli aggiornamenti OTA richiedono una versione installata tramite un installer prodotto da una GitHub Release. Il pacchetto macOS viene pubblicato anche in formato `zip`, usato da `electron-updater` per l'aggiornamento automatico.

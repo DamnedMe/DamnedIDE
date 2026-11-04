@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronRight, Folder, FolderOpen, Loader2, ChevronsUpDown, ChevronsDownUp, Trash2, FolderPlus, FilePlus, ExternalLink, Copy } from 'lucide-react'
 import { FileTypeIcon } from '../../utils/file-icon'
 import { joinPath, dirnameOf, samePath } from '../../utils/paths'
+import { compileFileFilter } from '../../utils/file-filter'
+import type { FileFilter } from '../../utils/file-filter'
 
 interface TreeNode {
   name: string
@@ -11,13 +13,6 @@ interface TreeNode {
   children?: TreeNode[]
   isLoading?: boolean
   loaded?: boolean
-}
-
-interface FileFilter {
-  query: string
-  mode: 'startsWith' | 'like' | 'regex'
-  caseSensitive: boolean
-  spaceSensitive: boolean
 }
 
 interface FileTreeProps {
@@ -35,22 +30,6 @@ interface CachedFileList {
 
 const CACHE_TTL = 60_000
 const MAX_DISPLAY = 1000
-
-function matchName(name: string, f: FileFilter): boolean {
-  const norm = (s: string) => f.spaceSensitive ? s : s.replace(/\s+/g, '')
-  const q = norm(f.caseSensitive ? f.query : f.query.toLowerCase())
-  const t = norm(f.caseSensitive ? name : name.toLowerCase())
-  if (!q) return true
-  try {
-    switch (f.mode) {
-      case 'startsWith': return t.startsWith(q)
-      case 'regex': return new RegExp(q).test(t)
-      default: return t.includes(q)
-    }
-  } catch {
-    return t.includes(q)
-  }
-}
 
 export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileTreeProps) {
   const [tree, setTree] = useState<TreeNode | null>(null)
@@ -76,8 +55,8 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
 
     const applyFilter = (entries: { path: string; name: string }[]) => {
       if (cancelled) return
-      const f = filter
-      const matched = entries.filter(e => matchName(e.name, f))
+      const match = compileFileFilter(filter ?? null)
+      const matched = entries.filter(e => match(e.name))
       setTotalMatches(matched.length)
       const shown = matched.slice(0, MAX_DISPLAY)
       setFilteredTree(buildVirtualTree(rootPath, shown.map(e => e.path)))

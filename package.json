@@ -22,6 +22,7 @@
     "test:roslyn-nav": "node --experimental-strip-types scripts/roslyn-nav.check.ts",
     "test:git-discard": "node --experimental-strip-types scripts/git-discard.check.ts",
     "test:git-porcelain": "node --experimental-strip-types scripts/git-porcelain.check.ts",
+    "test:file-filter": "node --experimental-strip-types scripts/file-filter.check.ts",
     "test:worktree-remove": "node --experimental-strip-types scripts/worktree-remove.check.ts",
     "test:worktree-add": "node --experimental-strip-types scripts/worktree-add.check.ts",
     "test:worktree-stack": "node --experimental-strip-types scripts/worktree-stack.check.ts",

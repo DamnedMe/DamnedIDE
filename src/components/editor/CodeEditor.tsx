@@ -1775,8 +1775,9 @@ function LeftTab(props: { active: boolean; onClick: () => void; title: string; c
   )
 }
 
-export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensitive, onCaseToggle, spaceSensitive, onSpaceToggle }: {
+export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensitive, onCaseToggle, spaceSensitive, onSpaceToggle, placeholder = 'filter files...' }: {
   value: string
+  placeholder?: string
   onChange: (v: string) => void
   mode: 'startsWith' | 'like' | 'regex'
   onModeChange: (m: 'startsWith' | 'like' | 'regex') => void
@@ -1790,7 +1791,7 @@ export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensiti
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="filter files..."
+        placeholder={placeholder}
         spellCheck={false}
         style={{
           width: '100%', padding: '3px 6px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',

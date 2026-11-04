@@ -48,6 +48,17 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
     if (monacoRef.current) applyEditorTheme(monacoRef.current)
   }, [theme, themeColors])
 
+  // @monaco-editor/react disposes the models before the diff widget, so Monaco throws
+  // "TextModel got disposed before DiffEditorWidget model got reset" on every file switch:
+  // detach them first (this parent cleanup runs before the library's), then dispose.
+  useEffect(() => () => {
+    const d = diffEditorRef.current
+    const m = d?.getModel()
+    d?.setModel(null)
+    m?.original.dispose()
+    m?.modified.dispose()
+  }, [])
+
   const updateFontSize = (f: number) => {
     const d = diffEditorRef.current
     d?.getModifiedEditor()?.updateOptions({ fontSize: f })

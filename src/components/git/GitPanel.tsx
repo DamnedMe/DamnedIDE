@@ -5,7 +5,7 @@ import { StagingArea } from './StagingArea'
 import { CommitDialog } from './CommitDialog'
 import { BranchList } from './BranchList'
 import { useGitStore } from '../../store'
-import { FolderOpen, RefreshCw } from 'lucide-react'
+import { FolderOpen, RefreshCw } from '@/components/icons'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { GitFileStatus } from '../../types/git'
 

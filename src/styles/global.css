@@ -102,11 +102,23 @@ a:hover { text-decoration: underline; }
   background: var(--bg-hover) !important;
 }
 
-/* Global icon scale (settings → icon size): every lucide icon keeps its relative
-   size but scales uniformly through the --icon-zoom variable. */
-.lucide {
+/* Global icon scale (settings → icon size): every app icon (src/components/icons)
+   keeps its relative size but scales uniformly through the --icon-zoom variable. */
+.app-icon {
   zoom: var(--icon-zoom, 1);
 }
+
+/* Ionicons outlines draw a 32px stroke on a 512 grid (chevrons/arrows 48px, link 36px).
+   The strokeWidth prop sets --icon-stroke (2 → 32px); other widths keep their ratio. */
+.app-icon [stroke-width] { stroke-width: var(--icon-stroke, 32px); }
+.app-icon [stroke-width^="28"] { stroke-width: calc(var(--icon-stroke, 32px) * 0.875); }
+.app-icon [stroke-width^="36"] { stroke-width: calc(var(--icon-stroke, 32px) * 1.125); }
+.app-icon [stroke-width^="40"] { stroke-width: calc(var(--icon-stroke, 32px) * 1.25); }
+.app-icon [stroke-width^="48"] { stroke-width: calc(var(--icon-stroke, 32px) * 1.5); }
+.app-icon [stroke-width^="60"] { stroke-width: calc(var(--icon-stroke, 32px) * 1.875); }
+
+/* fill="..." on an icon fills its outlined shapes too (pinned, filtered, dirty dot). */
+.app-icon-filled [fill="none"] { fill: inherit; }
 
 /* Rendered Markdown preview */
 .md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 {

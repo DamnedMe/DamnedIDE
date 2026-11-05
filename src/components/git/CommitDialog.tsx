@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { X } from '@/components/icons'
 
 interface CommitDialogProps {
   onCommit: (message: string) => void

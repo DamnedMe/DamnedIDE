@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AdoWorkItem } from '../../types/ado'
-import { Bug, Bookmark, Shield, Wrench, Search, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Bug, Bookmark, Shield, Wrench, Search, ArrowUpDown, ChevronLeft, ChevronRight } from '@/components/icons'
 
 interface WorkItemListProps {
   workItems: AdoWorkItem[]

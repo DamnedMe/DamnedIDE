@@ -1,6 +1,6 @@
 import { useRef, forwardRef, useImperativeHandle, useEffect, useState } from 'react'
 import { DiffEditor, DiffOnMount } from '@monaco-editor/react'
-import { Columns2, Rows3, X, Maximize2, Eye } from 'lucide-react'
+import { Columns2, Rows3, X, Maximize2, Eye } from '@/components/icons'
 import { ZoomControls } from './CodeEditor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useUIStore, useSettingsStore, useDiffStore } from '../../store'

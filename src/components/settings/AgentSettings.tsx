@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Plus, Trash2, Loader2, Check, AlertCircle, RefreshCw, ExternalLink, TerminalSquare, X } from 'lucide-react'
+import { Bot, Plus, Trash2, Loader2, Check, AlertCircle, RefreshCw, ExternalLink, TerminalSquare, X } from '@/components/icons'
 import { Modal } from '../layout/Modal'
 import { useAgentConfigStore, useClaudeStore, useToastStore, useTerminalStore, ALL_AGENT_PROVIDERS } from '../../store'
 import { ClaudeSettings } from '../mcp/ClaudeSettings'

@@ -1,4 +1,4 @@
-import { Terminal, ChevronDown } from 'lucide-react'
+import { Terminal, ChevronDown } from '@/components/icons'
 import { TerminalPanel } from './TerminalPanel'
 import { AiChatPanel } from './AiChatPanel'
 import { useTerminalStore } from '../../store'

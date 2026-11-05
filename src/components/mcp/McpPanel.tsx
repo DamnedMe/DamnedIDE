@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plug, PlugZap, Plus, X, Trash2, Loader2, ChevronDown, ChevronUp, TerminalSquare, Pencil } from 'lucide-react'
+import { Plug, PlugZap, Plus, X, Trash2, Loader2, ChevronDown, ChevronUp, TerminalSquare, Pencil } from '@/components/icons'
 import { useMcpStore, MCP_PRESETS } from '../../store'
 
 const PRESET_ICONS: Record<string, React.ReactNode> = {

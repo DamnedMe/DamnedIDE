@@ -1,4 +1,4 @@
-import { FileSearch, FileCode, X } from 'lucide-react'
+import { FileSearch, FileCode, X } from '@/components/icons'
 
 export interface ReferenceHit {
   file: string

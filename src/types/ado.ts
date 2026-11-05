@@ -42,11 +42,3 @@ export interface AdoPullRequestThread {
   active: boolean
   comments: { author: string; content: string }[]
 }
-
-export interface AdoConnection {
-  organization: string
-  project: string
-  repository: string
-  token: string
-  isConnected: boolean
-}

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, dialog, clipboard, nativeImage } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, dialog, clipboard, nativeImage, safeStorage, Notification } from 'electron'
 import { join, normalize, extname } from 'path'
 import { pathToFileURL } from 'url'
 import { readdir, readFile, writeFile, stat, rm, mkdir } from 'fs/promises'
@@ -7,7 +7,9 @@ import { GitService } from './services/git/git.service'
 import { WorktreeService, cancelScheduledDeletes } from './services/git/worktree.service'
 import { closeExplorerWindowsAt } from './services/process/windows-handles'
 import { DiffService } from './services/git/diff.service'
-import { AdoService } from './services/ado/ado.service'
+import { AdoService, fetchRepositories } from './services/ado/ado.service'
+import { AdoSettingsStore } from './services/ado/ado-settings.store'
+import { PromotionChainService } from './services/ado/promotion-chain.service'
 import { SqlService, SqlConnectionConfig, buildConnectionString, parseConnectionString } from './services/sql/sql.service'
 import { SqlWorkspaceDocument, SqlWorkspaceService } from './services/sql/sql-workspace.service'
 import { RoslynService } from './services/roslyn/roslyn.service'
@@ -24,6 +26,9 @@ import { buildXlsx } from './services/export/xlsx.service'
 import { RemoteService } from './services/remote/remote.service'
 import { loadSharedStorage, setSharedItem } from './services/storage/shared-storage'
 import type { RemoteSqlConnection, RemoteScope, WorkspaceSnapshot } from '../src/shared/remote/protocol'
+import { ADO_MISSING_PAT, type AdoConnectionInput, type AdoLegacyConnection, type AdoRepoList, type AdoRepoRef } from '../src/shared/adoSettings'
+import { promotionConfigKey, type PromotionConfig } from '../src/shared/adoPromotion'
+import { chainConnection, type ChainStartInput } from '../src/shared/adoChain'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
@@ -50,7 +55,7 @@ function ipc<TArgs extends unknown[], TResult>(
       return await fn(...args)
     } catch (err) {
       const msg = (err as Error)?.message || String(err)
-      console.error(`[sql] ${msg}`)
+      console.error(`[ipc] ${msg}`)
       const clean = new Error(msg)
       ;(clean as Error & { stack?: string | undefined }).stack = undefined
       throw clean
@@ -126,6 +131,138 @@ function registerSharedStorageIpc(): void {
   })
 }
 
+// ─── Azure DevOps settings (services/ado/ado-settings.store.ts) ──────────────
+// Connections, repository per folder and release BE/FE live in userData, read
+// fresh on every call (several instances share them). PATs are encrypted with
+// safeStorage and only used here: the renderer picks a connection by id.
+function registerAdoSettingsIpc(ado: AdoService): AdoSettingsStore {
+  const store = new AdoSettingsStore(app.getPath('userData'), {
+    available: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (plain) => safeStorage.encryptString(plain),
+    decrypt: (data) => safeStorage.decryptString(data)
+  })
+  // repository catalog per connection; the key changes with org/project, so an
+  // edit made by another instance is never served from a stale entry
+  const catalog = new Map<string, Promise<AdoRepoList>>()
+  const catalogKey = (c: { id: string; organization: string; project: string }) =>
+    `${c.id}|${promotionConfigKey(c.organization, c.project)}`
+  const dropCatalog = (id: string) => {
+    for (const key of [...catalog.keys()]) if (key.startsWith(`${id}|`)) catalog.delete(key)
+  }
+  const repositoriesOf = (c: { id: string; organization: string; project: string }): Promise<AdoRepoList> => {
+    const key = catalogKey(c)
+    const cached = catalog.get(key)
+    if (cached) return cached
+    const token = store.token(c.id)
+    if (!token) return Promise.resolve({ ok: false, error: ADO_MISSING_PAT })
+    const pending: Promise<AdoRepoList> = fetchRepositories(c.organization, c.project, token).then(list => {
+      // only answers are cached: a network or PAT error is retried on the next call
+      if (!list.ok && catalog.get(key) === pending) catalog.delete(key)
+      return list
+    })
+    catalog.set(key, pending)
+    return pending
+  }
+  const changed = () => sendToRenderer('adoSettings:changed', null)
+
+  ipcMain.handle('adoSettings:get', ipc(() => store.view()))
+  // saved only when Azure DevOps answers with this org/project/PAT
+  ipcMain.handle('adoSettings:saveConnection', ipc(async (input: AdoConnectionInput) => {
+    const organization = String(input?.organization ?? '').trim()
+    const project = String(input?.project ?? '').trim()
+    if (!organization || !project) throw new Error('organization e project sono obbligatori')
+    const typed = String(input?.token ?? '').trim()
+    const token = typed || (input?.id ? store.token(input.id) : null)
+    if (!token) throw new Error(input?.id ? ADO_MISSING_PAT : 'il PAT è obbligatorio per una nuova connessione')
+    const list = await fetchRepositories(organization, project, token)
+    if (!list.ok) throw new Error(list.error)
+    const connection = store.saveConnection({ id: input?.id, organization, project, token: typed || undefined })
+    dropCatalog(connection.id)
+    catalog.set(catalogKey(connection), Promise.resolve(list))
+    changed()
+    return { connection, repos: list.repos }
+  }))
+  ipcMain.handle('adoSettings:test', ipc(async (id: string) => {
+    const c = store.read().connections.find(x => x.id === id)
+    if (!c) return { ok: false, error: 'connessione non trovata' } as AdoRepoList
+    dropCatalog(id)
+    return repositoriesOf(c)
+  }))
+  ipcMain.handle('adoSettings:removeConnection', ipc((id: string) => {
+    store.removeConnection(id)
+    dropCatalog(id)
+    changed()
+  }))
+  ipcMain.handle('adoSettings:setFolder', ipc((key: string, ref: AdoRepoRef | null) => {
+    store.setFolder(key, ref)
+    changed()
+  }))
+  ipcMain.handle('adoSettings:setRelease', ipc((key: string, config: PromotionConfig | null) => {
+    store.setRelease(key, config)
+    changed()
+  }))
+  ipcMain.handle('adoSettings:catalog', ipc(async (force?: boolean) => {
+    if (force) catalog.clear()
+    const connections = store.read().connections
+    const lists = await Promise.all(connections.map(c => repositoriesOf(c)))
+    const out: Record<string, AdoRepoList> = {}
+    connections.forEach((c, i) => { out[c.id] = lists[i] })
+    return out
+  }))
+  ipcMain.handle('adoSettings:importLegacy', ipc((legacy: Record<string, AdoLegacyConnection>, promotion: Record<string, PromotionConfig>) => {
+    const imported = store.importLegacy(legacy, promotion)
+    if (imported) changed()
+    return imported
+  }))
+
+  // the existing ado:* calls follow the connection picked here (last caller wins, as before)
+  ipcMain.handle('ado:use', ipc((connectionId: string) => {
+    const c = store.read().connections.find(x => x.id === connectionId)
+    const token = c ? store.token(c.id) : null
+    if (!c || !token) return false
+    ado.use(c.organization, token)
+    return true
+  }))
+  return store
+}
+
+// ─── Release chains develop → qa → prod (services/ado/promotion-chain.service.ts) ───
+// Every instance lists, starts and cancels the chains (userData/ado-chains.json);
+// only the one holding userData/ado-chains.lock polls them, every 30 s, with its
+// own AdoService per connection (never the panels' singleton above).
+function registerAdoChainIpc(store: AdoSettingsStore): PromotionChainService {
+  const chains = new PromotionChainService({
+    dir: app.getPath('userData'),
+    credentials: (chain) => {
+      const c = chainConnection(chain, store.read().connections)
+      if (!c) return `connessione ${chain.organization}/${chain.project} non trovata: aggiungila in Impostazioni › Azure DevOps › Connessioni`
+      const token = store.token(c.id)
+      return token ? { organization: c.organization, token } : ADO_MISSING_PAT
+    },
+    changed: () => sendToRenderer('adoChain:changed', null),
+    notify: (title, body) => {
+      try {
+        if (Notification.isSupported()) new Notification({ title, body, icon: appIcon() }).show()
+      } catch (err) {
+        console.error('[ado-chain] notification failed:', (err as Error).message)
+      }
+    }
+  })
+  ipcMain.handle('adoChain:list', ipc(() => chains.list()))
+  ipcMain.handle('adoChain:start', ipc((input: ChainStartInput) => {
+    const c = store.read().connections.find(x => x.id === input?.connectionId)
+    if (!c) throw new Error('connessione Azure DevOps non trovata: è stata rimossa nel frattempo')
+    if (!store.token(c.id)) throw new Error(ADO_MISSING_PAT)
+    return chains.start(input, c)
+  }))
+  ipcMain.handle('adoChain:cancel', ipc((id: string) => chains.cancel(id)))
+  ipcMain.handle('adoChain:remove', ipc((id: string) => chains.remove(id)))
+  chains.startPolling()
+  // the next instance takes the polling over
+  app.on('will-quit', () => chains.stop())
+  return chains
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -190,11 +327,18 @@ app.whenReady().then(() => {
   registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService, claudeService, agentService)
   registerRemoteIpc(remoteService)
   registerSharedStorageIpc()
+  const chains = registerAdoChainIpc(registerAdoSettingsIpc(adoService))
   const fromArgv = argvOpenTarget(process.argv)
   if (fromArgv) pendingOpenTarget = fromArgv
   createWindow()
   // OTA: automatic checks + the manual "verifica aggiornamenti" in settings
-  new UpdateService(() => mainWindow)
+  const updater = new UpdateService(() => mainWindow)
+  // Windows shutdown / restart / logoff: before-quit and will-quit are not emitted, so the
+  // one-owner locks (updater.lock, ado-chains.lock) are freed here for the next start
+  mainWindow?.on('session-end', () => {
+    chains.stop()
+    updater.releaseLock()
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -300,8 +444,7 @@ function registerIpcHandlers(
   ipcMain.handle('diff:branch', (_e, repoPath: string, branchA: string, branchB: string) =>
     diff.branchDiff(repoPath, branchA, branchB))
 
-  // ─── Azure DevOps ──────────────────────────────────
-  ipcMain.handle('ado:connect', (_e, org: string, token: string) => ado.connect(org, token))
+  // ─── Azure DevOps (ado:use, which picks the connection, is in registerAdoSettingsIpc) ───
   ipcMain.handle('ado:workItems', (_e, project: string) => ado.getWorkItems(project))
   ipcMain.handle('ado:workItem', (_e, project: string, id: number) => ado.getWorkItem(project, id))
   ipcMain.handle('ado:workItemsBatch', (_e, project: string, ids: number[]) => ado.getWorkItemsBatch(project, ids))
@@ -312,7 +455,8 @@ function registerIpcHandlers(
   ipcMain.handle('ado:pullRequestThreads', (_e, project: string, repo: string, prId: number) => ado.getPullRequestThreads(project, repo, prId))
   ipcMain.handle('ado:branches', (_e, project: string, repo: string) => ado.getBranches(project, repo))
   ipcMain.handle('ado:repositories', (_e, project: string) => ado.getRepositories(project))
-  ipcMain.handle('ado:commitsBetween', (_e, project: string, repo: string, source: string, target: string) => ado.getCommitsBetween(project, repo, source, target))
+  // strict: an Azure DevOps error throws instead of reading as "no commit" (release chain preview)
+  ipcMain.handle('ado:commitsBetween', (_e, project: string, repo: string, source: string, target: string, strict?: boolean) => ado.getCommitsBetween(project, repo, source, target, { strict: !!strict }))
   ipcMain.handle('ado:setVote', (_e, project: string, repo: string, prId: number, vote: number) => ado.setVote(project, repo, prId, vote))
   ipcMain.handle('ado:completePr', (_e, project: string, repo: string, prId: number, sourceCommitId: string, deleteSourceBranch?: boolean) => ado.completePr(project, repo, prId, sourceCommitId, deleteSourceBranch))
   ipcMain.handle('ado:createPr', (_e, project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; deleteSourceBranch?: boolean; forceComplete?: boolean; workItemIds?: number[] }) => ado.createPullRequest(project, repo, opts))

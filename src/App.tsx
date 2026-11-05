@@ -15,7 +15,8 @@ import { TooltipHost } from './components/layout/TooltipHost'
 import { RecentReposDialog } from './components/layout/RecentReposDialog'
 import { RecentFoldersMenu } from './components/layout/RecentFoldersMenu'
 import { GitTreeDialog } from './components/git/GitTreeDialog'
-import { useUIStore, useGitStore, useSettingsStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore } from './store'
+import { X } from './components/icons'
+import { useUIStore, useGitStore, useSettingsStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore, useSettingsNavStore, migrateLegacyAdoStorage } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
 import { basenameOf } from './utils/paths'
@@ -59,7 +60,6 @@ export default function App() {
   const addRepo = useRecentReposStore(s => s.addRepo)
   const clearRepos = useRecentReposStore(s => s.clearRepos)
   const showToast = useToastStore(s => s.showToast)
-  const [updateReady, setUpdateReady] = useState(false)
 
   const detachedPanel = useMemo<PanelId | null>(() => {
     const match = window.location.hash.match(/^#\/panel\/(\w+)/)
@@ -96,6 +96,12 @@ export default function App() {
     if (useRecentReposStore.getState().repos.length > 0) setShowRecent(true)
   }, [])
 
+  // One time: the old localStorage ADO configuration (plaintext PATs) moves to
+  // the main-process settings.
+  useEffect(() => {
+    void migrateLegacyAdoStorage()
+  }, [])
+
   // Reconnect persisted SQL connections on startup so they are available instantly.
   useEffect(() => {
     const conns = useSqlStore.getState().connections
@@ -114,11 +120,6 @@ export default function App() {
     return () => { cancelled = true }
   }, [])
 
-  // Listen for a downloaded update: offer to restart and install.
-  useEffect(() => {
-    const unsub = window.electronAPI.updater.onDownloaded(() => setUpdateReady(true))
-    return unsub
-  }, [])
 
   const handleRepoSelected = (path: string) => {
     addRepo(path)
@@ -278,7 +279,7 @@ export default function App() {
     else { setMode('ai'); setOpen(true) }
   }
 
-  // Global icon scale (lucide) and IDE text scale from settings. The font size
+  // Global icon scale (.app-icon zoom) and IDE text scale from settings. The font size
   // scales ONLY the IDE UI text (inline font sizes use var(--ui-text-scale) via
   // calc); source editors (Monaco), icons and layout are not affected.
   useEffect(() => {
@@ -316,6 +317,17 @@ export default function App() {
     })
   }
 
+  // openSettings(page) from any panel: same path as the gear (the gear then goes back)
+  const settingsRequest = useSettingsNavStore(s => s.request)
+  useEffect(() => {
+    if (settingsRequest === 0) return
+    setActivePanel(prev => {
+      if (prev === 'settings') return prev
+      lastPanelRef.current = prev
+      return 'settings'
+    })
+  }, [settingsRequest])
+
   const renderPanel = (panel: PanelId) => {
     switch (panel) {
       case 'worktree':
@@ -326,7 +338,8 @@ export default function App() {
         // keyed: switching repository starts from that repository's connection
         return <AdoPanel key={repoPath ?? ''} repoPath={repoPath} />
       case 'release':
-        return <PromotionPanel key={repoPath ?? ''} repoPath={repoPath} onConfigureAdo={() => setActivePanel('ado')} />
+        // not configured / repository unclear: its chooser opens Settings › Azure DevOps itself
+        return <PromotionPanel key={repoPath ?? ''} repoPath={repoPath} />
       case 'sql':
         return <SqlPanel />
       case 'editor':
@@ -334,7 +347,7 @@ export default function App() {
       case 'terminal':
         return <TerminalPanel repoPath={repoPath} />
       case 'settings':
-        return <SettingsPanel />
+        return <SettingsPanel repoPath={repoPath} />
     }
   }
 
@@ -388,34 +401,7 @@ export default function App() {
       <ToastHost />
       <TooltipHost />
 
-      {updateReady && (
-        <div style={{
-          position: 'fixed', bottom: '28px', right: '16px', zIndex: 300,
-          display: 'flex', alignItems: 'center', gap: '10px',
-          padding: '10px 14px', background: 'var(--bg-card)',
-          border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-md)',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5)', fontFamily: 'var(--font-mono)',
-          fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)'
-        }}>
-          <span>🔄 nuova versione scaricata</span>
-          <button onClick={async () => {
-            const res = await window.electronAPI.updater.install().catch(() => null)
-            if (res?.ok) {
-              setUpdateReady(false)
-              showToast("aggiornamento installato: riavvia l'IDE")
-            } else if (res?.error) {
-              showToast(res.error, 'error')
-            }
-          }}
-            style={{
-              padding: '5px 12px', background: 'var(--accent-color)', color: 'var(--text-inverse)',
-              border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-              fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
-            }}>
-            installa aggiornamento
-          </button>
-        </div>
-      )}
+      <UpdateBanner />
 
       {showRecent && !detachedPanel && (
         <RecentReposDialog
@@ -445,5 +431,112 @@ export default function App() {
         />
       )}
     </AppShell>
+  )
+}
+
+const bannerText = (n: number) => `calc(${n}px * var(--ui-text-scale, 1))`
+
+/**
+ * Bottom-right update banner, driven by the main-process update state: a newer
+ * version is known → one click "installa la versione X" (download if needed +
+ * install); managed Linux installed → "riavvia ora". Details (errors, log) are in
+ * Settings › Aggiornamenti. Nothing in an instance that does not own the updater.
+ */
+function UpdateBanner() {
+  const showToast = useToastStore(s => s.showToast)
+  const [st, setSt] = useState<UpdateState | null>(null)
+  const [busy, setBusy] = useState(false)
+  // closed for this version / this pending restart
+  const [dismissed, setDismissed] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.electronAPI.updater.state().then(setSt).catch(() => { /* main not ready */ })
+    return window.electronAPI.updater.onState(setSt)
+  }, [])
+
+  if (!st || !st.packaged || st.ownerElsewhere) return null
+  const restartFor = st.pendingRestart
+  const installable = !!st.version && !(st.managed && st.selfInstall === false)
+    && (st.status === 'available' || st.status === 'downloading' || st.status === 'downloaded' || st.status === 'installing')
+  if (!restartFor && !installable) return null
+  const key = restartFor ? `restart:${restartFor}` : `install:${st.version}`
+  if (dismissed === key) return null
+
+  const installing = busy || st.status === 'installing'
+  const install = async () => {
+    setBusy(true)
+    try {
+      const res = await window.electronAPI.updater.installLatest()
+      if (!res.ok) showToast(`${res.error || 'installazione aggiornamento fallita'} — dettagli in Impostazioni › Aggiornamenti`, 'error')
+      else if (res.upToDate) showToast('sei già alla versione più recente')
+    } catch (e) {
+      showToast((e as Error).message || 'installazione aggiornamento fallita', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const restart = () => {
+    window.electronAPI.updater.restart().catch(e => showToast((e as Error).message || 'riavvio non riuscito', 'error'))
+  }
+
+  const message = restartFor ? `versione ${restartFor} installata`
+    : installing ? `installazione della ${st.version} in corso${st.managed ? ' (pkexec chiede la password)' : ''}…`
+      : st.status === 'downloading' ? `nuova versione ${st.version} — scaricamento ${st.progress ?? 0}%`
+        : st.status === 'downloaded' ? `nuova versione ${st.version} scaricata`
+          : `nuova versione ${st.version} disponibile`
+  const buttonStyle = {
+    padding: '5px 12px', background: 'var(--accent-color)', color: 'var(--text-inverse)',
+    border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', whiteSpace: 'nowrap' as const,
+    fontSize: bannerText(10), fontFamily: 'var(--font-mono)', fontWeight: 600
+  }
+
+  return (
+    <div role="status" style={{
+      position: 'fixed', bottom: '28px', right: '16px', zIndex: 300, maxWidth: 'min(520px, calc(100vw - 32px))',
+      display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 10px',
+      padding: '10px 14px', background: 'var(--bg-card)',
+      border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-md)',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.5)', fontFamily: 'var(--font-mono)',
+      fontSize: bannerText(11), color: 'var(--text-primary)'
+    }}>
+      {installing && (
+        <span aria-hidden style={{
+          width: bannerText(10), height: bannerText(10), flexShrink: 0, borderRadius: '50%',
+          border: '2px solid var(--accent-color)', borderTopColor: 'transparent', animation: 'spin 1s linear infinite'
+        }} />
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: '1 1 180px' }}>
+        <span>{message}</span>
+        {restartFor && (
+          <span style={{ fontSize: bannerText(9.5), color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            chiudi anche le altre finestre di DamnedIDE: usano ancora la versione precedente
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto', flexShrink: 0 }}>
+        {restartFor ? (
+          <button onClick={restart} style={buttonStyle}
+            title={`riavvia DamnedIDE con la versione ${restartFor}`} data-tip-desc="relaunch the IDE on the installed version">
+            riavvia ora
+          </button>
+        ) : !installing && (
+          <button onClick={() => void install()} style={buttonStyle}
+            title={st.managed
+              ? `installa la versione ${st.version} con il gestore pacchetti (pkexec chiede la password di amministratore)`
+              : `installa la versione ${st.version}: DamnedIDE si chiude, si aggiorna e si riapre`}
+            data-tip-desc="downloads the update when needed, then installs it">
+            installa la versione {st.version}
+          </button>
+        )}
+        <button onClick={() => setDismissed(key)} aria-label="più tardi"
+          title="più tardi" data-tip-desc="hide this banner; Settings › Aggiornamenti keeps the update"
+          style={{
+            display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px',
+            color: 'var(--text-muted)'
+          }}>
+          <X size={12} />
+        </button>
+      </div>
+    </div>
   )
 }

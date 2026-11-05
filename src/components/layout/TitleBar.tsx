@@ -1,4 +1,4 @@
-import { Minus, Square, X, Settings, FolderOpen, ChevronDown } from 'lucide-react'
+import { Minus, Square, X, Settings, FolderOpen, ChevronDown } from '@/components/icons'
 
 export interface TitleBarTab {
   id: string

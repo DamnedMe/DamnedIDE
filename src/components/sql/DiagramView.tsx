@@ -4,7 +4,7 @@ import { buildExplicitSelect } from './sqlQueryUtils'
 import {
   Workflow, ZoomIn, ZoomOut, Maximize2, RefreshCw, Download, X,
   Loader2, Image, Search, Play, PanelRightClose
-} from 'lucide-react'
+} from '@/components/icons'
 import { layoutSqlDiagram, TableLayout } from './sqlDiagramLayout'
 import { useSettingsStore } from '../../store'
 

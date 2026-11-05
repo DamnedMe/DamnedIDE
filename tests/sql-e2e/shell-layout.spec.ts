@@ -19,6 +19,8 @@ test('title bar: panel tabs switch panel and mark the active one', async ({ page
   await expect(tabs.and(page.locator('[aria-current="page"]'))).toHaveCount(0)
 
   // at every icon and text size the bar stays one row and never clips the window controls
+  // (the icon size is on Aspetto › Testo e icone)
+  await page.getByRole('navigation', { name: 'pagine delle impostazioni' }).getByRole('button', { name: 'Testo e icone' }).click()
   const iconRange = page.locator('input[type="range"][min="10"][max="30"]')
   for (const size of [10, 20, 30]) {
     await iconRange.fill(String(size))

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Sparkles, RefreshCw, Check, X, Loader2, Plug, Trash2, TerminalSquare } from 'lucide-react'
+import { Sparkles, RefreshCw, Check, X, Loader2, Plug, Trash2, TerminalSquare } from '@/components/icons'
 import { useClaudeStore, useTerminalStore, CLAUDE_MODELS, CLAUDE_EFFORTS, CLAUDE_PERMISSION_MODES } from '../../store'
 
 const label: React.CSSProperties = {

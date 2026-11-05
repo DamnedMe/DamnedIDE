@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { WorktreeEntry, WorktreeWithStatus } from '../types/worktree'
 import { GitStatus, GitFileStatus, BranchInfo, CommitInfo } from '../types/git'
-import { AdoConnection, AdoWorkItem, AdoPullRequest } from '../types/ado'
+import { AdoWorkItem, AdoPullRequest } from '../types/ado'
 import type { PromotionConfig } from '../shared/adoPromotion'
+import type { AdoLegacyConnection, AdoRepoList, AdoSettingsView } from '../shared/adoSettings'
 import {
   SqlConnection,
   SqlExecutionResult,
@@ -48,51 +49,11 @@ interface GitState {
 }
 
 interface AdoState {
-  /** One Azure DevOps connection per local repository, keyed by adoRepoKey(repoPath). */
-  connections: Record<string, AdoConnection>
+  // lists of the connection AdoPanel is showing (the connections themselves are in useAdoSettingsStore)
   workItems: AdoWorkItem[]
   pullRequests: AdoPullRequest[]
-  setConnection: (repoPath: string, connection: AdoConnection) => void
   setWorkItems: (workItems: AdoWorkItem[]) => void
   setPullRequests: (prs: AdoPullRequest[]) => void
-}
-
-const ADO_CONNECTIONS_KEY = 'damnedide_ado_connections'
-// single global connection used before the per-repository one: only a form prefill now
-const ADO_LEGACY_CONNECTION_KEY = 'damnedide_ado_connection'
-
-/** The same repository opened as `C:\x\` or `c:/x` is one entry. */
-export function adoRepoKey(repoPath: string): string {
-  return repoPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-}
-
-export function adoConnectionFor(connections: Record<string, AdoConnection>, repoPath: string | null): AdoConnection | null {
-  return repoPath ? connections[adoRepoKey(repoPath)] ?? null : null
-}
-
-function loadAdoConnections(): Record<string, AdoConnection> {
-  try {
-    const raw = localStorage.getItem(ADO_CONNECTIONS_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed === 'object') return parsed
-    }
-  } catch { /* ignore */ }
-  return {}
-}
-
-export function loadLegacyAdoConnection(): AdoConnection | null {
-  try {
-    const raw = localStorage.getItem(ADO_LEGACY_CONNECTION_KEY)
-    return raw ? JSON.parse(raw) as AdoConnection : null
-  } catch { return null }
-}
-
-function saveAdoConnections(connections: Record<string, AdoConnection>) {
-  try {
-    localStorage.setItem(ADO_CONNECTIONS_KEY, JSON.stringify(connections))
-    localStorage.removeItem(ADO_LEGACY_CONNECTION_KEY)
-  } catch { /* ignore */ }
 }
 
 interface SqlState {
@@ -209,33 +170,199 @@ export const useGitStore = create<GitState>((set) => ({
 }))
 
 export const useAdoStore = create<AdoState>((set) => ({
-  connections: loadAdoConnections(),
   workItems: [],
   pullRequests: [],
-  setConnection: (repoPath, connection) => set((s) => {
-    const connections = { ...s.connections, [adoRepoKey(repoPath)]: connection }
-    saveAdoConnections(connections)
-    return { connections }
-  }),
   setWorkItems: (workItems) => set({ workItems }),
   setPullRequests: (pullRequests) => set({ pullRequests })
 }))
 
-const ADO_PROMOTION_KEY = 'damnedide_ado_promotion'
-
-interface PromotionState {
-  /** release promotion settings (FE repository, branch overrides) per promotionConfigKey(org, project) */
-  configs: Record<string, PromotionConfig>
-  setConfig: (key: string, config: PromotionConfig) => void
+// ─── Azure DevOps settings (kept by the main process, see src/shared/adoSettings.ts) ───
+// Connections, repository per folder and release BE/FE live in userData, shared
+// by every IDE instance: this store is only a view, reloaded when this instance
+// writes (adoSettings:changed) and when the window gets the focus back (another
+// instance may have written). Changes go through window.electronAPI.adoSettings.
+interface AdoSettingsState {
+  /** null until the first load */
+  settings: AdoSettingsView | null
+  /** repositories per connection id, filled by loadCatalog */
+  catalog: Record<string, AdoRepoList>
+  catalogLoading: boolean
+  load: () => Promise<void>
+  /** cached per connection by the main process; force re-reads Azure DevOps */
+  loadCatalog: (force?: boolean) => Promise<void>
 }
 
-export const usePromotionStore = create<PromotionState>((set) => ({
-  configs: loadJson<Record<string, PromotionConfig>>(ADO_PROMOTION_KEY, {}),
-  setConfig: (key, config) => set((s) => {
-    const configs = { ...s.configs, [key]: config }
-    saveJson(ADO_PROMOTION_KEY, configs)
-    return { configs }
-  })
+/** id + org/project of every connection: the catalog is stale when this changes */
+const adoConnectionsSig = (s: AdoSettingsView | null): string =>
+  (s?.connections ?? []).map(c => `${c.id}|${c.organization}|${c.project}`.toLowerCase()).join('\n')
+
+let adoLoadSeq = 0
+let adoCatalogSeq = 0
+let adoCatalogPending: Promise<void> | null = null
+// connections the pending request was made for: a call after a connection change starts a new one
+let adoCatalogPendingSig: string | null = null
+// connections the catalog was last loaded for (null: never loaded)
+let adoCatalogSig: string | null = null
+
+export const useAdoSettingsStore = create<AdoSettingsState>((set, get) => ({
+  settings: null,
+  catalog: {},
+  catalogLoading: false,
+  load: async () => {
+    const api = window.electronAPI?.adoSettings
+    if (!api) return
+    const seq = ++adoLoadSeq
+    try {
+      const settings = await api.get()
+      if (seq === adoLoadSeq) set({ settings })
+    } catch (e) {
+      console.error('[ado] lettura impostazioni fallita:', (e as Error).message)
+    }
+  },
+  loadCatalog: (force) => {
+    const api = window.electronAPI?.adoSettings
+    if (!api) return Promise.resolve()
+    // the connections this request answers for (main reads them when the call reaches it)
+    const sig = adoConnectionsSig(get().settings)
+    if (adoCatalogPending && !force && adoCatalogPendingSig === sig) return adoCatalogPending
+    // a newer request makes the older answer obsolete (seq)
+    const seq = ++adoCatalogSeq
+    set({ catalogLoading: true })
+    const run = (async () => {
+      try {
+        const catalog = await api.catalog(force)
+        if (seq !== adoCatalogSeq) return
+        adoCatalogSig = sig
+        set({ catalog, catalogLoading: false })
+      } catch (e) {
+        if (seq !== adoCatalogSeq) return
+        // every connection reports the failure, so the folder resolution can say it
+        const error = (e as Error).message || 'lettura delle repository fallita'
+        const catalog: Record<string, AdoRepoList> = {}
+        for (const c of get().settings?.connections ?? []) catalog[c.id] = { ok: false, error }
+        adoCatalogSig = sig
+        set({ catalog, catalogLoading: false })
+      } finally {
+        if (seq === adoCatalogSeq) {
+          adoCatalogPending = null
+          adoCatalogPendingSig = null
+        }
+      }
+    })()
+    adoCatalogPending = run
+    adoCatalogPendingSig = sig
+    return run
+  }
+}))
+
+try {
+  const api = window.electronAPI?.adoSettings
+  if (api) {
+    const refresh = async (catalogToo: boolean) => {
+      const store = useAdoSettingsStore.getState()
+      await store.load()
+      // the catalog follows only once someone asked for it (answered or still pending)
+      if (adoCatalogSig === null && !adoCatalogPending) return
+      if (catalogToo || adoCatalogSig !== adoConnectionsSig(useAdoSettingsStore.getState().settings)) {
+        await store.loadCatalog()
+      }
+    }
+    void useAdoSettingsStore.getState().load()
+    // this instance wrote: a fixed PAT must clear that connection's catalog error too
+    api.onChanged(() => { void refresh(true) })
+    window.addEventListener('focus', () => { void refresh(false) })
+  }
+} catch { /* no electron bridge (tests) */ }
+
+// localStorage keys of the old renderer-side ADO configuration (plaintext PATs)
+const ADO_LEGACY_KEYS = ['damnedide_ado_connections', 'damnedide_ado_connection', 'damnedide_ado_promotion'] as const
+let adoMigrationStarted = false
+
+/**
+ * One-time move of the old localStorage ADO configuration into the main-process
+ * settings (PATs encrypted there). The keys are removed only when the import
+ * did not throw, so the mirror drops the plaintext PATs from
+ * renderer-storage.json too; an instance that finds the settings already filled
+ * (another one migrated) just removes them.
+ */
+export async function migrateLegacyAdoStorage(): Promise<void> {
+  if (adoMigrationStarted) return
+  adoMigrationStarted = true
+  const api = window.electronAPI?.adoSettings
+  if (!api) return
+  const objectAt = (key: string): Record<string, unknown> | null => {
+    try {
+      const raw = localStorage.getItem(key)
+      const v = raw ? JSON.parse(raw) : null
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : null
+    } catch {
+      return null
+    }
+  }
+  let present = false
+  try { present = ADO_LEGACY_KEYS.some(k => localStorage.getItem(k) !== null) } catch { return }
+  if (!present) return
+  const [perFolder, single, promotion] = ADO_LEGACY_KEYS.map(objectAt)
+  const legacy = { ...(perFolder ?? {}) } as Record<string, AdoLegacyConnection>
+  // the very old single global connection belongs to no folder: '' only adds the connection
+  if (single) legacy[''] = single as AdoLegacyConnection
+  try {
+    await api.importLegacy(legacy, (promotion ?? {}) as Record<string, PromotionConfig>)
+    for (const k of ADO_LEGACY_KEYS) {
+      try { localStorage.removeItem(k) } catch { /* ignore */ }
+    }
+  } catch (e) {
+    // kept for the next start (e.g. no system keystore: the PATs cannot be encrypted)
+    console.error('[ado] migrazione impostazioni Azure DevOps fallita:', (e as Error).message)
+  }
+}
+
+// ─── Settings navigation (page of the settings panel, openable from anywhere) ───
+export const SETTINGS_PAGES = [
+  'updates', 'language',
+  'theme', 'text', 'colors',
+  'editor', 'terminal', 'git',
+  'ado-connections', 'ado-folders', 'ado-release',
+  'ai-agents', 'ai-mcp',
+  'remote'
+] as const
+
+export type SettingsPageId = typeof SETTINGS_PAGES[number]
+
+const SETTINGS_PAGE_KEY = 'damnedide_settings_page'
+
+function loadSettingsPage(): SettingsPageId {
+  try {
+    const p = localStorage.getItem(SETTINGS_PAGE_KEY)
+    if (p && (SETTINGS_PAGES as readonly string[]).includes(p)) return p as SettingsPageId
+  } catch { /* ignore */ }
+  return 'updates'
+}
+
+function saveSettingsPage(page: SettingsPageId) {
+  try { localStorage.setItem(SETTINGS_PAGE_KEY, page) } catch { /* ignore */ }
+}
+
+interface SettingsNavState {
+  /** page shown by the settings panel (remembered across sessions) */
+  page: SettingsPageId
+  /** bumped by openSettings: App switches to the settings panel on every change */
+  request: number
+  openSettings: (page?: SettingsPageId) => void
+  setPage: (page: SettingsPageId) => void
+}
+
+export const useSettingsNavStore = create<SettingsNavState>((set) => ({
+  page: loadSettingsPage(),
+  request: 0,
+  openSettings: (page) => set((s) => {
+    if (page) saveSettingsPage(page)
+    return { page: page ?? s.page, request: s.request + 1 }
+  }),
+  setPage: (page) => {
+    saveSettingsPage(page)
+    set({ page })
+  }
 }))
 
 export const useSqlStore = create<SqlState>((set) => ({
@@ -531,10 +658,16 @@ export const useSettingsStore = create<SettingsState>((set) => {
       saveSettings(next)
       return { settings: next }
     }),
-    resetSettings: () => {
-      saveSettings(DEFAULT_SETTINGS)
-      return { settings: DEFAULT_SETTINGS }
-    },
+    // a fresh copy, applied in memory too (the panel and the app follow at once)
+    resetSettings: () => set(() => {
+      const settings: AppSettings = {
+        ...DEFAULT_SETTINGS,
+        customFonts: [],
+        themeColors: { dark: { ...DEFAULT_DARK_COLORS }, light: { ...DEFAULT_LIGHT_COLORS } }
+      }
+      saveSettings(settings)
+      return { settings }
+    }),
     setThemeDefaults: () => set((state) => {
       const td: ThemeDefaults = { accentColor: state.settings.accentColor, themeColors: state.settings.themeColors }
       saveThemeDefaults(td)

@@ -1,5 +1,5 @@
 import { BranchInfo } from '../../types/git'
-import { GitBranch, GitBranchPlus } from 'lucide-react'
+import { GitBranch, GitBranchPlus } from '@/components/icons'
 
 interface BranchListProps {
   branches: BranchInfo[]

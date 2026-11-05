@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, X, Eraser, AlertTriangle, Trash2, Lock } from 'lucide-react'
+import { Loader2, X, Eraser, AlertTriangle, Trash2, Lock } from '@/components/icons'
 import { Modal } from '../layout/Modal'
-import { useAdoStore, adoConnectionFor, useToastStore } from '../../store'
+import { useToastStore } from '../../store'
+import { useAdoFolder } from '../../hooks/useAdoFolder'
+import { AdoRepoChooser } from '../ado/AdoRepoChooser'
+import { ADO_MISSING_PAT } from '../../shared/adoSettings'
 import { useI18n } from '../../i18n'
 import type { AdoWorkItem } from '../../types/ado'
 import { classifyCleanup, pbiIdFromBranch, isPbiClosed, type CleanupResult } from './worktree-cleanup'
@@ -58,8 +61,12 @@ const banner = (color: string, bg: string): React.CSSProperties => ({
 export function WorktreeCleanupDialog({ repoPath, onClose, onDone }: WorktreeCleanupDialogProps) {
   const t = useI18n()
   const showToast = useToastStore(s => s.showToast)
-  const ado = useAdoStore(s => adoConnectionFor(s.connections, repoPath))
-  const adoReady = !!(ado?.organization && ado.project && ado.token)
+  // connection of the main folder (Settings › Azure DevOps): the PBI states come from its project
+  const ado = useAdoFolder(repoPath)
+  const connection = ado.status === 'ready' ? ado.connection : null
+  const adoReady = !!connection
+  // the classification waits until it is known whether ADO can be asked
+  const adoSettled = ado.status !== 'loading'
   const [rows, setRows] = useState<Row[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [adoError, setAdoError] = useState<string | null>(null)
@@ -71,8 +78,12 @@ export function WorktreeCleanupDialog({ repoPath, onClose, onDone }: WorktreeCle
   // stable while idle, so Modal does not re-run its focus effect on every toggle
   const close = useCallback(() => { if (!busy) onClose() }, [busy, onClose])
 
+  const connectionId = connection?.id ?? null
+  const project = connection?.project ?? ''
   useEffect(() => {
+    if (!adoSettled) return
     let cancelled = false
+    setAdoError(null)
     ;(async () => {
       try {
         const [overview, stack] = await Promise.all([
@@ -82,10 +93,11 @@ export function WorktreeCleanupDialog({ repoPath, onClose, onDone }: WorktreeCle
         const candidates = overview.filter(o => o.path.includes('.worktrees')) // the main checkout never goes
         const ids = candidates.map(o => pbiIdFromBranch(o.branch)).filter((id): id is number => id !== null)
         let items: Map<number, AdoWorkItem> | null = null
-        if (ado && adoReady && ids.length > 0) {
+        if (connectionId && project && ids.length > 0) {
           try {
-            await window.electronAPI.ado.connect(ado.organization, ado.token)
-            const list = await window.electronAPI.ado.workItemsBatch(ado.project, ids)
+            // the main-process ADO service serves one connection at a time
+            if (!(await window.electronAPI.ado.use(connectionId))) throw new Error(ADO_MISSING_PAT)
+            const list = await window.electronAPI.ado.workItemsBatch(project, ids)
             items = new Map(list.map(i => [i.id, i]))
           } catch (e) {
             if (!cancelled) setAdoError((e as Error).message || 'Azure DevOps non raggiungibile')
@@ -125,7 +137,7 @@ export function WorktreeCleanupDialog({ repoPath, onClose, onDone }: WorktreeCle
       }
     })()
     return () => { cancelled = true }
-  }, [repoPath])
+  }, [repoPath, adoSettled, connectionId, project])
 
   const toggle = (path: string) => {
     setSelected(prev => {
@@ -222,11 +234,14 @@ export function WorktreeCleanupDialog({ repoPath, onClose, onDone }: WorktreeCle
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {!adoReady && (
+        {/* no connection, or the folder's repository is not clear: choosing it re-reads the PBI states;
+            hidden while removing (its «configura in Impostazioni» leaves the panel and drops the progress) */}
+        {!adoReady && adoSettled && !busy && <AdoRepoChooser state={ado} compact />}
+        {!adoReady && adoSettled && (
           <div style={banner('var(--warning-color)', 'var(--warning-bg)')}>
             <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
             <span>
-              ADO non configurato per questo repository: lo stato dei PBI non è verificabile. I worktree già in develop senza
+              Senza Azure DevOps lo stato dei PBI non è verificabile. I worktree già in develop senza
               branch remoto sono proposti come «forse», non selezionati.
             </span>
           </div>

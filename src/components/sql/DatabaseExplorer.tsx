@@ -32,7 +32,7 @@ import {
   HardDriveUpload,
   FileArchive,
   PackageOpen
-} from 'lucide-react'
+} from '@/components/icons'
 import { AUTH_TYPES, connectionLabel } from './sqlForm'
 import type { BackupSource, DataTierAction } from '../../shared/sqlBackup'
 import type { QueryExecutionContext } from './QueryEditor'

@@ -230,6 +230,170 @@ async function installElectronMock(page: Page) {
       parseConnectionString: async () => ({ server: 'mock-sql-server', database })
     }
 
+    // Azure DevOps settings are kept by the main process (src/shared/adoSettings.ts):
+    // here an in-memory copy, empty by default. A spec seeds it with seedAdo() and
+    // reads the recorded calls with adoCalls(); PATs only ever show as hasToken flags.
+    type AdoRef = { connectionId: string; repository: string }
+    type AdoList = { ok: true; repos: string[] } | { ok: false; error: string }
+    const adoMock = {
+      settings: {
+        connections: [] as Array<{ id: string; organization: string; project: string }>,
+        folders: {} as Record<string, AdoRef>,
+        release: {} as Record<string, unknown>,
+        tokens: {} as Record<string, boolean>
+      },
+      catalog: {} as Record<string, AdoList>,
+      /** repositories a newly saved connection reads */
+      newRepos: ['Repo-A', 'Repo-B'],
+      /** `${repo}:${source}->${target}` -> commits (ado.commitsBetween) */
+      commits: {} as Record<string, Array<{ commitId: string; message: string; author: string }>>,
+      /** same keys -> Azure DevOps error: a strict read rejects with it, a lenient one returns [] (as main) */
+      commitErrors: {} as Record<string, string>,
+      /** repo -> active pull requests (ado.pullRequests) */
+      pullRequests: {} as Record<string, unknown[]>,
+      workItems: [] as Array<{ id: number; title: string; type: string; state: string; assignedTo: string; url: string }>,
+      /** id of the next PR ado.createPr creates */
+      nextPrId: 501,
+      /** release chains kept by main (src/shared/adoChain.ts ReleaseChain) */
+      chains: [] as Array<{ id: string; connectionId: string; organization: string; project: string; autoComplete: boolean; createdAt: number; items: Array<Record<string, unknown> & { status: string }> }>,
+      calls: [] as Array<{ name: string; args: unknown[] }>
+    }
+    ;(window as unknown as { __adoMock: typeof adoMock }).__adoMock = adoMock
+    const adoClone = (v: unknown) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)))
+    const adoCall = (name: string, ...args: unknown[]) => { adoMock.calls.push({ name, args: args.map(adoClone) }) }
+    const adoListeners = new Set<() => void>()
+    // like main's adoSettings:changed after every write
+    const adoChanged = () => { setTimeout(() => adoListeners.forEach(l => l()), 0) }
+    const adoSettings = {
+      get: async () => adoClone(adoMock.settings),
+      saveConnection: async (input: { id?: string; organization: string; project: string; token?: string }) => {
+        adoCall('saveConnection', input)
+        const s = adoMock.settings
+        // main verifies with Azure DevOps before saving; 'bad' plays a refused PAT
+        if (input.organization.toLowerCase() === 'bad') {
+          throw new Error("Error invoking remote method 'adoSettings:saveConnection': Error: PAT non valido, scaduto o senza permesso Code (Read)")
+        }
+        const id = input.id ?? `c${s.connections.length + 1}`
+        const connection = { id, organization: input.organization, project: input.project }
+        const i = s.connections.findIndex(c => c.id === id)
+        if (i >= 0) s.connections[i] = connection
+        else s.connections.push(connection)
+        if (input.token) s.tokens[id] = true
+        adoMock.catalog[id] = { ok: true, repos: [...adoMock.newRepos] }
+        adoChanged()
+        return { connection, repos: [...adoMock.newRepos] }
+      },
+      test: async (id: string) => {
+        adoCall('test', id)
+        return adoClone(adoMock.catalog[id] ?? { ok: false, error: 'connessione non trovata' })
+      },
+      removeConnection: async (id: string) => {
+        adoCall('removeConnection', id)
+        const s = adoMock.settings
+        s.connections = s.connections.filter(c => c.id !== id)
+        delete s.tokens[id]
+        for (const [k, ref] of Object.entries(s.folders)) if (ref.connectionId === id) delete s.folders[k]
+        adoChanged()
+      },
+      setFolder: async (key: string, ref: AdoRef | null) => {
+        adoCall('setFolder', key, ref)
+        if (ref) adoMock.settings.folders[key] = ref
+        else delete adoMock.settings.folders[key]
+        adoChanged()
+      },
+      setRelease: async (key: string, config: unknown) => {
+        adoCall('setRelease', key, config)
+        if (config) adoMock.settings.release[key] = adoClone(config)
+        else delete adoMock.settings.release[key]
+        adoChanged()
+      },
+      catalog: async (force?: boolean) => {
+        adoCall('catalog', force)
+        return Object.fromEntries(adoMock.settings.connections.map(c => [c.id, adoClone(adoMock.catalog[c.id] ?? { ok: true, repos: [] })]))
+      },
+      importLegacy: async (legacy: unknown, promotion: unknown) => {
+        adoCall('importLegacy', legacy, promotion)
+        return false
+      },
+      onChanged: (cb: () => void) => {
+        adoListeners.add(cb)
+        return () => { adoListeners.delete(cb) }
+      }
+    }
+    const ado = {
+      // main resolves the connection's PAT; false when it has none
+      use: async (id: string) => { adoCall('use', id); return !!adoMock.settings.tokens[id] },
+      workItems: async (project: string) => { adoCall('workItems', project); return [] },
+      workItem: async () => null,
+      workItemsBatch: async (project: string, ids: number[]) => {
+        adoCall('workItemsBatch', project, ids)
+        return adoClone(adoMock.workItems.filter(w => ids.includes(w.id)))
+      },
+      pullRequests: async (project: string, repo: string) => { adoCall('pullRequests', project, repo); return adoClone(adoMock.pullRequests[repo] ?? []) },
+      pullRequestDetail: async () => null,
+      pullRequestFiles: async () => [],
+      pullRequestThreads: async () => [],
+      fileContent: async () => '',
+      branches: async (project: string, repo: string) => { adoCall('branches', project, repo); return ['develop', 'qa', 'main'] },
+      repositories: async () => [],
+      commitsBetween: async (project: string, repo: string, source: string, target: string, strict?: boolean) => {
+        adoCall('commitsBetween', project, repo, source, target)
+        const key = `${repo}:${source}->${target}`
+        if (adoMock.commitErrors[key]) {
+          if (strict) throw new Error(`Error invoking remote method 'ado:commitsBetween': Error: ${adoMock.commitErrors[key]}`)
+          return []
+        }
+        return adoClone(adoMock.commits[key] ?? [])
+      },
+      setVote: async () => false,
+      completePr: async () => false,
+      createPr: async (project: string, repo: string, opts: { title: string; autoComplete: boolean }) => {
+        adoCall('createPr', project, repo, opts)
+        const id = adoMock.nextPrId++
+        return { id, title: opts.title, mode: opts.autoComplete ? 'autocomplete' : 'open', url: `https://dev.azure.com/mock/${project}/_git/${repo}/pullrequest/${id}` }
+      }
+    }
+
+    // release chains: main keeps and polls them; here start/cancel/remove only change the list
+    type ChainStart = { connectionId: string; autoComplete: boolean; items: Array<{ side: string; repo: string; branches: unknown; qaPr?: { id: number; url: string } | null }> }
+    const chainListeners = new Set<() => void>()
+    const chainChanged = () => { setTimeout(() => chainListeners.forEach(l => l()), 0) }
+    const adoChain = {
+      list: async () => adoClone(adoMock.chains),
+      start: async (input: ChainStart) => {
+        adoCall('chainStart', input)
+        const c = adoMock.settings.connections.find(x => x.id === input.connectionId)
+        const now = Date.now()
+        const chain = {
+          id: `chain${adoMock.chains.length + 1}`, connectionId: input.connectionId,
+          organization: c?.organization ?? '', project: c?.project ?? '', autoComplete: !!input.autoComplete, createdAt: now,
+          items: input.items.map(i => ({
+            side: i.side, repo: i.repo, branches: i.branches, ...(i.qaPr ? { qaPr: i.qaPr } : {}),
+            status: i.qaPr ? 'waiting-qa' : 'creating-prod', updatedAt: now
+          }))
+        }
+        adoMock.chains.push(chain)
+        chainChanged()
+        return adoClone(chain)
+      },
+      cancel: async (id: string) => {
+        adoCall('chainCancel', id)
+        for (const item of adoMock.chains.find(c => c.id === id)?.items ?? []) {
+          if (item.status === 'waiting-qa' || item.status === 'creating-prod') item.status = 'cancelled'
+        }
+        chainChanged()
+      },
+      remove: async (id: string) => {
+        adoCall('chainRemove', id)
+        adoMock.chains = adoMock.chains.filter(c => c.id !== id)
+        chainChanged()
+      },
+      onChanged: (cb: () => void) => {
+        chainListeners.add(cb)
+        return () => { chainListeners.delete(cb) }
+      }
+    }
+
     Object.defineProperty(window, 'electronAPI', {
       configurable: true,
       value: {
@@ -240,8 +404,7 @@ async function installElectronMock(page: Page) {
           install: async () => ({ ok: true }),
           state: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
           check: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
-          onState: () => () => {},
-          onDownloaded: () => () => {}
+          onState: () => () => {}
         },
         fs: { watch: async () => {}, unwatch: async () => {}, onChanged: () => () => {} },
         window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
@@ -253,7 +416,9 @@ async function installElectronMock(page: Page) {
             return `C:\\mock\\${defaultName}`
           }
         },
-        ado: { connect: async () => true },
+        ado,
+        adoSettings,
+        adoChain,
         export: {
           xlsx: async (defaultName: string, sheetName: string, columns: string[], rows: unknown[][]) => {
             ;(window as unknown as { __sqlMock: { xlsx: unknown[] } }).__sqlMock.xlsx.push({ defaultName, sheetName, columns, rows })
@@ -301,6 +466,69 @@ export async function openMockDatabase(page: Page) {
 export async function openMockTables(page: Page) {
   await openMockDatabase(page)
   await page.getByLabel('tables massive_mock_db').click()
+}
+
+export interface AdoMockSeed {
+  connections?: Array<{ id: string; organization: string; project: string }>
+  folders?: Record<string, { connectionId: string; repository: string }>
+  release?: Record<string, unknown>
+  /** connection id -> has a PAT */
+  tokens?: Record<string, boolean>
+  catalog?: Record<string, { ok: true; repos: string[] } | { ok: false; error: string }>
+  /** repositories a connection saved during the test reads */
+  newRepos?: string[]
+  /** `${repo}:${source}->${target}` -> commits */
+  commits?: Record<string, Array<{ commitId: string; message: string; author: string }>>
+  /** same keys -> Azure DevOps error (strict reads reject, lenient ones return []) */
+  commitErrors?: Record<string, string>
+  /** repo -> active pull requests */
+  pullRequests?: Record<string, unknown[]>
+  workItems?: Array<{ id: number; title: string; type: string; state: string; assignedTo: string; url: string }>
+  /** release chains as main lists them (src/shared/adoChain.ts ReleaseChain) */
+  chains?: unknown[]
+}
+
+/** Seeds the in-memory Azure DevOps settings for the next page load (runs after the fixture's init script). */
+export async function seedAdo(page: Page, seed: AdoMockSeed) {
+  await page.addInitScript((s) => {
+    const m = (window as unknown as { __adoMock: Record<string, unknown> & { settings: Record<string, unknown> } }).__adoMock
+    m.settings.connections = s.connections ?? []
+    m.settings.folders = s.folders ?? {}
+    m.settings.release = s.release ?? {}
+    m.settings.tokens = s.tokens ?? {}
+    m.catalog = s.catalog ?? {}
+    if (s.newRepos) m.newRepos = s.newRepos
+    if (s.commits) m.commits = s.commits
+    if (s.commitErrors) m.commitErrors = s.commitErrors
+    if (s.pullRequests) m.pullRequests = s.pullRequests
+    if (s.workItems) m.workItems = s.workItems
+    if (s.chains) m.chains = s.chains
+  }, seed)
+}
+
+/**
+ * Opens `repo` (a main checkout: git's common dir is `<repo>/.git`) from the
+ * startup dialog, on the given panel.
+ */
+export async function openAdoRepo(page: Page, repo: string, panel: 'ado' | 'release') {
+  await page.addInitScript(({ repo, panel }) => {
+    localStorage.setItem('damnedide_recent_repos', JSON.stringify([repo]))
+    localStorage.setItem('damnedide_last_panel', panel)
+    ;(window as unknown as { electronAPI: Record<string, unknown> }).electronAPI.git = {
+      resolveRepoRoot: async (p: string) => p,
+      gitCommonDir: async (p: string) => `${p}/.git`
+    }
+  }, { repo, panel })
+  await page.goto('/')
+  await page.getByText(repo, { exact: true }).click()
+}
+
+/** Arguments of every recorded adoSettings / ado call with that name, in order. */
+export async function adoCalls(page: Page, name: string): Promise<unknown[][]> {
+  return page.evaluate((n) =>
+    (window as unknown as { __adoMock: { calls: Array<{ name: string; args: unknown[] }> } }).__adoMock.calls
+      .filter(c => c.name === n)
+      .map(c => c.args), name)
 }
 
 export { expect }

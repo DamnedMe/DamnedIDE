@@ -7,7 +7,7 @@ import { useUIStore, useSettingsStore, useTerminalStore } from '../../store'
 import { hexToRgba } from '../../utils/color'
 import { TERMINAL_FONT_STACK } from '../../utils/fonts'
 import { nextTerminalFontSize, terminalZoomKey, type TerminalZoom } from './terminal-zoom'
-import { Monitor, ExternalLink, Plus, X, ChevronDown } from 'lucide-react'
+import { Monitor, ExternalLink, Plus, X, ChevronDown } from '@/components/icons'
 
 type ShellType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
 

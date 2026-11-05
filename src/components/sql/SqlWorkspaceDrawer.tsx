@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Clock3, FileText, Heart, HeartOff, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Clock3, FileText, Heart, HeartOff, Pencil, Plus, Search, Trash2, X } from '@/components/icons'
 import { SqlFavoriteQuery, SqlHistoryEntry, SqlWorkspaceState } from '../../types/sql'
 
 interface SqlWorkspaceDrawerProps {

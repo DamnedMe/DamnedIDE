@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronRight, Folder, FolderOpen, Loader2, ChevronsUpDown, ChevronsDownUp, Trash2, FolderPlus, FilePlus, ExternalLink, Copy } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, Loader2, ChevronsUpDown, ChevronsDownUp, Trash2, FolderPlus, FilePlus, ExternalLink, Copy } from '@/components/icons'
 import { FileTypeIcon } from '../../utils/file-icon'
 import { joinPath, dirnameOf, samePath } from '../../utils/paths'
 import { compileFileFilter } from '../../utils/file-filter'

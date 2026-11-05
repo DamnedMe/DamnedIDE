@@ -1,4 +1,4 @@
-import { FolderOpen, History, Trash2, X } from 'lucide-react'
+import { FolderOpen, History, Trash2, X } from '@/components/icons'
 
 interface RecentReposDialogProps {
   repos: string[]

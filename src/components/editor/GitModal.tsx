@@ -1,4 +1,4 @@
-import { X, GitCommitHorizontal, Clock } from 'lucide-react'
+import { X, GitCommitHorizontal, Clock } from '@/components/icons'
 
 interface GitModalProps {
   title: string

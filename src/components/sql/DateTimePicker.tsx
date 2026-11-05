@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays, Clock, Check, X, Ban } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays, Clock, Check, X, Ban } from '@/components/icons'
 import { formatGridDate, parseDateText } from './sqlForm'
 
 interface DateTimePickerProps {

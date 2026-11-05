@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing tag to rebuild, or leave empty to create a patch release
+        description: Existing draft release tag to rebuild, or leave empty to create a patch release
         required: false
         type: string
       source_ref:
@@ -48,6 +48,15 @@ jobs:
           set -euo pipefail
 
           if [ -n "$RELEASE_TAG_INPUT" ]; then
+            # only a draft can be rebuilt: on a published release electron-builder
+            # skips every upload (green job), while patch-linux-update-feed would
+            # still overwrite the live latest-linux.yml with hashes of files never uploaded
+            draft="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"$RELEASE_TAG_INPUT\") | .draft")"
+            if printf '%s\n' "$draft" | grep -qx false; then
+              echo "::error::release $RELEASE_TAG_INPUT is already published and cannot be rebuilt"
+              exit 1
+            fi
             echo "tag=$RELEASE_TAG_INPUT" >> "$GITHUB_OUTPUT"
             echo "source_ref=${SOURCE_REF_INPUT:-main}" >> "$GITHUB_OUTPUT"
             exit 0
@@ -139,7 +148,9 @@ jobs:
           npx electron-builder --config electron-builder.yml --mac dmg zip --publish always
 
   build-windows:
-    needs: [prepare-release, build-macos]
+    # after Linux (which creates the draft release), in parallel with macOS:
+    # a macOS runner shortage must not hold back the Windows package
+    needs: [prepare-release, build-linux]
     runs-on: windows-latest
     steps:
       - name: Checkout release source
@@ -168,11 +179,13 @@ jobs:
           npx electron-builder --config electron-builder.yml --win nsis --publish always
 
   publish-release:
+    # waits for macOS (it uploads to the draft) but publishes even if it failed;
+    # the macOS packages then ship with the next release (a published release
+    # cannot be rebuilt, see prepare-release)
     if: >-
-      always() &&
+      !cancelled() &&
       needs.prepare-release.result == 'success' &&
       needs.build-linux.result == 'success' &&
-      needs.build-macos.result == 'success' &&
       needs.build-windows.result == 'success'
     needs:
       - prepare-release

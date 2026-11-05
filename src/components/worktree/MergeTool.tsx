@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { X, ChevronUp, ChevronDown, Save, Loader2, GitMerge, Check, ArrowRight, Columns2, FileDiff } from 'lucide-react'
+import { X, ChevronUp, ChevronDown, Save, Loader2, GitMerge, Check, ArrowRight, Columns2, FileDiff } from '@/components/icons'
 import { useUIStore, useSettingsStore } from '../../store'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../editor/monaco-theme'
 import { appFontStack } from '../../utils/fonts'

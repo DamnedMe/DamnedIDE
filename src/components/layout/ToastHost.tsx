@@ -1,5 +1,5 @@
 import { useToastStore } from '../../store'
-import { CheckCircle2, XCircle, Info, X } from 'lucide-react'
+import { CheckCircle2, XCircle, Info, X } from '@/components/icons'
 
 export function ToastHost() {
   const { toasts, removeToast } = useToastStore()

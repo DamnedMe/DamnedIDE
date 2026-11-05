@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, FolderSearch } from 'lucide-react'
+import { AlertTriangle, Download, FolderSearch } from '@/components/icons'
 import { Modal } from '../layout/Modal'
 import { useSettingsStore } from '../../store'
 import { useI18n } from '../../i18n'

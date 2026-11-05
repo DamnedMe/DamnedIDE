@@ -1,5 +1,5 @@
 import { SqlConnection, SqlRecentConnection } from '../../types/sql'
-import { Clock, Database, Plus } from 'lucide-react'
+import { Clock, Database, Plus } from '@/components/icons'
 import { authShortLabel } from './sqlForm'
 
 interface RecentConnectionsMenuProps {

@@ -102,6 +102,21 @@ interface UpdateState {
   // managed only: the feed carries the package, so the IDE can install it itself
   selfInstall?: boolean
   installHint?: string
+  // another IDE instance owns the updater (userData/updater.lock): this one does nothing
+  ownerElsewhere?: boolean
+  // userData/logs/updater.log
+  logPath?: string
+  // managed only: version installed by the package manager, active after a restart
+  pendingRestart?: string
+}
+
+interface UpdateInstallResult {
+  ok: boolean
+  error?: string
+  // managed Linux: installed, active after update:restart
+  restartRequired?: boolean
+  // nothing newer in the feed
+  upToDate?: boolean
 }
 
 interface ClaudeResult {
@@ -192,8 +207,34 @@ interface Window {
       staged: (repoPath: string, file: string) => Promise<string>
       branch: (repoPath: string, branchA: string, branchB: string) => Promise<string>
     }
+    // Azure DevOps settings kept by the main process (electron/services/ado/ado-settings.store.ts)
+    adoSettings: {
+      get: () => Promise<AdoSettingsViewInfo>
+      // verifies org/project/PAT with Azure DevOps first: saved only when it answers
+      saveConnection: (input: AdoConnectionInputInfo) => Promise<{ connection: AdoConnectionInfo; repos: string[] }>
+      test: (id: string) => Promise<AdoRepoListInfo>
+      removeConnection: (id: string) => Promise<void>
+      // key: folderKey(main folder) (a path is normalised too); null forgets the mapping
+      setFolder: (key: string, ref: AdoRepoRefInfo | null) => Promise<void>
+      // key: promotionConfigKey(org, project); null removes it
+      setRelease: (key: string, config: AdoPromotionConfigInfo | null) => Promise<void>
+      catalog: (force?: boolean) => Promise<Record<string, AdoRepoListInfo>>
+      importLegacy: (legacy: Record<string, AdoLegacyConnectionInfo>, promotion: Record<string, AdoPromotionConfigInfo>) => Promise<boolean>
+      onChanged: (cb: () => void) => () => void
+    }
+    // release chains develop → qa → prod followed by the main process (electron/services/ado/promotion-chain.service.ts)
+    adoChain: {
+      list: () => Promise<AdoReleaseChainInfo[]>
+      // the develop → qa PRs are created by the caller: main waits for them, then creates qa → prod
+      start: (input: AdoChainStartInputInfo) => Promise<AdoReleaseChainInfo>
+      cancel: (id: string) => Promise<void>
+      // finished chains only
+      remove: (id: string) => Promise<void>
+      onChanged: (cb: () => void) => () => void
+    }
     ado: {
-      connect: (org: string, token: string) => Promise<boolean>
+      // false when the connection or its PAT is missing
+      use: (connectionId: string) => Promise<boolean>
       workItems: (project: string) => Promise<import('./types/ado').AdoWorkItem[]>
       workItem: (project: string, id: number) => Promise<import('./types/ado').AdoWorkItem | null>
       workItemsBatch: (project: string, ids: number[]) => Promise<import('./types/ado').AdoWorkItem[]>
@@ -204,7 +245,8 @@ interface Window {
       pullRequestThreads: (project: string, repo: string, prId: number) => Promise<import('./types/ado').AdoPullRequestThread[]>
       branches: (project: string, repo: string) => Promise<string[]>
       repositories: (project: string) => Promise<string[]>
-      commitsBetween: (project: string, repo: string, source: string, target: string) => Promise<{ commitId: string; message: string; author: string }[]>
+      /** strict: an Azure DevOps error rejects instead of returning [] */
+      commitsBetween: (project: string, repo: string, source: string, target: string, strict?: boolean) => Promise<{ commitId: string; message: string; author: string }[]>
       setVote: (project: string, repo: string, prId: number, vote: number) => Promise<boolean>
       completePr: (project: string, repo: string, prId: number, sourceCommitId: string, deleteSourceBranch?: boolean) => Promise<boolean>
       createPr: (project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; deleteSourceBranch?: boolean; forceComplete?: boolean; workItemIds?: number[] }) => Promise<{ id: number; title: string; mode: 'autocomplete' | 'completed' | 'open'; url: string } | null>
@@ -278,11 +320,11 @@ interface Window {
       openDetached: (panelId: string) => Promise<boolean>
     }
     updater: {
-      install: () => Promise<{ ok: boolean; error?: string; restartRequired?: boolean }>
+      installLatest: () => Promise<UpdateInstallResult>
+      restart: () => Promise<void>
       state: () => Promise<UpdateState>
       check: () => Promise<UpdateState>
       onState: (callback: (state: UpdateState) => void) => () => void
-      onDownloaded: (callback: () => void) => () => void
     }
     terminal: {
       create: (cwd: string, type: TerminalTypeEnum) => Promise<string>
@@ -341,5 +383,15 @@ type RemotePendingPairing = { id: string; name: string; platform: string; code: 
 type RemoteWorkspaceSnapshot = import('./shared/remote/protocol').WorkspaceSnapshot
 type RemoteSqlConnectionInfo = import('./shared/remote/protocol').RemoteSqlConnection
 type RemoteApplyChange = import('./shared/remote/protocol').RemoteApply
+
+type AdoSettingsViewInfo = import('./shared/adoSettings').AdoSettingsView
+type AdoConnectionInfo = import('./shared/adoSettings').AdoConnectionConfig
+type AdoConnectionInputInfo = import('./shared/adoSettings').AdoConnectionInput
+type AdoLegacyConnectionInfo = import('./shared/adoSettings').AdoLegacyConnection
+type AdoRepoRefInfo = import('./shared/adoSettings').AdoRepoRef
+type AdoRepoListInfo = import('./shared/adoSettings').AdoRepoList
+type AdoPromotionConfigInfo = import('./shared/adoPromotion').PromotionConfig
+type AdoReleaseChainInfo = import('./shared/adoChain').ReleaseChain
+type AdoChainStartInputInfo = import('./shared/adoChain').ChainStartInput
 
 type TerminalTypeEnum = 'cmd' | 'powershell' | 'pwsh' | 'npm'

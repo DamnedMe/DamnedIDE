@@ -10,10 +10,12 @@ import { worktreeTone, toneColor, overviewSummary, pbiIdFromBranch, isPbiClosed,
 import { FileTree } from '../editor/FileTree'
 import { FileFilterBar } from '../editor/CodeEditor'
 import { Modal } from '../layout/Modal'
-import { useWorktreeStore, useToastStore, useAdoStore, adoConnectionFor } from '../../store'
+import { useWorktreeStore, useToastStore, useSettingsNavStore } from '../../store'
+import { useAdoFolder } from '../../hooks/useAdoFolder'
+import { AdoRepoChooser } from '../ado/AdoRepoChooser'
 import { useI18n } from '../../i18n'
 import type { AdoWorkItem } from '../../types/ado'
-import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge, Eraser, DownloadCloud, Loader2, GitBranch, Bug } from 'lucide-react'
+import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge, Eraser, DownloadCloud, Loader2, GitBranch, Bug } from '@/components/icons'
 import { WorktreeEntry } from '../../types/worktree'
 
 type CheckState = 'ok' | 'ko'
@@ -73,8 +75,10 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const [pbiItems, setPbiItems] = useState<Record<number, AdoWorkItem>>({})
   // bumped by every worktree list load: one ADO batch each (not one per remount)
   const [pbiLoad, setPbiLoad] = useState(0)
-  const ado = useAdoStore(s => adoConnectionFor(s.connections, repoPath))
-  const adoReady = !!(ado?.organization && ado.project && ado.token)
+  // Azure DevOps connection + repository of the main folder (Settings › Azure DevOps)
+  const ado = useAdoFolder(repoPath)
+  const adoConnection = ado.status === 'ready' ? ado.connection : null
+  const adoReady = !!adoConnection
   const changesHandleRef = useRef<WorktreeChangesHandle | null>(null)
   // the repository on screen now: an answer for the previous one (switched from the title bar mid-fetch) is dropped
   const repoRef = useRef(repoPath)
@@ -316,15 +320,17 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   useEffect(() => {
     if (pbiLoad === 0) return // nothing listed yet by this mount: the store still holds the previous load
     const ids = [...new Set(entries.map(e => pbiIdFromBranch(e.branch)).filter((id): id is number => id !== null))]
-    if (!ado?.organization || !ado.project || !ado.token || ids.length === 0) {
+    const connectionId = adoConnection?.id
+    const project = adoConnection?.project
+    if (!connectionId || !project || ids.length === 0) {
       setPbiItems({})
       return
     }
-    const { organization, project, token } = ado
     let cancelled = false
     ;(async () => {
       try {
-        await window.electronAPI.ado.connect(organization, token)
+        // the main-process ADO service serves one connection at a time
+        if (!(await window.electronAPI.ado.use(connectionId))) throw new Error('PAT mancante')
         const list = await window.electronAPI.ado.workItemsBatch(project, ids)
         if (!cancelled) setPbiItems(Object.fromEntries(list.map(i => [i.id, i])))
       } catch {
@@ -332,7 +338,8 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
       }
     })()
     return () => { cancelled = true }
-  }, [pbiLoad, ado?.organization, ado?.project, ado?.token])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pbiLoad, adoConnection?.id, adoConnection?.project])
 
   const browseFolder = async () => {
     try {
@@ -526,6 +533,23 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               #{pbiId}
             </span>
           )}
+          {ado.status === 'no-connections' && !isMainPath(entry.path) && (
+            // the worktree view works without ADO: just a way to set it up
+            <button onClick={() => useSettingsNavStore.getState().openSettings('ado-connections')}
+              title="Azure DevOps non configurato" data-tip-desc="configura una connessione in Impostazioni › Azure DevOps: titolo e stato dei PBI, pull request da «Completa PR»"
+              style={{ ...chip('var(--text-muted)', 'var(--bg-subtle)'), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+              ADO non configurato
+            </button>
+          )}
+          {ado.status === 'none' && ado.errors.length === 0 && !isMainPath(entry.path) && (
+            // no repository named like the folder (often a folder that does not use ADO): mappable in Settings, no warning
+            <button onClick={() => useSettingsNavStore.getState().openSettings('ado-folders')}
+              title="ADO: nessuna repository"
+              data-tip-desc={`nessuna repository Azure DevOps si chiama «${ado.folderName}»: se questa cartella ne usa una, associala in Impostazioni › Azure DevOps › Repository per cartella`}
+              style={{ ...chip('var(--text-muted)', 'var(--bg-subtle)'), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+              ADO: nessuna repository
+            </button>
+          )}
           {ov?.upstreamGone && (
             <span title={`nessun branch remoto ${ov.upstream || ''} (rispetto all'ultimo fetch)`} data-tip-desc="mai pubblicato, oppure rimosso dopo il merge della PR"
               style={chip('var(--text-muted)', 'var(--bg-subtle)')}>
@@ -635,6 +659,14 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
       <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
         {Strip}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* the folder's ADO repository is not clear: ask here, in view (PBI titles and PRs need it);
+              'none' (no same-name repository) is only a muted chip in the worktree header, unless a
+              connection failed (its repositories are unknown: errors and retry stay in view) */}
+          {(ado.status === 'ambiguous' || ado.status === 'error' || (ado.status === 'none' && ado.errors.length > 0)) && (
+            <div style={{ flexShrink: 0, padding: '6px 8px', borderBottom: '1px solid var(--border-color)' }}>
+              <AdoRepoChooser state={ado} compact />
+            </div>
+          )}
           {selectedEntry ? (
             <WorktreeChanges worktreePath={selectedEntry.path} repoPath={repoPath} checkMarks={checkMarks[selectedEntry.path] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedEntry.path, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef}
               onGitChanged={(paths) => void fetchOverview(paths)} sync={overview[selectedEntry.path]} layout={renderMain(selectedEntry)} />

@@ -65,8 +65,7 @@ async function installElectronMock(page: Page) {
         install: async () => ({ ok: true }),
         state: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
         check: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
-        onState: unsub,
-        onDownloaded: unsub
+        onState: unsub
       },
       fs,
       git,
@@ -89,7 +88,19 @@ async function installElectronMock(page: Page) {
         saveFile: async () => null,
         saveSqlQuery: async () => null
       },
-      ado: { connect: async () => true },
+      // no Azure DevOps connection configured (settings live in the main process)
+      ado: { use: async () => false },
+      adoSettings: {
+        get: async () => ({ connections: [], folders: {}, release: {}, tokens: {} }),
+        saveConnection: async () => { throw new Error('Azure DevOps non raggiungibile: mock') },
+        test: async () => ({ ok: false, error: 'connessione non trovata' }),
+        removeConnection: emptyAsync,
+        setFolder: emptyAsync,
+        setRelease: emptyAsync,
+        catalog: async () => ({}),
+        importLegacy: async () => false,
+        onChanged: unsub
+      },
       sql: {},
       window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
       terminal: {},

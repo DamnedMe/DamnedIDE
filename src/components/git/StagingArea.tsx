@@ -1,5 +1,5 @@
 import { GitFileStatus } from '../../types/git'
-import { Plus, Minus } from 'lucide-react'
+import { Plus, Minus } from '@/components/icons'
 
 interface StagingAreaProps {
   modifiedFiles: GitFileStatus[]

@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from 'react'
-import { AlertCircle, Check, Clock3, Loader2, MessageSquareText, Table2 } from 'lucide-react'
+import { AlertCircle, Check, Clock3, Loader2, MessageSquareText, Table2 } from '@/components/icons'
 import { SqlExecutionResult } from '../../types/sql'
 import { useSqlSectionZoom } from './useSqlSectionZoom'
 

@@ -26,7 +26,7 @@ import {
   ChevronRight, Asterisk, Regex, CaseSensitive, SeparatorHorizontal,
   Play, Hammer, Square, RotateCw, GitCompare,
   ArrowLeft, ArrowRight, XCircle, AlertTriangle, Eye, Copy, Loader2, Save
-} from 'lucide-react'
+} from '@/components/icons'
 
 type LeftPanel = 'explorer' | 'search' | 'changes'
 type MonacoEditor = Parameters<OnMount>[0]

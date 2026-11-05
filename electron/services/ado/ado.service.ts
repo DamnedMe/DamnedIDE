@@ -1,4 +1,42 @@
 import { isLongLivedBranch } from '../../../src/shared/adoPromotion'
+import type { AdoRepoList } from '../../../src/shared/adoSettings'
+
+const basicAuth = (token: string): string => `Basic ${Buffer.from(`:${token}`).toString('base64')}`
+
+/**
+ * Repositories of one org/project with that PAT, as an answer the settings can
+ * show. Standalone (it never touches the AdoService singleton), so verifying a
+ * connection or reading the catalog cannot redirect a panel's calls.
+ */
+export async function fetchRepositories(org: string, project: string, token: string): Promise<AdoRepoList> {
+  const o = org.trim()
+  const p = project.trim()
+  const url = `https://dev.azure.com/${encodeURIComponent(o)}/${encodeURIComponent(p)}/_apis/git/repositories?api-version=7.0`
+  let res: Response
+  try {
+    res = await fetch(url, { headers: { Authorization: basicAuth(token), Accept: 'application/json' } })
+  } catch (e) {
+    const err = e as Error & { cause?: { message?: string } }
+    return { ok: false, error: `Azure DevOps non raggiungibile: ${err.cause?.message || err.message || String(e)}` }
+  }
+  if (res.status === 401 || res.status === 403) return { ok: false, error: 'PAT non valido, scaduto o senza permesso Code (Read)' }
+  if (res.status === 404) return { ok: false, error: `organization o project non trovati: ${o}/${p}` }
+  // a bad PAT gets 203 + the sign-in page (or a redirect to it) instead of a 401
+  if (res.status === 203) return { ok: false, error: 'PAT non valido o scaduto' }
+  if (!res.ok) return { ok: false, error: `errore Azure DevOps ${res.status}` }
+  let data: { value?: { name?: unknown }[] }
+  try {
+    data = JSON.parse(await res.text())
+  } catch {
+    return { ok: false, error: 'PAT non valido o scaduto' }
+  }
+  if (!data || typeof data !== 'object' || !Array.isArray(data.value)) return { ok: false, error: 'PAT non valido o scaduto' }
+  const repos = data.value
+    .map(r => (typeof r?.name === 'string' ? r.name : ''))
+    .filter(n => n)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  return { ok: true, repos }
+}
 
 export interface AdoWorkItem {
   id: number
@@ -52,11 +90,11 @@ export class AdoService {
     }
   }
 
-  async connect(org: string, token: string): Promise<boolean> {
+  /** Points every following call at this org/PAT. Main only (ado:use): the PAT never crosses IPC. */
+  use(org: string, token: string): void {
     this.baseUrl = `https://dev.azure.com/${org}`
     this.token = token
     this.currentUser = null
-    return true
   }
 
   async getCurrentUser(): Promise<{ id: string; displayName: string; emailAddress?: string } | null> {
@@ -314,12 +352,13 @@ export class AdoService {
   }
 
   async getBranches(project: string, repo: string): Promise<string[]> {
-    const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/refs/branches?api-version=7.0`
+    // the route is refs/{*filter}: `refs/branches` matched nothing, the filter is the ref prefix after `refs/`
+    const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/refs?filter=heads/&api-version=7.0`
     const res = await fetch(url, { headers: this.authHeaders() })
     if (!res.ok) return []
     const data = await res.json()
     return (data.value || [])
-      .map((r: Record<string, unknown>) => ((r.name as string) || '').replace('refs/heads/', ''))
+      .map((r: Record<string, unknown>) => ((r.name as string) || '').replace(/^refs\/heads\//, ''))
       .filter((b: string) => b)
   }
 
@@ -332,17 +371,69 @@ export class AdoService {
     return (data.value || []).map((r: Record<string, unknown>) => (r.name as string) || '').filter((n: string) => n)
   }
 
-  async getCommitsBetween(project: string, repo: string, sourceRef: string, targetRef: string): Promise<{ commitId: string; message: string; author: string }[]> {
+  /** `strict`: an error answer throws (the release chain retries) instead of reading as "no commit". */
+  async getCommitsBetween(project: string, repo: string, sourceRef: string, targetRef: string, opts?: { strict?: boolean }): Promise<{ commitId: string; message: string; author: string }[]> {
     // ponytail: one page of 1000 commits (no paging); a bigger promotion lists only the newest 1000
     const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(sourceRef)}&searchCriteria.itemVersion.versionType=branch&searchCriteria.compareVersion.version=${encodeURIComponent(targetRef)}&searchCriteria.compareVersion.versionType=branch&searchCriteria.$top=1000&api-version=7.0`
-    const res = await fetch(url, { headers: this.authHeaders() })
-    if (!res.ok) return []
-    const data = await res.json()
-    return (data.value || []).map((c: Record<string, unknown>) => ({
+    let data: { value?: Record<string, unknown>[] }
+    if (opts?.strict) {
+      data = await this.getJson(url)
+    } else {
+      const res = await fetch(url, { headers: this.authHeaders() })
+      if (!res.ok) return []
+      data = await res.json()
+    }
+    return (Array.isArray(data?.value) ? data.value : []).map((c: Record<string, unknown>) => ({
       commitId: c.commitId as string || '',
       message: (c.comment as string) || '',
       author: ((c.author as Record<string, unknown>)?.name as string) || ''
     }))
+  }
+
+  /**
+   * GET that throws a readable Italian message on anything but a JSON answer
+   * (network, PAT, 404, sign-in page): the release chain keeps it as its last error and retries.
+   */
+  private async getJson(url: string): Promise<any> {
+    let res: Response
+    try {
+      res = await fetch(url, { headers: this.authHeaders({ Accept: 'application/json' }) })
+    } catch (e) {
+      const err = e as Error & { cause?: { message?: string } }
+      throw new Error(`Azure DevOps non raggiungibile: ${err.cause?.message || err.message || String(e)}`)
+    }
+    if (res.status === 401 || res.status === 403) throw new Error('PAT non valido, scaduto o senza permesso Code (Read)')
+    if (res.status === 404) throw new Error('non trovato in Azure DevOps (repository o pull request rinominate o rimosse?)')
+    // a bad PAT gets 203 + the sign-in page instead of a 401
+    if (res.status === 203) throw new Error('PAT non valido o scaduto')
+    if (!res.ok) throw new Error(`errore Azure DevOps ${res.status}`)
+    try {
+      return JSON.parse(await res.text())
+    } catch {
+      throw new Error('PAT non valido o scaduto')
+    }
+  }
+
+  private prWebUrl(project: string, repo: string, prId: number): string {
+    return `${this.baseUrl}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repo)}/pullrequest/${prId}`
+  }
+
+  /** Status of one pull request ('active' | 'completed' | 'abandoned'); throws when Azure DevOps does not answer. */
+  async getPullRequestState(project: string, repo: string, prId: number): Promise<{ id: number; status: string; url: string }> {
+    if (!this.baseUrl) throw new Error('Non connesso ad Azure DevOps')
+    const data = await this.getJson(`${this.baseUrl}/${encodeURIComponent(project)}/_apis/git/repositories/${encodeURIComponent(repo)}/pullrequests/${prId}?api-version=7.0`)
+    return { id: Number(data?.pullRequestId) || prId, status: String(data?.status ?? ''), url: this.prWebUrl(project, repo, prId) }
+  }
+
+  /** The active pull request from `sourceRef` to `targetRef`, null when there is none; throws when Azure DevOps does not answer. */
+  async findActivePullRequest(project: string, repo: string, sourceRef: string, targetRef: string): Promise<{ id: number; url: string } | null> {
+    if (!this.baseUrl) throw new Error('Non connesso ad Azure DevOps')
+    const ref = (b: string) => encodeURIComponent(`refs/heads/${b.replace(/^refs\/heads\//, '')}`)
+    const data = await this.getJson(`${this.baseUrl}/${encodeURIComponent(project)}/_apis/git/repositories/${encodeURIComponent(repo)}/pullrequests?searchCriteria.status=active&searchCriteria.sourceRefName=${ref(sourceRef)}&searchCriteria.targetRefName=${ref(targetRef)}&api-version=7.0`)
+    const first = (Array.isArray(data?.value) ? data.value : []).find((p: { pullRequestId?: unknown }) => Number(p?.pullRequestId) > 0)
+    if (!first) return null
+    const id = Number(first.pullRequestId)
+    return { id, url: this.prWebUrl(project, repo, id) }
   }
 
   async setVote(project: string, repo: string, prId: number, vote: number): Promise<boolean> {
@@ -509,7 +600,7 @@ export class AdoService {
     const data = await res.json()
     const prId = data.pullRequestId as number
     const sourceCommitId = (data.lastMergeSourceCommit?.commitId as string) || ''
-    const prUrl = `${this.baseUrl}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repo)}/pullrequest/${prId}`
+    const prUrl = this.prWebUrl(project, repo, prId)
 
     if (opts.autoComplete && prId) {
       const armOpts = { title: opts.title, deleteSourceBranch }

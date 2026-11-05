@@ -11,6 +11,11 @@ files:
   # references, hover) è disabilitata nell'app installata. Va anche in
   # asarUnpack: `dotnet` non può leggere dentro app.asar.
   - ide-services/RoslynBridge/bin/Release/net8.0/**/*
+# Licenze di terze parti incluse nel bundle del renderer (Ionicons, MIT): file in
+# chiaro accanto ad app.asar, in <installazione>/resources/licenses/.
+extraResources:
+  - from: resources/licenses
+    to: licenses
 # afterPack hook: labels the package for electron-updater (only when the
 # DAMNED_PACKAGE_TYPE env var is set — used for the pacman-only build)
 afterPack: scripts/after-pack.cjs

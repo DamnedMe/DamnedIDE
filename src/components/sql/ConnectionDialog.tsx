@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SqlConnection, SqlConnectionConfig, SqlRecentConnection, SqlTestResult } from '../../types/sql'
 import { Modal } from '../layout/Modal'
 import { authTypesForPlatform, ConnectionForm, EMPTY_FORM, connectionToForm, formToConfig } from './sqlForm'
-import { Database, History, KeyRound, Link2, Loader2, PlugZap, ShieldCheck, X } from 'lucide-react'
+import { Database, History, KeyRound, Link2, Loader2, PlugZap, ShieldCheck, X } from '@/components/icons'
 
 type TabId = 'login' | 'properties' | 'string'
 

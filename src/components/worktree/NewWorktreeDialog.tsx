@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, X, GitBranch, FolderGit2, Bug, Sparkles, Layers } from 'lucide-react'
+import { Loader2, X, GitBranch, FolderGit2, Bug, Sparkles, Layers } from '@/components/icons'
 import { useI18n } from '../../i18n'
 import { joinPath } from '../../utils/paths'
 import type { WorktreeEntry } from '../../types/worktree'

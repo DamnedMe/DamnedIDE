@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Loader2, GitBranch, Plus, Minus, Check, Download, Upload, RefreshCw, Diff, GitCommitHorizontal, Clock, GitMerge, X, FileCode } from 'lucide-react'
+import { Loader2, GitBranch, Plus, Minus, Check, Download, Upload, RefreshCw, Diff, GitCommitHorizontal, Clock, GitMerge, X, FileCode } from '@/components/icons'
 import { useToastStore } from '../../store'
 
 interface GitBarProps {

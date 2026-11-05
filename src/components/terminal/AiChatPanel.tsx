@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Send, Bot, User, Loader2, Trash2, ChevronDown, Square, Sparkles, Plus, X, Cpu, AlertCircle } from 'lucide-react'
+import { Send, Bot, User, Loader2, Trash2, ChevronDown, Square, Sparkles, Plus, X, Cpu, AlertCircle } from '@/components/icons'
 import {
   useAgentChatStore, useWorktreeStore, useTerminalStore, useClaudeStore, useAiChatStore, useAgentConfigStore,
   type AgentSession, type AiChatMessage

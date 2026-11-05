@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AdoWorkItem } from '../../types/ado'
-import { Loader2, ExternalLink } from 'lucide-react'
+import { Loader2, ExternalLink } from '@/components/icons'
 
 interface WorkItemDetailProps {
   workItemId: number

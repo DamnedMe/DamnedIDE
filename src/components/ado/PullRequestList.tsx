@@ -1,5 +1,5 @@
 import { AdoPullRequest } from '../../types/ado'
-import { GitPullRequest, CheckCheck, CircleDot, ThumbsDown } from 'lucide-react'
+import { GitPullRequest, CheckCheck, CircleDot, ThumbsDown } from '@/components/icons'
 
 interface PullRequestListProps {
   pullRequests: AdoPullRequest[]

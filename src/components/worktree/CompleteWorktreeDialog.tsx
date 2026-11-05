@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Loader2, X, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, FileCode, Layers, Trash2 } from 'lucide-react'
-import { useAdoStore, adoConnectionFor, useEditorStore, useToastStore } from '../../store'
+import { Loader2, X, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, FileCode, Layers, Trash2 } from '@/components/icons'
+import { useEditorStore, useToastStore } from '../../store'
+import { useAdoFolder } from '../../hooks/useAdoFolder'
+import { AdoRepoChooser, useConnectionRepos } from '../ado/AdoRepoChooser'
+import { ADO_MISSING_PAT, sameName } from '../../shared/adoSettings'
 import { joinPath } from '../../utils/paths'
 import { pbiIdFromBranch } from './worktree-cleanup'
 
@@ -27,15 +30,23 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
   const [prCreated, setPrCreated] = useState<number | null>(null)
   const [prFailed, setPrFailed] = useState(false)
   const [completed, setCompleted] = useState(false)
-  const [repos, setRepos] = useState<string[]>([])
-  const [repo, setRepo] = useState('')
+  // '' = not picked: the folder's resolved repository
+  const [pickedRepo, setPickedRepo] = useState('')
   const [autoComplete, setAutoComplete] = useState(false)
   const [stackInfo, setStackInfo] = useState<WorktreeStackInfo | null>(null)
   const [removingChild, setRemovingChild] = useState(false)
-  const [repoListFailed, setRepoListFailed] = useState(false)
-  // the connection saved for this repository (Azure DevOps panel)
-  const ado = useAdoStore(s => adoConnectionFor(s.connections, repoPath))
-  const adoReady = !!(ado?.organization && ado.project && ado.token)
+  // connection + repository of the main folder (Settings › Azure DevOps)
+  const ado = useAdoFolder(repoPath)
+  const connection = ado.status === 'ready' ? ado.connection : null
+  const adoReady = !!connection
+  // repositories of the connection, for the repository select (default: the folder's)
+  const repoList = useConnectionRepos(connection?.id ?? null)
+  const listed = repoList?.ok ? repoList.repos : []
+  const repoListFailed = adoReady && !!repoList && (!repoList.ok || repoList.repos.length === 0)
+  const folderRepo = ado.repository
+  const resolvedRepo = folderRepo ? (listed.find(r => sameName(r, folderRepo)) ?? folderRepo) : ''
+  const repos = resolvedRepo && !listed.includes(resolvedRepo) ? [resolvedRepo, ...listed] : listed
+  const repo = pickedRepo && repos.includes(pickedRepo) ? pickedRepo : resolvedRepo || repos[0] || ''
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const showToast = useToastStore(s => s.showToast)
 
@@ -129,35 +140,25 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
     if (await createPr()) await afterPr()
   }
 
-  useEffect(() => {
-    if (!ado || !adoReady) return
-    window.electronAPI.ado.connect(ado.organization, ado.token)
-      .then(() => window.electronAPI.ado.repositories(ado.project))
-      .then(list => {
-        setRepos(list)
-        setRepoListFailed(list.length === 0)
-        if (list.length > 0) {
-          const repoName = repoPath.split(/[\\/]/).pop() || ''
-          setRepo(ado.repository && list.includes(ado.repository) ? ado.repository : list.includes(repoName) ? repoName : list[0])
-        }
-      })
-      .catch(() => setRepoListFailed(true))
-  }, [])
-
   const updateStep = (index: number, patch: Partial<StepLog>) => {
     setSteps(prev => prev.map((s, i) => i === index ? { ...s, ...patch } : s))
   }
 
   const createPr = async () => {
-    if (!ado?.isConnected || !ado.organization || !ado.project || !repo) {
+    if (!connection || !repo) {
       updateStep(6, { status: 'warn', detail: 'ADO non connesso o repository non selezionata: PR non creata' })
       setPrFailed(true)
       return false
     }
     updateStep(6, { status: 'running', detail: undefined })
-    await window.electronAPI.ado.connect(ado.organization, ado.token)
+    // the main-process ADO service serves one connection at a time
+    if (!(await window.electronAPI.ado.use(connection.id))) {
+      updateStep(6, { status: 'warn', detail: `${ADO_MISSING_PAT}: PR non creata` })
+      setPrFailed(true)
+      return false
+    }
     const branch = await window.electronAPI.git.currentBranch(worktreePath)
-    const result = await window.electronAPI.ado.createPr(ado.project, repo, {
+    const result = await window.electronAPI.ado.createPr(connection.project, repo, {
       sourceRef: branch,
       targetRef: targetBranch,
       title: fullMessage,
@@ -301,7 +302,11 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {(!adoReady || repoListFailed) && (
+          {/* no connection, or the folder's repository is not clear: choose it here, before
+              starting (its «configura in Impostazioni» leaves the panel and would drop a running flow) */}
+          {!adoReady && ado.status !== 'loading' && !isRunning && <AdoRepoChooser state={ado} compact />}
+
+          {((!adoReady && ado.status !== 'loading') || repoListFailed) && (
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '8px 10px',
               background: 'var(--warning-bg)', border: '1px solid var(--warning-color)',
@@ -311,9 +316,9 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
               <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>
                 {!adoReady
-                  ? <>Azure DevOps non è configurato per questo repository: la pull request non verrà creata.</>
-                  : <>Azure DevOps non restituisce le repository del project <b>{ado?.project}</b> (PAT scaduto o project errato?): la pull request fallirà.</>}
-                {' '}Configuralo nel pannello Azure DevOps prima di avviare, oppure procedi solo con commit, push e merge.
+                  ? <>Senza una repository Azure DevOps per questa cartella la pull request non verrà creata.</>
+                  : <>Azure DevOps non restituisce le repository del project <b>{connection?.project}</b>{repoList && !repoList.ok ? <> ({repoList.error})</> : null}: la pull request potrebbe fallire.</>}
+                {' '}Configurala in Impostazioni › Azure DevOps prima di avviare, oppure procedi solo con commit, push e merge.
               </span>
             </div>
           )}
@@ -379,10 +384,10 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
             )}
           </label>
 
-          {ado?.isConnected && (
+          {adoReady && (
             <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
               repository
-              <select value={repo} onChange={(e) => setRepo(e.target.value)}
+              <select value={repo} onChange={(e) => setPickedRepo(e.target.value)}
                 disabled={repos.length === 0}
                 style={{
                   display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
@@ -395,7 +400,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
             </label>
           )}
 
-          {ado?.isConnected && (
+          {adoReady && (
             <div
               onClick={() => setAutoComplete(!autoComplete)}
               style={{

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { FolderOpen, History, Trash2, X } from 'lucide-react'
+import { FolderOpen, History, Trash2, X } from '@/components/icons'
 import { useRecentReposStore } from '../../store'
 import { useI18n } from '../../i18n'
 import { basenameOf, samePath } from '../../utils/paths'

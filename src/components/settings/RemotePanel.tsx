@@ -12,7 +12,7 @@ import {
   WifiOff,
   Copy,
   AlertTriangle
-} from 'lucide-react'
+} from '@/components/icons'
 import { useToastStore } from '../../store'
 import { ALL_SCOPES, SCOPE_LABELS, type RemoteScope } from '../../shared/remote/protocol'
 

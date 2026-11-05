@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, GitPullRequest, GitCompare, FileCode, FilePlus, FileMinus, FileEdit, X, MessageSquare, Check, ThumbsDown, Merge } from 'lucide-react'
+import { Loader2, GitPullRequest, GitCompare, FileCode, FilePlus, FileMinus, FileEdit, X, MessageSquare, Check, ThumbsDown, Merge } from '@/components/icons'
 import { DiffViewer } from '../editor/DiffViewer'
 import { useToastStore } from '../../store'
 import { AdoPullRequestDetail, AdoPullRequestFile, AdoPullRequestThread } from '../../types/ado'

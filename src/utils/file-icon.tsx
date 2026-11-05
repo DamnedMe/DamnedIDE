@@ -1,12 +1,12 @@
 import {
   File, FileCode, FileJson, FileText, FileType, Image, FileArchive, Database,
   Braces, FileTerminal, FileCog, Table2, FileCode2, FileVideo, Globe, Boxes
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+} from '@/components/icons'
+import type { AppIcon } from '@/components/icons'
 
 // Coherent file-type icon + color by extension, used in the editor tabs,
 // file explorer and file lists.
-const FILE_ICONS: Record<string, { Icon: LucideIcon; color: string }> = {
+const FILE_ICONS: Record<string, { Icon: AppIcon; color: string }> = {
   ts: { Icon: FileCode, color: 'var(--accent-color)' },
   tsx: { Icon: FileCode, color: 'var(--accent-color)' },
   js: { Icon: FileCode, color: '#e8d44d' },
@@ -60,7 +60,7 @@ const FILE_ICONS: Record<string, { Icon: LucideIcon; color: string }> = {
   cshtml: { Icon: Globe, color: '#e06c75' }
 }
 
-export function fileIconFor(filePath: string): { Icon: LucideIcon; color: string } {
+export function fileIconFor(filePath: string): { Icon: AppIcon; color: string } {
   const base = filePath.split(/[/\\]/).pop() || filePath
   const ext = base.toLowerCase().endsWith('.gitignore') ? 'gitignore'
     : base.toLowerCase() === 'dockerfile' ? 'dockerfile'

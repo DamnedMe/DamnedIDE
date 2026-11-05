@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Database, HardDriveDownload, FileArchive, FolderOpen, Loader2, Check, AlertCircle, Copy, X, Ban, RefreshCw, PackageOpen } from 'lucide-react'
+import { Database, HardDriveDownload, FileArchive, FolderOpen, Loader2, Check, AlertCircle, Copy, X, Ban, RefreshCw, PackageOpen } from '@/components/icons'
 import { Modal } from '../layout/Modal'
 import { SqlConnection } from '../../types/sql'
 import { buildBackupStatement, dataTierTargetName, defaultBackupFileName, joinServerPath, type DataTierAction } from '../../shared/sqlBackup'

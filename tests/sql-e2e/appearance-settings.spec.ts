@@ -6,7 +6,9 @@ import { test, expect } from './sql.fixture'
 
 test('appearance settings: global font family and size ranges', async ({ page }) => {
   await page.goto('/')
-  await page.getByTitle('settings').click()
+  await page.getByTitle('settings', { exact: true }).click()
+  // settings open on the remembered page: text size and fonts are on Aspetto › Testo e icone
+  await page.getByRole('navigation', { name: 'pagine delle impostazioni' }).getByRole('button', { name: 'Testo e icone' }).click()
 
   // the font select is the one containing the default Nunito option
   const fontSelect = page.locator('select', { has: page.locator('option[value="Nunito"]') })

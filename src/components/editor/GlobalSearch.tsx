@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, FileText, Loader2, X } from 'lucide-react'
+import { Search, FileText, Loader2, X } from '@/components/icons'
 
 export interface SearchResult {
   file: string

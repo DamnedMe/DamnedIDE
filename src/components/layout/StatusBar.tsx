@@ -1,4 +1,4 @@
-import { GitBranch, AlertCircle, CheckCircle2, Sun, Moon, TerminalSquare, Bot } from 'lucide-react'
+import { GitBranch, AlertCircle, CheckCircle2, Sun, Moon, TerminalSquare, Bot } from '@/components/icons'
 import logo from '../../assets/logo.png'
 import { useAgentConfigStore, useMcpStore } from '../../store'
 import { useI18n } from '../../i18n'

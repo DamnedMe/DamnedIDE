@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { GitFileStatus } from '../../types/git'
 import { FileDiffList } from '../git/FileDiffList'
 import { joinPath } from '../../utils/paths'
-import { ListPlus, RefreshCw, Loader2, GitCompare } from 'lucide-react'
+import { ListPlus, RefreshCw, Loader2, GitCompare } from '@/components/icons'
 
 interface ChangesPanelProps {
   repoPath: string

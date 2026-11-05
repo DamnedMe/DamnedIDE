@@ -4,7 +4,16 @@
 
 export type EnvRole = 'dev' | 'qa' | 'prod'
 export type PromotionStage = 'dev-qa' | 'qa-prod'
+/** What the Release panel promotes: one step, or the chain develop → qa, then qa → prod (src/shared/adoChain.ts). */
+export type ReleaseStage = PromotionStage | 'dev-qa-prod'
 export type PromotionScope = 'be' | 'fe' | 'both'
+
+/** Labels of the stages, in the order the Release panel and Settings › Rilascio offer them. */
+export const RELEASE_STAGE_LABELS: Record<ReleaseStage, string> = {
+  'dev-qa': 'develop → qa',
+  'qa-prod': 'qa → prod',
+  'dev-qa-prod': 'develop → qa → prod'
+}
 
 export const STAGE_ROLES: Record<PromotionStage, { from: EnvRole; to: EnvRole }> = {
   'dev-qa': { from: 'dev', to: 'qa' },
@@ -18,12 +27,16 @@ export const BRANCH_CANDIDATES: Record<EnvRole, string[]> = {
   prod: ['main', 'master', 'prod', 'production']
 }
 
-/** Promotion settings saved per Azure DevOps org/project (promotionConfigKey). */
+/** Promotion settings saved per Azure DevOps org/project (promotionConfigKey), in Settings › Azure DevOps › Rilascio. */
 export interface PromotionConfig {
-  /** ADO repository of the frontend (the backend is the open repository's connection) */
+  /** ADO repository of the backend (unset: the open folder's repository) */
+  beRepo?: string
+  /** ADO repository of the frontend (unset: a repository mapped to another folder of the same connection) */
   feRepo?: string
   /** per ADO repository: branch names chosen by hand, used when they exist on the remote */
   branches?: Record<string, Partial<Record<EnvRole, string>>>
+  /** stage the Release panel opens on (unset: develop → qa) */
+  stage?: ReleaseStage
 }
 
 export function promotionConfigKey(org: string, project: string): string {

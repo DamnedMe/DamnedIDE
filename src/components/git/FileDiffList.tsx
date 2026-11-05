@@ -1,6 +1,6 @@
 import { GitFileStatus } from '../../types/git'
 import { useState } from 'react'
-import { Plus, Minus, Eye, Check, X, Copy, Undo2, FolderOpen } from 'lucide-react'
+import { Plus, Minus, Eye, Check, X, Copy, Undo2, FolderOpen } from '@/components/icons'
 import { FileTypeIcon } from '../../utils/file-icon'
 
 interface FileDiffListProps {

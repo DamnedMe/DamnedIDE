@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, X, GitPullRequest, RotateCw } from 'lucide-react'
+import { Loader2, X, GitPullRequest, RotateCw } from '@/components/icons'
 
 interface CreatePrDialogProps {
   project: string

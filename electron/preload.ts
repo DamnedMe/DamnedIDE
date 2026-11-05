@@ -14,6 +14,11 @@ import type {
   WorkspaceSnapshot
 } from '../src/shared/remote/protocol'
 import type { RemoteApply } from '../src/shared/remote/protocol'
+import type {
+  AdoConnectionConfig, AdoConnectionInput, AdoLegacyConnection, AdoRepoList, AdoRepoRef, AdoSettingsView
+} from '../src/shared/adoSettings'
+import type { PromotionConfig } from '../src/shared/adoPromotion'
+import type { ChainStartInput, ReleaseChain } from '../src/shared/adoChain'
 
 const electronAPI = {
   // lets the renderer hide/gate Windows-only features (LocalDB, Windows auth…)
@@ -102,8 +107,40 @@ const electronAPI = {
     branch: (repoPath: string, branchA: string, branchB: string) =>
       ipcRenderer.invoke('diff:branch', repoPath, branchA, branchB)
   },
+  // Azure DevOps settings, kept by the main process (the PATs never come back here)
+  adoSettings: {
+    get: (): Promise<AdoSettingsView> => ipcRenderer.invoke('adoSettings:get'),
+    saveConnection: (input: AdoConnectionInput): Promise<{ connection: AdoConnectionConfig; repos: string[] }> =>
+      ipcRenderer.invoke('adoSettings:saveConnection', input),
+    test: (id: string): Promise<AdoRepoList> => ipcRenderer.invoke('adoSettings:test', id),
+    removeConnection: (id: string): Promise<void> => ipcRenderer.invoke('adoSettings:removeConnection', id),
+    setFolder: (key: string, ref: AdoRepoRef | null): Promise<void> => ipcRenderer.invoke('adoSettings:setFolder', key, ref),
+    setRelease: (key: string, config: PromotionConfig | null): Promise<void> => ipcRenderer.invoke('adoSettings:setRelease', key, config),
+    catalog: (force?: boolean): Promise<Record<string, AdoRepoList>> => ipcRenderer.invoke('adoSettings:catalog', force),
+    importLegacy: (legacy: Record<string, AdoLegacyConnection>, promotion: Record<string, PromotionConfig>): Promise<boolean> =>
+      ipcRenderer.invoke('adoSettings:importLegacy', legacy, promotion),
+    onChanged: (cb: () => void) => {
+      const l = () => cb()
+      ipcRenderer.on('adoSettings:changed', l)
+      return () => ipcRenderer.removeListener('adoSettings:changed', l)
+    }
+  },
+  // release chains develop → qa → prod, followed by the main process (one instance polls them)
+  adoChain: {
+    list: (): Promise<ReleaseChain[]> => ipcRenderer.invoke('adoChain:list'),
+    start: (input: ChainStartInput): Promise<ReleaseChain> => ipcRenderer.invoke('adoChain:start', input),
+    cancel: (id: string): Promise<void> => ipcRenderer.invoke('adoChain:cancel', id),
+    // finished chains only
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('adoChain:remove', id),
+    onChanged: (cb: () => void) => {
+      const l = () => cb()
+      ipcRenderer.on('adoChain:changed', l)
+      return () => ipcRenderer.removeListener('adoChain:changed', l)
+    }
+  },
   ado: {
-    connect: (org: string, token: string) => ipcRenderer.invoke('ado:connect', org, token),
+    // points the ADO calls below at a saved connection (its PAT stays in main)
+    use: (connectionId: string): Promise<boolean> => ipcRenderer.invoke('ado:use', connectionId),
     workItems: (project: string) => ipcRenderer.invoke('ado:workItems', project),
     workItem: (project: string, id: number) => ipcRenderer.invoke('ado:workItem', project, id),
     workItemsBatch: (project: string, ids: number[]) => ipcRenderer.invoke('ado:workItemsBatch', project, ids),
@@ -114,7 +151,7 @@ const electronAPI = {
     pullRequestThreads: (project: string, repo: string, prId: number) => ipcRenderer.invoke('ado:pullRequestThreads', project, repo, prId),
     branches: (project: string, repo: string) => ipcRenderer.invoke('ado:branches', project, repo),
     repositories: (project: string) => ipcRenderer.invoke('ado:repositories', project),
-    commitsBetween: (project: string, repo: string, source: string, target: string) => ipcRenderer.invoke('ado:commitsBetween', project, repo, source, target),
+    commitsBetween: (project: string, repo: string, source: string, target: string, strict?: boolean) => ipcRenderer.invoke('ado:commitsBetween', project, repo, source, target, strict),
     setVote: (project: string, repo: string, prId: number, vote: number) => ipcRenderer.invoke('ado:setVote', project, repo, prId, vote),
     completePr: (project: string, repo: string, prId: number, sourceCommitId: string, deleteSourceBranch?: boolean) => ipcRenderer.invoke('ado:completePr', project, repo, prId, sourceCommitId, deleteSourceBranch),
     createPr: (project: string, repo: string, opts: { sourceRef: string; targetRef: string; title: string; description: string; autoComplete: boolean; deleteSourceBranch?: boolean; forceComplete?: boolean; workItemIds?: number[] }) => ipcRenderer.invoke('ado:createPr', project, repo, opts)
@@ -205,18 +242,16 @@ const electronAPI = {
     openDetached: (panelId: string) => ipcRenderer.invoke('window:openDetached', panelId)
   },
   updater: {
-    install: (): Promise<{ ok: boolean; error?: string; restartRequired?: boolean }> => ipcRenderer.invoke('update:install'),
+    // one click: take the updater lock, check, download if needed, install (see UpdateService)
+    installLatest: (): Promise<{ ok: boolean; error?: string; restartRequired?: boolean; upToDate?: boolean }> =>
+      ipcRenderer.invoke('update:installLatest'),
+    restart: (): Promise<void> => ipcRenderer.invoke('update:restart'),
     state: (): Promise<UpdateState> => ipcRenderer.invoke('update:state'),
     check: (): Promise<UpdateState> => ipcRenderer.invoke('update:check'),
     onState: (callback: (state: UpdateState) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, state: UpdateState) => callback(state)
       ipcRenderer.on('update:state', handler)
       return () => ipcRenderer.removeListener('update:state', handler)
-    },
-    onDownloaded: (callback: () => void) => {
-      const handler = () => callback()
-      ipcRenderer.on('update:downloaded', handler)
-      return () => ipcRenderer.removeListener('update:downloaded', handler)
     }
   },
   terminal: {

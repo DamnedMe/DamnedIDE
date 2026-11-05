@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react'
-import { Rocket, Loader2, RotateCw, ChevronRight, ChevronDown, GitPullRequest, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Rocket, Loader2, RotateCw, ChevronRight, ChevronDown, GitPullRequest, AlertTriangle, CheckCircle2, XCircle, Clock, Ban, Trash2, Link2 } from '@/components/icons'
 import { PanelContainer } from '../layout/PanelContainer'
 import { Modal } from '../layout/Modal'
 import { TerminalDock } from '../terminal/TerminalDock'
-import { useAdoStore, adoConnectionFor, usePromotionStore, useToastStore } from '../../store'
+import { AdoRepoChooser, useConnectionRepos } from './AdoRepoChooser'
+import { useAdoStore, useAdoSettingsStore, useSettingsNavStore, useToastStore } from '../../store'
+import { useAdoFolder } from '../../hooks/useAdoFolder'
 import type { AdoPullRequest, AdoWorkItem } from '../../types/ado'
 import {
   STAGE_ROLES,
+  RELEASE_STAGE_LABELS,
   resolveEnvBranch,
   extractWorkItemIds,
   promotionTitle,
@@ -14,9 +17,14 @@ import {
   promotionConfigKey,
   firstLine,
   type EnvRole,
-  type PromotionStage,
+  type PromotionConfig,
+  type ReleaseStage,
   type PromotionScope
 } from '../../shared/adoPromotion'
+import { ADO_MISSING_PAT, releaseRepos, sameName, siblingRepos, withBeRepo } from '../../shared/adoSettings'
+import { activeChainItem, chainProjectKey, isActiveStatus, isChainActive } from '../../shared/adoChain'
+import type { ChainItem, ChainStartItem, ChainStatus, ReleaseChain } from '../../shared/adoChain'
+import { ipcMessage } from '../settings/ui'
 
 type Side = 'BE' | 'FE'
 
@@ -32,6 +40,12 @@ interface RepoPreview {
   commits: Commit[]
   workItems: AdoWorkItem[]
   existing: AdoPullRequest | null
+  /** develop → qa → prod only: the prod branch */
+  prod?: string | null
+  /** develop → qa → prod only, when develop → qa has nothing: commits qa → prod (the chain starts there) */
+  prodCommits?: number
+  /** develop → qa → prod only, when develop → qa has nothing: the qa → prod PR already open */
+  prodExisting?: AdoPullRequest | null
   warning?: string
   error?: string
   status?: 'running' | 'ok' | 'error'
@@ -39,41 +53,46 @@ interface RepoPreview {
 }
 
 type ReadyPreview = RepoPreview & { source: string; target: string }
-
-/** ADO branch and repository names compare case-insensitively */
-const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+type ChainPreview = ReadyPreview & { prod: string }
 
 /**
- * Release promotion: one pull request per repository (BE = this repository's
- * Azure DevOps connection, FE = a repository of the same project) from develop
+ * Release promotion: one pull request per repository (BE and FE = two
+ * repositories of the open folder's Azure DevOps connection, chosen here and
+ * saved per org/project in Settings › Azure DevOps › Rilascio) from develop
  * to qa or from qa to prod, with the work items found in the commits linked.
+ * The third stage chains both: the develop → qa PRs are created here, then the
+ * main process (promotion-chain.service.ts) creates each qa → prod PR as soon as
+ * its develop → qa PR is completed; the chains of the project are listed below.
  */
-export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string | null; onConfigureAdo: () => void }) {
-  const connections = useAdoStore(s => s.connections)
+export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
   const setPullRequests = useAdoStore(s => s.setPullRequests)
-  const configs = usePromotionStore(s => s.configs)
-  const setConfig = usePromotionStore(s => s.setConfig)
+  const settings = useAdoSettingsStore(s => s.settings)
   const showToast = useToastStore(s => s.showToast)
 
-  const connection = adoConnectionFor(connections, repoPath)
+  const ado = useAdoFolder(repoPath)
+  const connection = ado.status === 'ready' ? ado.connection : null
+  const connectionId = connection?.id ?? null
   const org = connection?.organization ?? ''
   const project = connection?.project ?? ''
-  const token = connection?.token ?? ''
-  const beRepo = connection?.repository ?? ''
+  // the open folder's own repository: the default BE
+  const folderRepo = ado.repository ?? ''
   const configKey = connection ? promotionConfigKey(org, project) : ''
-  const config = configs[configKey] ?? {}
-  // FE is picked once per org/project; until then, another repository saved with the same org/project
-  const feSuggestion = connection
-    ? Object.values(connections).find(c =>
-        promotionConfigKey(c.organization, c.project) === configKey && !!c.repository && !sameName(c.repository, beRepo)
-      )?.repository ?? ''
-    : ''
-  const feRepo = config.feRepo ?? feSuggestion
+  // a choice being saved shows at once; the settings reload follows
+  const [draft, setDraft] = useState<{ key: string; config: PromotionConfig } | null>(null)
+  const config: PromotionConfig = (draft && draft.key === configKey ? draft.config : settings?.release[configKey]) ?? {}
+  // FE default: a repository mapped to another folder of the same connection
+  const siblings = connectionId && settings ? siblingRepos(settings.folders, connectionId, ado.folderKey) : []
+  const { be: beRepo, fe: feRepo } = releaseRepos(config, folderRepo || null, siblings)
+  // BE / FE pickers: the repositories of the folder's connection
+  const repoList = useConnectionRepos(connectionId)
+  const repos = repoList?.ok ? repoList.repos : []
+
+  // the stage is part of the release config: remembered per project, editable in Settings › Rilascio
+  const stage: ReleaseStage = config.stage ?? 'dev-qa'
+  const chainMode = stage === 'dev-qa-prod'
 
   // every hook stays above the early return (no ErrorBoundary: a hook-order bug blanks the app)
-  const [stage, setStage] = useState<PromotionStage>('dev-qa')
   const [scope, setScope] = useState<PromotionScope>('be')
-  const [repos, setRepos] = useState<string[]>([])
   const [previews, setPreviews] = useState<RepoPreview[]>([])
   const [loading, setLoading] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
@@ -83,25 +102,32 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
   const [autoComplete, setAutoComplete] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [creating, setCreating] = useState(false)
+  // release chains of every project (main keeps them); this panel shows the open project's
+  const [chains, setChains] = useState<ReleaseChain[]>([])
 
-  const roles = STAGE_ROLES[stage]
+  useEffect(() => {
+    const api = window.electronAPI?.adoChain
+    if (!api) return
+    let alive = true
+    const load = () => { api.list().then(list => { if (alive) setChains(list) }).catch(() => {}) }
+    load()
+    const off = api.onChanged(load)
+    // another instance may poll the chains: read them again when the window gets the focus back
+    window.addEventListener('focus', load)
+    return () => {
+      alive = false
+      off()
+      window.removeEventListener('focus', load)
+    }
+  }, [])
+
+  // the chain previews develop → qa (its first step) and resolves prod too
+  const roles = STAGE_ROLES[stage === 'qa-prod' ? 'qa-prod' : 'dev-qa']
   const targets: { side: Side; repo: string }[] = []
   if (scope !== 'fe' && beRepo) targets.push({ side: 'BE', repo: beRepo })
   if (scope !== 'be' && feRepo) targets.push({ side: 'FE', repo: feRepo })
   const targetsKey = targets.map(t => `${t.side}=${t.repo}`).join('|')
   const overridesKey = JSON.stringify(config.branches ?? {})
-
-  // repositories of the project, for the FE picker
-  useEffect(() => {
-    if (!connection) return
-    let cancelled = false
-    window.electronAPI.ado.connect(org, token)
-      .then(() => window.electronAPI.ado.repositories(project))
-      .then(list => { if (!cancelled) setRepos(list) })
-      .catch(() => { if (!cancelled) setRepos([]) })
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connection])
 
   const loadPreview = async (side: Side, repo: string): Promise<RepoPreview> => {
     const api = window.electronAPI.ado
@@ -112,8 +138,11 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
       const overrides = config.branches?.[repo] ?? {}
       const source = resolveEnvBranch(roles.from, branches, overrides[roles.from])
       const target = resolveEnvBranch(roles.to, branches, overrides[roles.to])
-      if (!source || !target) return { ...base, branches, source, target }
-      const commits = await api.commitsBetween(project, repo, source, target)
+      const prod = chainMode ? resolveEnvBranch('prod', branches, overrides.prod) : null
+      if (!source || !target || (chainMode && !prod)) return { ...base, branches, source, target, prod }
+      // chain: strict reads, a failed one must not look like "nothing to promote" (that item
+      // would skip develop → qa and get its qa → prod PR at once)
+      const commits = await api.commitsBetween(project, repo, source, target, chainMode)
       const ids = extractWorkItemIds(commits.map(c => c.message))
       let workItems: AdoWorkItem[] = []
       let warning: string | undefined
@@ -124,25 +153,35 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
           warning = 'work item non letti: la PR verrebbe creata senza link ai work item'
         }
       }
-      const existing = (await api.pullRequests(project, repo))
-        .find(p => sameName(p.sourceBranch, source) && sameName(p.targetBranch, target)) ?? null
-      return { ...base, branches, source, target, commits, workItems, existing, warning }
+      const prs = await api.pullRequests(project, repo)
+      const existing = prs.find(p => sameName(p.sourceBranch, source) && sameName(p.targetBranch, target)) ?? null
+      // chain with nothing to promote to qa: it starts at qa → prod, worth it only with commits
+      // there and no qa → prod PR already open (a finished chain leaves it open)
+      const startsAtProd = chainMode && !!prod && commits.length === 0 && !existing
+      const prodExisting = startsAtProd
+        ? prs.find(p => sameName(p.sourceBranch, target) && sameName(p.targetBranch, prod)) ?? null
+        : null
+      const prodCommits = startsAtProd && !prodExisting
+        ? (await api.commitsBetween(project, repo, target, prod, true)).length
+        : undefined
+      return { ...base, branches, source, target, prod, commits, workItems, existing, warning, prodCommits, prodExisting }
     } catch (e) {
-      return { ...base, error: (e as Error).message || 'lettura da Azure DevOps fallita' }
+      return { ...base, error: ipcMessage(e, 'lettura da Azure DevOps fallita') }
     }
   }
 
   useEffect(() => {
     setPreviews([])
     setExcluded(new Set())
-    const active = !!connection && targets.length > 0
+    const id = connectionId
+    const active = !!id && targets.length > 0
     setLoading(active)
-    if (!active) return
+    if (!id || !active) return
     let cancelled = false
     ;(async () => {
       const out: RepoPreview[] = []
       try {
-        await window.electronAPI.ado.connect(org, token)
+        if (!(await window.electronAPI.ado.use(id))) throw new Error(ADO_MISSING_PAT)
         // one repository after the other: the ADO service holds a single connection
         for (const { side, repo } of targets) {
           const preview = await loadPreview(side, repo)
@@ -158,13 +197,31 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connection, stage, targetsKey, overridesKey, reloadTick])
+  }, [connectionId, project, stage, targetsKey, overridesKey, reloadTick])
 
-  const setBranchOverride = (repo: string, role: EnvRole, branch: string) => {
-    setConfig(configKey, { ...config, branches: { ...config.branches, [repo]: { ...config.branches?.[repo], [role]: branch } } })
+  /** Every release choice is saved at once, per org/project (Settings › Azure DevOps › Rilascio). */
+  const saveRelease = async (next: PromotionConfig) => {
+    if (!configKey) return
+    const key = configKey
+    setDraft({ key, config: next })
+    try {
+      await window.electronAPI.adoSettings.setRelease(key, next)
+      await useAdoSettingsStore.getState().load()
+    } catch (e) {
+      showToast(`scelta di rilascio non salvata: ${ipcMessage(e, 'salvataggio fallito')}`, 'error')
+    } finally {
+      setDraft(d => (d && d.config === next ? null : d))
+    }
   }
 
-  const setFeRepo = (repo: string) => setConfig(configKey, { ...config, feRepo: repo })
+  const setBranchOverride = (repo: string, role: EnvRole, branch: string) => {
+    void saveRelease({ ...config, branches: { ...config.branches, [repo]: { ...config.branches?.[repo], [role]: branch } } })
+  }
+
+  // same rule as Settings › Rilascio: a saved FE that becomes the BE goes back to automatic
+  const setBeRepo = (repo: string) => { void saveRelease(withBeRepo(config, repo)) }
+  const setFeRepo = (repo: string) => { void saveRelease({ ...config, feRepo: repo }) }
+  const setStage = (next: ReleaseStage) => { if (next !== stage) void saveRelease({ ...config, stage: next }) }
 
   const patchPreview = (side: Side, patch: Partial<RepoPreview>) =>
     setPreviews(prev => prev.map(p => p.side === side ? { ...p, ...patch } : p))
@@ -190,8 +247,52 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
 
   const openUrl = (url: string) => { window.electronAPI.shell.openExternal(url).catch(() => {}) }
 
-  const creatable = previews.filter((p): p is ReadyPreview =>
+  const creatable = chainMode ? [] : previews.filter((p): p is ReadyPreview =>
     !!p.source && !!p.target && !p.error && p.commits.length > 0 && !p.existing && !p.created)
+
+  // project chains, newest first; a repository is in one running chain at a time
+  const projectChains = chains
+    .filter(c => chainProjectKey(c.organization, c.project) === configKey)
+    .sort((a, b) => b.createdAt - a.createdAt)
+  const runningChain = (repo: string) => activeChainItem(chains, org, project, repo)
+
+  // a chain step that settles (done, failed, cancelled) changes what the previews offer
+  // (a qa → prod PR left open, commits already on qa): read them again
+  const activeItems = projectChains.reduce((n, c) => n + c.items.filter(i => isActiveStatus(i.status)).length, 0)
+  const prevActiveItems = useRef(activeItems)
+  useEffect(() => {
+    if (activeItems < prevActiveItems.current) setReloadTick(t => t + 1)
+    prevActiveItems.current = activeItems
+  }, [activeItems])
+
+  // the chain also takes a repository whose develop → qa PR is already active (followed) or
+  // that has nothing for qa but commits for prod (it starts at step 2)
+  const chainable = !chainMode ? [] : previews.filter((p): p is ChainPreview =>
+    !!p.source && !!p.target && !!p.prod && !p.error && !p.created && !runningChain(p.repo) &&
+    (p.commits.length > 0 || !!p.existing || (p.prodCommits ?? 0) > 0))
+  const actionable = chainMode ? chainable.length : creatable.length
+
+  /** The develop → qa (or qa → prod) PR of one preview, with the ticked work items; null when Azure DevOps refuses it. */
+  const createPromotionPr = (p: ReadyPreview) => {
+    const items = selectedItems(p)
+    return window.electronAPI.ado.createPr(project, p.repo, {
+      sourceRef: p.source,
+      targetRef: p.target,
+      title: promotionTitle(p.source, p.target, p.side, new Date()),
+      description: promotionDescription(items, p.commits),
+      autoComplete,
+      workItemIds: items.length > 0 ? items.map(w => w.id) : undefined,
+      // develop / qa are never deleted and branch policies are never bypassed
+      deleteSourceBranch: false,
+      forceComplete: false
+    }).catch(() => null)
+  }
+
+  // the DevOps panel lists the open folder's repository: refresh it when it got a PR
+  const refreshFolderPrs = (repos: string[]) => {
+    if (!folderRepo || !repos.some(r => sameName(r, folderRepo))) return
+    window.electronAPI.ado.pullRequests(project, folderRepo).then(setPullRequests).catch(() => {})
+  }
 
   const create = async () => {
     setConfirming(false)
@@ -201,21 +302,10 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
     const done: string[] = []
     const failed: string[] = []
     try {
-      await api.connect(org, token)
+      if (!connectionId || !(await api.use(connectionId))) throw new Error(ADO_MISSING_PAT)
       for (const p of creatable) {
         patchPreview(p.side, { status: 'running' })
-        const items = selectedItems(p)
-        const res = await api.createPr(project, p.repo, {
-          sourceRef: p.source,
-          targetRef: p.target,
-          title: promotionTitle(p.source, p.target, p.side, new Date()),
-          description: promotionDescription(items, p.commits),
-          autoComplete,
-          workItemIds: items.length > 0 ? items.map(w => w.id) : undefined,
-          // develop / qa are never deleted and branch policies are never bypassed
-          deleteSourceBranch: false,
-          forceComplete: false
-        }).catch(() => null)
+        const res = await createPromotionPr(p)
         if (res) {
           done.push(`${p.side} #${res.id}`)
           patchPreview(p.side, { status: 'ok', created: { id: res.id, url: res.url, mode: res.mode } })
@@ -224,7 +314,7 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
           patchPreview(p.side, { status: 'error' })
         }
       }
-      if (creatable.some(p => p.repo === beRepo)) api.pullRequests(project, beRepo).then(setPullRequests).catch(() => {})
+      refreshFolderPrs(creatable.map(p => p.repo))
     } catch (e) {
       showToast((e as Error).message || 'Azure DevOps non raggiungibile', 'error')
     } finally {
@@ -234,30 +324,93 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
     else if (failed.length > 0) showToast(`PR create: ${done.join(', ') || 'nessuna'} · fallite: ${failed.join(', ')}`, 'error')
   }
 
+  /**
+   * develop → qa → prod: step 1 here (new develop → qa PRs; an active one is
+   * followed; nothing for qa goes straight to step 2), then main follows each
+   * develop → qa PR and creates qa → prod when it is completed.
+   */
+  const startChain = async () => {
+    setConfirming(false)
+    if (creating || chainable.length === 0 || !connectionId) return
+    setCreating(true)
+    const items: ChainStartItem[] = []
+    const failed: string[] = []
+    let started = false
+    try {
+      if (!(await window.electronAPI.ado.use(connectionId))) throw new Error(ADO_MISSING_PAT)
+      for (const p of chainable) {
+        const branches = { dev: p.source, qa: p.target, prod: p.prod }
+        if (p.existing) {
+          items.push({ side: p.side, repo: p.repo, branches, qaPr: { id: p.existing.id, url: prWebUrl(p.repo, p.existing) } })
+          continue
+        }
+        if (p.commits.length === 0) {
+          items.push({ side: p.side, repo: p.repo, branches })
+          continue
+        }
+        patchPreview(p.side, { status: 'running' })
+        const res = await createPromotionPr(p)
+        if (!res) {
+          failed.push(p.side)
+          patchPreview(p.side, { status: 'error' })
+          continue
+        }
+        patchPreview(p.side, { status: 'ok', created: { id: res.id, url: res.url, mode: res.mode } })
+        items.push({ side: p.side, repo: p.repo, branches, qaPr: { id: res.id, url: res.url } })
+      }
+      refreshFolderPrs(items.map(i => i.repo))
+      if (items.length > 0) {
+        try {
+          await window.electronAPI.adoChain.start({ connectionId, autoComplete, items })
+          started = true
+        } catch (e) {
+          const kept = items.filter(i => i.qaPr).map(i => `${i.side} #${i.qaPr!.id}`)
+          throw new Error(`catena non avviata: ${ipcMessage(e, 'errore')}${kept.length > 0 ? ` (le PR ${kept.join(', ')} restano aperte)` : ''}`)
+        }
+        window.electronAPI.adoChain.list().then(setChains).catch(() => {})
+      }
+    } catch (e) {
+      showToast((e as Error).message || 'Azure DevOps non raggiungibile', 'error')
+    } finally {
+      setCreating(false)
+    }
+    const names = items.map(i => `${i.side} ${i.repo}`).join(', ')
+    if (started && failed.length === 0) showToast(`catena di rilascio avviata: ${names}`)
+    else if (started) showToast(`catena avviata per ${names} · PR develop → qa fallite: ${failed.join(', ')}`, 'error')
+    else if (failed.length > 0 && items.length === 0) showToast(`catena non avviata: PR develop → qa fallite (${failed.join(', ')})`, 'error')
+  }
+
+  const chainAction = async (run: () => Promise<void>, fallback: string) => {
+    try {
+      await run()
+      setChains(await window.electronAPI.adoChain.list())
+    } catch (e) {
+      showToast(ipcMessage(e, fallback), 'error')
+    }
+  }
+
+  // develop → qa goes at once; qa → prod and the chain (which covers qa → prod) are confirmed first
   const handleCreate = () => {
-    if (stage === 'qa-prod') setConfirming(true)
-    else void create()
+    if (stage === 'dev-qa') void create()
+    else setConfirming(true)
   }
 
   if (!repoPath || !connection) {
     return (
       <PanelContainer>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{
-            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: '12px', color: 'var(--text-secondary)', fontSize: 'calc(13px * var(--ui-text-scale, 1))', textAlign: 'center'
-          }}>
-            <Rocket size={32} strokeWidth={1} />
-            {repoPath
-              ? 'Azure DevOps non è configurato per questo repository: il rilascio usa la sua connessione'
-              : 'apri un repository: il rilascio usa la sua connessione Azure DevOps'}
-            {repoPath && (
-              <button onClick={onConfigureAdo} title="configure Azure DevOps" data-tip-desc="open the Azure DevOps panel to connect this repository"
-                style={{ ...primaryBtnStyle, background: 'var(--accent-color)', color: 'var(--text-inverse)', cursor: 'pointer' }}>
-                configura Azure DevOps
-              </button>
-            )}
-          </div>
+          {repoPath ? (
+            // no connection, or the folder's repository is not clear: say so and let the user choose
+            <AdoRepoChooser state={ado} />
+          ) : (
+            <div style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: '12px', color: 'var(--text-secondary)', fontSize: 'calc(13px * var(--ui-text-scale, 1))', textAlign: 'center'
+            }}>
+              <Rocket size={32} strokeWidth={1} />
+              apri un repository: il rilascio usa la sua connessione Azure DevOps
+            </div>
+          )}
           <TerminalDock repoPath={null} />
         </div>
       </PanelContainer>
@@ -283,9 +436,12 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
   )
 
   const renderCard = (p: RepoPreview) => {
-    const ready = !!p.source && !!p.target && !p.error
+    const branchesFound = !!p.source && !!p.target && (!chainMode || !!p.prod)
+    const ready = branchesFound && !p.error
     const locked = !!p.existing || !!p.created || creating
     const commitsOpen = openCommits.has(p.side)
+    const missingRole = !p.source ? roles.from : !p.target ? roles.to : 'prod'
+    const running = chainMode ? runningChain(p.repo) : null
     return (
       <div key={p.side} style={{
         background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
@@ -297,6 +453,12 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
           {branchPicker(p, roles.from, p.source)}
           <span style={{ color: 'var(--text-muted)' }}>→</span>
           {branchPicker(p, roles.to, p.target)}
+          {chainMode && (
+            <>
+              <span style={{ color: 'var(--text-muted)' }}>→</span>
+              {branchPicker(p, 'prod', p.prod ?? null)}
+            </>
+          )}
           {ready && (
             <span style={{ color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
               · {p.commits.length} commit · {p.workItems.length} work item
@@ -319,10 +481,16 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
         </div>
 
         {p.error && <div style={{ ...noteStyle, background: 'var(--error-bg)', color: 'var(--error-color)' }}><XCircle size={11} style={noteIconStyle} />{p.error}</div>}
-        {!p.error && (!p.source || !p.target) && (
+        {!p.error && !branchesFound && (
           <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
             <AlertTriangle size={11} style={noteIconStyle} />
-            branch {!p.source ? roles.from : roles.to} non trovato in {p.repo}: sceglilo dall'elenco (resta salvato per questa repository)
+            branch {missingRole} non trovato in {p.repo}: sceglilo dall'elenco (resta salvato per questa repository)
+          </div>
+        )}
+        {running && (
+          <div style={{ ...noteStyle, background: 'var(--accent-bg)', color: 'var(--accent-color)' }}>
+            <Link2 size={11} style={noteIconStyle} />
+            catena di rilascio già in corso per {p.repo}: l'avanzamento è in «catene in corso», qui sotto
           </div>
         )}
         {p.warning && <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}><AlertTriangle size={11} style={noteIconStyle} />{p.warning}</div>}
@@ -334,7 +502,13 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
         )}
         {ready && p.commits.length === 0 && !p.existing && (
           <div style={{ color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
-            nulla da promuovere: {p.target} contiene già tutti i commit di {p.source}
+            {!chainMode
+              ? `nulla da promuovere: ${p.target} contiene già tutti i commit di ${p.source}`
+              : p.prodExisting
+                ? `${p.source} → ${p.target}: nulla da promuovere; PR #${p.prodExisting.id} ${p.target} → ${p.prod} già aperta`
+                : (p.prodCommits ?? 0) > 0
+                  ? `${p.source} → ${p.target}: nulla da promuovere, la catena parte da ${p.target} → ${p.prod} (${p.prodCommits} commit)`
+                  : `nulla da promuovere: ${p.target} e ${p.prod} contengono già tutti i commit`}
           </div>
         )}
 
@@ -389,6 +563,93 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
     )
   }
 
+  const renderChainItem = (chain: ReleaseChain, item: ChainItem) => {
+    const { dev, qa, prod } = item.branches
+    const chip = CHAIN_STATUS[item.status]
+    const prLink = (pr: { id: number; url: string }, what: string) => (
+      <button
+        onClick={() => openUrl(pr.url || `https://dev.azure.com/${encodeURIComponent(chain.organization)}/${encodeURIComponent(chain.project)}/_git/${encodeURIComponent(item.repo)}/pullrequest/${pr.id}`)}
+        title="open in Azure DevOps" data-tip-desc={what}
+        style={{ ...badgeBtnStyle, background: 'var(--bg-tag)', color: 'var(--accent-color)' }}>
+        PR #{pr.id} ↗
+      </button>
+    )
+    const step1 = !item.qaPr
+      ? 'nulla da promuovere'
+      : item.status === 'waiting-qa' ? 'in attesa del completamento'
+        : item.status === 'creating-prod' || item.status === 'done' ? 'completata' : ''
+    const step2 = item.prodPr
+      ? (item.prodReused ? 'già attiva: seguita dalla catena' : 'creata')
+      : item.status === 'waiting-qa' ? `partirà quando la PR ${dev} → ${qa} è completata`
+        : item.status === 'creating-prod' ? 'creazione in corso…'
+          : item.status === 'cancelled' ? 'non creata: catena annullata'
+            : item.status === 'failed' ? 'non creata' : item.note ?? ''
+    const waiting = <Clock size={10} style={{ flexShrink: 0 }} />
+    return (
+      <div key={item.side} style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '6px', borderTop: '1px solid var(--border-subtle)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
+          <span style={tagStyle}>{item.side}</span>
+          <b style={{ color: 'var(--text-primary)' }}>{item.repo}</b>
+          <span style={{ ...badgeBtnStyle, cursor: 'default', background: chip.bg, color: chip.color }}>{chip.label}</span>
+        </div>
+        <div style={stepRowStyle}>
+          <span style={{ color: 'var(--text-muted)' }}>1. {dev} → {qa}</span>
+          {item.qaPr && prLink(item.qaPr, `the ${dev} → ${qa} pull request followed by the chain`)}
+          {item.status === 'waiting-qa' && waiting}
+          <span>{step1}</span>
+        </div>
+        <div style={stepRowStyle}>
+          <span style={{ color: 'var(--text-muted)' }}>2. {qa} → {prod}</span>
+          {item.prodPr && prLink(item.prodPr, `the ${qa} → ${prod} pull request of the chain`)}
+          {item.status === 'waiting-qa' && waiting}
+          {item.status === 'creating-prod' && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
+          <span>{step2}</span>
+        </div>
+        {item.error && (
+          <div style={{ ...noteStyle, background: 'var(--error-bg)', color: 'var(--error-color)' }}>
+            <XCircle size={11} style={noteIconStyle} />{item.error}
+          </div>
+        )}
+        {item.lastError && (
+          <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
+            <AlertTriangle size={11} style={noteIconStyle} />
+            ultimo controllo non riuscito: {item.lastError} · nuovo tentativo ogni 30 s
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderChain = (chain: ReleaseChain) => {
+    const active = isChainActive(chain)
+    return (
+      <div key={chain.id} role="group" aria-label={`catena ${chain.items.map(i => i.repo).join(', ')}`} style={{
+        background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
+        padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: '6px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+          <span>avviata {new Date(chain.createdAt).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })}</span>
+          <span>· {chain.autoComplete ? 'auto-complete sulle PR nuove' : 'PR lasciate aperte'}</span>
+          <span style={{ flex: 1 }} />
+          {active ? (
+            <button onClick={() => void chainAction(() => window.electronAPI.adoChain.cancel(chain.id), 'annullamento fallito')}
+              title="annulla catena" data-tip-desc="stop the chain: no qa → prod pull request is created any more (the pull requests already created stay in Azure DevOps)"
+              style={smallBtnStyle}>
+              <Ban size={10} /> annulla catena
+            </button>
+          ) : (
+            <button onClick={() => void chainAction(() => window.electronAPI.adoChain.remove(chain.id), 'rimozione fallita')}
+              title="rimuovi" data-tip-desc="remove this finished chain from the list (nothing changes in Azure DevOps)"
+              style={smallBtnStyle}>
+              <Trash2 size={10} /> rimuovi
+            </button>
+          )}
+        </div>
+        {chain.items.map(item => renderChainItem(chain, item))}
+      </div>
+    )
+  }
+
   const busy = loading || creating
   return (
     <PanelContainer>
@@ -397,7 +658,7 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
           <div style={{ maxWidth: '920px', margin: '0 auto', padding: '4px 2px 12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <Segmented value={stage} onChange={setStage} disabled={creating}
-                options={[['dev-qa', 'develop → qa'], ['qa-prod', 'qa → prod']]} />
+                options={Object.entries(RELEASE_STAGE_LABELS) as [ReleaseStage, string][]} />
               <Segmented value={scope} onChange={setScope} disabled={creating}
                 options={[['be', 'BE'], ['fe', 'FE'], ['both', 'BE+FE']]} />
               <span style={{ flex: 1 }} />
@@ -412,20 +673,49 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-              <span title="backend repository" data-tip-desc="the Azure DevOps repository of the open repository's connection">
-                BE <b style={{ color: 'var(--text-primary)' }}>{beRepo}</b>
-              </span>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                title="frontend repository" data-tip-desc={`Azure DevOps repository of the frontend in ${project} (saved for this project)`}>
+                title="repository BE" data-tip-desc={`repository Azure DevOps del backend in ${project} (di default quella della cartella aperta; resta salvata per questo project)`}>
+                BE
+                <select aria-label="repository BE" value={beRepo} onChange={(e) => setBeRepo(e.target.value)} disabled={creating} style={compactInputStyle}>
+                  {!beRepo && <option value="">—</option>}
+                  {beRepo && !repos.includes(beRepo) && <option value={beRepo}>{beRepo}</option>}
+                  {repos.map(r => <option key={r} value={r}>{r}{folderRepo && sameName(r, folderRepo) ? ' (questa cartella)' : ''}</option>)}
+                </select>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                title="repository FE" data-tip-desc={`repository Azure DevOps del frontend in ${project} (resta salvata per questo project)`}>
                 FE
-                <select value={feRepo} onChange={(e) => setFeRepo(e.target.value)} disabled={creating} style={compactInputStyle}>
+                <select aria-label="repository FE" value={feRepo} onChange={(e) => setFeRepo(e.target.value)} disabled={creating} style={compactInputStyle}>
                   <option value="">—</option>
                   {feRepo && !repos.includes(feRepo) && <option value={feRepo}>{feRepo}</option>}
                   {repos.filter(r => !sameName(r, beRepo)).map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </label>
               <span style={{ color: 'var(--text-muted)' }}>{org} / {project}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
+                salvato nelle{' '}
+                <button onClick={() => useSettingsNavStore.getState().openSettings('ado-release')}
+                  title="Impostazioni › Azure DevOps › Rilascio" data-tip-desc="apri le impostazioni di rilascio: repository BE e FE per ogni connessione"
+                  style={linkBtnStyle}>
+                  Impostazioni › Azure DevOps › Rilascio
+                </button>
+              </span>
             </div>
+
+            {repoList && !repoList.ok && (
+              <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
+                <AlertTriangle size={11} style={noteIconStyle} />
+                repository di {org}/{project} non lette ({repoList.error}): BE e FE restano quelle salvate
+              </div>
+            )}
+
+            {scope !== 'fe' && !beRepo && (
+              <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
+                <AlertTriangle size={11} style={noteIconStyle} />
+                scegli la repository BE del project {project}: resta salvata per i prossimi rilasci
+              </div>
+            )}
 
             {scope !== 'be' && !feRepo && (
               <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
@@ -450,24 +740,86 @@ export function PromotionPanel({ repoPath, onConfigureAdo }: { repoPath: string 
                 <span style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>auto-complete when policies pass</span>
               </label>
               <span style={{ flex: 1 }} />
-              <button onClick={handleCreate} disabled={creatable.length === 0 || busy}
-                title="create pull requests" data-tip-desc="create one pull request per repository with new commits and no active promotion PR"
+              <button onClick={handleCreate} disabled={actionable === 0 || busy}
+                title={chainMode ? 'start the release chain' : 'create pull requests'}
+                data-tip-desc={chainMode
+                  ? 'create the develop → qa pull requests now; each qa → prod one is created as soon as its develop → qa PR is completed'
+                  : 'create one pull request per repository with new commits and no active promotion PR'}
                 style={{
                   ...primaryBtnStyle,
-                  background: creatable.length > 0 && !busy ? 'var(--accent-color)' : 'var(--bg-disabled)',
-                  color: creatable.length > 0 && !busy ? 'var(--text-inverse)' : 'var(--text-muted)',
-                  cursor: creatable.length > 0 && !busy ? 'pointer' : 'not-allowed'
+                  background: actionable > 0 && !busy ? 'var(--accent-color)' : 'var(--bg-disabled)',
+                  color: actionable > 0 && !busy ? 'var(--text-inverse)' : 'var(--text-muted)',
+                  cursor: actionable > 0 && !busy ? 'pointer' : 'not-allowed'
                 }}>
-                {creating ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <GitPullRequest size={11} />}
-                crea {creatable.length} PR
+                {creating ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : chainMode ? <Link2 size={11} /> : <GitPullRequest size={11} />}
+                {chainMode ? `avvia catena (${chainable.length})` : `crea ${creatable.length} PR`}
               </button>
             </div>
+
+            {projectChains.length > 0 && (
+              <section aria-label="catene in corso" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                <div style={sectionTitleStyle}>
+                  <Link2 size={11} /> catene in corso
+                  <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+                    · seguite da DamnedIDE ogni 30 s, anche dopo un riavvio
+                  </span>
+                </div>
+                {projectChains.map(renderChain)}
+              </section>
+            )}
           </div>
         </div>
         <TerminalDock repoPath={null} />
       </div>
 
-      {confirming && (
+      {confirming && chainMode && (
+        <Modal onClose={() => setConfirming(false)} width={560} label="conferma catena di rilascio develop → qa → prod">
+          <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: 'var(--warning-color)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>
+              <AlertTriangle size={14} /> rilascio develop → qa → prod
+            </div>
+            <div style={{ lineHeight: 1.5 }}>
+              Questa conferma vale anche per la produzione: ogni PR qa → prod viene creata da sola appena
+              la PR develop → qa della stessa repository è completata.
+            </div>
+            {chainable.map(p => (
+              <div key={p.side} style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
+                <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{p.side} · {p.repo}</div>
+                <div>
+                  1. {p.source} → {p.target}:{' '}
+                  {p.existing
+                    ? `PR #${p.existing.id} già attiva, la catena la segue (auto-complete non modificato)`
+                    : p.commits.length > 0
+                      ? `nuova PR · ${p.commits.length} commit · ${selectedItems(p).length} work item`
+                      : 'nulla da promuovere, si parte dal passo 2'}
+                </div>
+                <div>
+                  2. {p.target} → {p.prod}:{' '}
+                  {!p.existing && p.commits.length === 0
+                    ? `PR creata subito · ${p.prodCommits ?? 0} commit`
+                    : `PR creata appena la PR ${p.source} → ${p.target} è completata`}
+                  {' · con tutti i work item dei suoi commit'}
+                </div>
+              </div>
+            ))}
+            <div style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              {autoComplete
+                ? "Auto-complete armato sulle PR create dalla catena (una PR già attiva viene seguita o riusata così com'è): ogni merge parte quando le branch policy sono soddisfatte."
+                : 'Le PR restano aperte: approvazione e completamento seguono le branch policy (la catena aspetta il completamento).'}
+              {' '}Nessuna policy viene bypassata e i branch develop e qa non vengono cancellati.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+              <button onClick={() => setConfirming(false)} style={secondaryBtnStyle}>annulla</button>
+              <button onClick={() => void startChain()}
+                style={{ ...primaryBtnStyle, background: 'var(--warning-color)', color: 'var(--text-inverse)', cursor: 'pointer' }}>
+                avvia catena
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {confirming && !chainMode && (
         <Modal onClose={() => setConfirming(false)} width={480} label="conferma rilascio in produzione">
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: 'var(--warning-color)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>
@@ -510,7 +862,7 @@ function Segmented<T extends string>({ value, options, onChange, disabled }: {
       {options.map(([v, label]) => {
         const active = v === value
         return (
-          <button key={v} onClick={() => onChange(v)} disabled={disabled}
+          <button key={v} onClick={() => onChange(v)} disabled={disabled} aria-pressed={active}
             style={{
               padding: '4px 10px', border: 'none',
               background: active ? 'var(--accent-bg)' : 'var(--bg-card)',
@@ -532,6 +884,11 @@ const compactInputStyle: React.CSSProperties = {
   fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
 }
 
+const linkBtnStyle: React.CSSProperties = {
+  background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline',
+  color: 'var(--accent-color)', fontSize: 'inherit', fontFamily: 'inherit'
+}
+
 const tagStyle: React.CSSProperties = {
   padding: '1px 6px', borderRadius: 'var(--radius-sm)', flexShrink: 0,
   background: 'var(--bg-tag)', color: 'var(--accent-color)',
@@ -550,6 +907,31 @@ const noteStyle: React.CSSProperties = {
 }
 
 const noteIconStyle: React.CSSProperties = { flexShrink: 0, marginTop: 2 }
+
+const sectionTitleStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', color: 'var(--text-muted)',
+  fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 700,
+  textTransform: 'uppercase', letterSpacing: '0.6px'
+}
+
+const stepRowStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingLeft: '2px',
+  fontSize: 'calc(10.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)'
+}
+
+const smallBtnStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', background: 'var(--bg-card)',
+  border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+  cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+}
+
+const CHAIN_STATUS: Record<ChainStatus, { label: string; bg: string; color: string }> = {
+  'waiting-qa': { label: 'in attesa di qa', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
+  'creating-prod': { label: 'creazione PR prod', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
+  done: { label: 'completata', bg: 'var(--success-bg)', color: 'var(--success-color)' },
+  failed: { label: 'interrotta', bg: 'var(--error-bg)', color: 'var(--error-color)' },
+  cancelled: { label: 'annullata', bg: 'var(--bg-tag)', color: 'var(--text-muted)' }
+}
 
 const secondaryBtnStyle: React.CSSProperties = {
   padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',

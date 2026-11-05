@@ -145,7 +145,7 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
               </span>
             </div>
             <div style={{ fontSize: px(11), color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              tema, colori, testo e icone, font aggiunti, editor, terminale, lingua e percorso di GitTree tornano ai valori iniziali.
+              tema, colori, testo e icone, font aggiunti, editor, terminale, lingua, percorso di GitTree e lista changes tornano ai valori iniziali.
               {' '}Non cambiano le connessioni Azure DevOps, gli agenti AI, i server MCP e i dispositivi associati.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>

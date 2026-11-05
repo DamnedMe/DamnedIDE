@@ -1,4 +1,4 @@
-import { AlignLeft, ChevronLeft, ChevronRight, Download, Eraser, FolderSearch, GitBranch, Indent, Keyboard, LayoutGrid, MousePointer2, Palette, RotateCcw, Save, TerminalSquare, TextQuote, WrapText } from '@/components/icons'
+import { AlignLeft, ChevronLeft, ChevronRight, Download, Eraser, FolderSearch, FolderTree, GitBranch, GitCompare, Indent, Keyboard, LayoutGrid, MousePointer2, Palette, RotateCcw, Save, TerminalSquare, TextQuote, WrapText } from '@/components/icons'
 import { useSettingsStore, useToastStore } from '../../../store'
 import type { SettingsPageId } from '../../../store'
 import { useI18n } from '../../../i18n'
@@ -110,6 +110,7 @@ const GITTREE_DOWNLOAD_URL = 'https://github.com/giannoccarol/gittree/releases/l
 
 export function GitPage() {
   const path = useSettingsStore(st => st.settings.gitTreePath)
+  const showPath = useSettingsStore(st => st.settings.changesShowPath)
   const updateSettings = useSettingsStore(st => st.updateSettings)
   const showToast = useToastStore(st => st.showToast)
   const t = useI18n()
@@ -161,6 +162,14 @@ export function GitPage() {
           Quando l'IDE lo trova da solo, il percorso compare qui.
         </Notice>
       )}
+      <Card title="Changes" icon={<GitCompare size={12} />}
+        description="file modificati di Worktree › Changes e del pannello changes dell'editor, raggruppati per tipologia (controller, service, DB, test…)">
+        <Row icon={<FolderTree size={13} />} label="mostra il percorso sotto il nome del file"
+          hint="spento: solo il nome; il percorso completo resta nel tooltip della riga">
+          <Toggle checked={showPath} onChange={(v) => updateSettings({ changesShowPath: v })}
+            title="mostra il percorso sotto il nome del file" tip="show the folder of each changed file on a second line" />
+        </Row>
+      </Card>
     </>
   )
 }

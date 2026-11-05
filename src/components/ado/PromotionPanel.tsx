@@ -423,9 +423,13 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     ) : (
       <select value={value ?? ''} disabled={creating}
         onChange={(e) => setBranchOverride(p.repo, role, e.target.value)}
-        title={`${role} branch`} data-tip-desc={`branch used as ${role} in ${p.repo} (saved for this repository)`}
+        title={value ? `${role} branch: ${value}` : `${role} branch`} data-tip-desc={`branch used as ${role} in ${p.repo} (saved for this repository)`}
         style={{
           ...compactInputStyle,
+          // a native select is as wide as its longest option (long feature branches pushed the three
+          // pickers onto separate rows): sized on the chosen branch instead, in ch of the mono font
+          // (+4ch for padding and arrow, at most 32ch); the open list still shows every full name
+          width: `${Math.min((value ?? `${role}?`).length, 32) + 4}ch`, textOverflow: 'ellipsis',
           borderColor: value ? 'var(--border-color)' : 'var(--warning-color)',
           color: value ? 'var(--text-primary)' : 'var(--warning-color)'
         }}>

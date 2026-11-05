@@ -120,6 +120,16 @@ a:hover { text-decoration: underline; }
 /* fill="..." on an icon fills its outlined shapes too (pinned, filtered, dirty dot). */
 .app-icon-filled [fill="none"] { fill: inherit; }
 
+/* Changes rows (FileDiffList): ok / ko / stage show on hover, on the selected row (a tap
+   selects it on touch, the arrow keys move it) and on keyboard focus (Tab; a mouse click
+   leaves no :focus-visible, so they collapse again when the pointer leaves), leaving the room
+   to the file name; the name shows ok (struck) and ko (bold red). Collapsed, not display:none,
+   so Tab still reaches them; !important beats the buttons' inline size and border. */
+.file-diff-row:not(:hover):not(.is-active):not(:has(:focus-visible)) .file-diff-hover {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; border: 0 !important; overflow: hidden; clip-path: inset(50%);
+}
+
 /* Rendered Markdown preview */
 .md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 {
   margin: 18px 0 8px;

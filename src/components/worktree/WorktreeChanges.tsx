@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import { GitFileStatus } from '../../types/git'
 import { FileDiffList } from '../git/FileDiffList'
+import { ipcMessage } from '../settings/ui'
 import { DiffViewer } from '../editor/DiffViewer'
 import type { DiffViewerHandle } from '../editor/DiffViewer'
 import { useEditorStore } from '../../store'
 import { Modal } from '../layout/Modal'
-import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye, GitCommitHorizontal, Download, Upload, Check, ArrowRightLeft, AlertTriangle, Undo2 } from '@/components/icons'
+import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye, GitCommitHorizontal, Download, Upload, Check, ArrowRightLeft, AlertTriangle, Undo2, Minus } from '@/components/icons'
 import { MergeTool } from './MergeTool'
 import { MarkdownView } from '../editor/MarkdownView'
 import Editor from '@monaco-editor/react'
@@ -18,6 +19,7 @@ import { appFontStack } from '../../utils/fonts'
 import { FileFilterBar } from '../editor/CodeEditor'
 import { compileFileFilter, matchPathOrName } from '../../utils/file-filter'
 import type { FileFilterMode } from '../../utils/file-filter'
+import { dirOf, fileNameOf, groupChanges } from '../../shared/changeGroups'
 
 function applyEditorTheme(monaco: typeof import('monaco-editor')) {
   const theme = useUIStore.getState().theme
@@ -81,7 +83,9 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const [diffInitialLine, setDiffInitialLine] = useState<number | undefined>(undefined)
   const [editedContent, setEditedContent] = useState('')
   const [isSaving, setIsSaving] = useState(false)
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  // the selected row as `s:path` / `u:path` (FileDiffList's row key): a path
+  // both staged and unstaged has two rows, in different zones
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const diffViewerRef = useRef<DiffViewerHandle>(null)
   const pendingScrollLineRef = useRef<number | null>(null)
   // scroll position (top visible line) kept per file, so switching away and
@@ -92,6 +96,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const showToast = useToastStore(s => s.showToast)
   const appFont = useSettingsStore(s => s.settings.appFont)
   const appFontSize = useSettingsStore(s => s.settings.fontSize)
+  const changesShowPath = useSettingsStore(s => s.settings.changesShowPath)
   const [isCommitOpen, setIsCommitOpen] = useState(false)
   const [commitMsg, setCommitMsg] = useState('')
   const [commitAndPush, setCommitAndPush] = useState(false)
@@ -101,7 +106,8 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const [moveTarget, setMoveTarget] = useState('')
   const [moveIsMove, setMoveIsMove] = useState(true)
   const [moveStagedOnly, setMoveStagedOnly] = useState(false)
-  const [discardTarget, setDiscardTarget] = useState<{ file: string; staged: boolean; untracked: boolean } | null>(null)
+  // one file (row menu) or every listed unstaged change (zone header)
+  const [discardTarget, setDiscardTarget] = useState<{ items: { file: string; staged: boolean; untracked: boolean }[] } | null>(null)
   const [isDiscarding, setIsDiscarding] = useState(false)
   // a failed read of the working-tree side, shown instead of an empty diff
   const [diffError, setDiffError] = useState<string | null>(null)
@@ -118,7 +124,11 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const shown = matchPathOrName(match)
   const visStaged = stagedFiles.filter(f => shown(f.path))
   const visUnstaged = unstagedFiles.filter(f => shown(f.path))
-  const visFiles = files.filter(f => shown(f.path))
+  // the rows in the order on screen (FileDiffList groups each zone the same
+  // way): what the arrow keys walk
+  const visFiles = [...groupChanges(visStaged), ...groupChanges(visUnstaged)].flatMap(g => g.files)
+  // -1 when the selected row is gone (staged/unstaged meanwhile): back to the path
+  const selIdx = visFiles.findIndex(f => `${f.staged ? 's' : 'u'}:${f.path}` === selectedKey && f.path === diffFile)
 
   const updateEditorNav = (line: number | null) => {
     if (!diffFile || line == null) return
@@ -136,7 +146,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     if (!opts?.keepSelection) {
       setDiffFile(null)
       diffFileRef.current = null
-      setSelectedIndex(0)
+      setSelectedKey(null)
     }
     try {
       const p = await window.electronAPI.git.porcelain(worktreePath)
@@ -165,12 +175,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
       setUnstagedFiles(unstaged)
       setUnmergedFiles(unmerged)
       setFiles(combined)
-      // a watcher-driven refresh must not steal the file the user is looking at
-      if (opts?.keepSelection) {
-        const current = diffFileRef.current
-        const idx = current ? combined.findIndex(f => f.path === current) : -1
-        setSelectedIndex(idx >= 0 ? idx : -1)
-      }
+      // a watcher-driven refresh keeps diffFile and selectedKey: the open row stays selected
     } catch (e) {
       // a background refresh must not replace the panel with an error banner
       if (!opts?.keepSelection) setError((e as Error).message)
@@ -265,23 +270,61 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     loadStatus()
   }
 
+  // zone headers: act on the files listed there (the filter applies), as the counts show
+  const handleUnstageAll = async () => {
+    try {
+      // nothing filtered out and no conflict: the whole index ('.'), which also drops both
+      // sides of a staged rename (porcelain lists only its new path)
+      const paths = !filterText && unmergedFiles.length === 0 ? ['.'] : visStaged.map(f => f.path)
+      await window.electronAPI.git.unstage(worktreePath, paths)
+    } catch (e) {
+      showToast((e as Error).message || 'unstage fallito', 'error')
+    }
+    loadStatus()
+  }
+  const askDiscardAll = () => {
+    // a path ending in a slash is a nested repository (the IDE's own .worktrees/<type>/<id>/
+    // in the main checkout, a clone): never swept in with the rest
+    const items = visUnstaged.filter(f => !/[\\/]$/.test(f.path))
+      .map(f => ({ file: f.path, staged: false, untracked: !!f.isNew }))
+    if (items.length) setDiscardTarget({ items })
+    else showToast('niente da scartare: ci sono solo repository annidati', 'error')
+  }
+  // the confirmation reads differently for one file and for a whole zone
+  const discardOne = discardTarget?.items.length === 1 ? discardTarget.items[0] : null
+  const discardUntracked = discardTarget?.items.filter(t => t.untracked).length ?? 0
+  const discardTracked = (discardTarget?.items.length ?? 0) - discardUntracked
+
   const confirmDiscard = async () => {
     if (!discardTarget) return
     setIsDiscarding(true)
+    const { items } = discardTarget
+    const done: string[] = []
+    let failed = 0
+    let firstErr = ''
     try {
-      await window.electronAPI.git.discardChanges(worktreePath, discardTarget.file, {
-        staged: discardTarget.staged,
-        untracked: discardTarget.untracked
-      })
-      showToast(discardTarget.untracked ? `file eliminato: ${discardTarget.file}` : `modifiche annullate: ${discardTarget.file}`)
-      if (diffFileRef.current === discardTarget.file) {
+      // ponytail: one IPC + git checkout per file (the single-file path, already tested);
+      // a batched checkout if hundreds of files ever feel slow. A failure skips only that file.
+      for (const t of items) {
+        try {
+          await window.electronAPI.git.discardChanges(worktreePath, t.file, { staged: t.staged, untracked: t.untracked })
+          done.push(t.file)
+        } catch (e) {
+          failed++
+          firstErr ||= ipcMessage(e, 'annullamento fallito')
+        }
+      }
+      const one = items.length === 1 ? items[0] : null
+      if (failed) showToast(one ? firstErr : `${done.length} scartati, ${failed} non riusciti: ${firstErr}`, 'error')
+      else showToast(one
+        ? (one.untracked ? `file eliminato: ${one.file}` : `modifiche annullate: ${one.file}`)
+        : `modifiche scartate: ${done.length} file`)
+    } finally {
+      if (diffFileRef.current && done.includes(diffFileRef.current)) {
         diffFileRef.current = null
         setDiffFile(null)
       }
       await loadStatus()
-    } catch (e) {
-      showToast((e as Error).message || 'annullamento fallito', 'error')
-    } finally {
       setIsDiscarding(false)
       setDiscardTarget(null)
     }
@@ -358,7 +401,9 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     loadStatus()
   }
 
-  const handleViewDiff = async (filePath: string) => {
+  const handleViewDiff = async (filePath: string, staged?: boolean) => {
+    // first: clicking the other row of the open path only moves the selection
+    setSelectedKey(staged === undefined ? null : `${staged ? 's' : 'u'}:${filePath}`)
     if (diffFileRef.current === filePath) return
     // remember where the file we're leaving was scrolled
     if (diffFileRef.current) {
@@ -367,7 +412,6 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     }
     diffFileRef.current = filePath
     setDiffFile(filePath)
-    setSelectedIndex(visFiles.findIndex(f => f.path === filePath))
     setIsEditing(false)
     setIsLoadingDiff(true)
     setDiffOriginal('')
@@ -419,12 +463,12 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     const rel = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized
     const known = files.find(f => f.path === rel)
     if (known) {
-      handleViewDiff(known.path)
+      handleViewDiff(known.path, !!known.staged)
       return
     }
     diffFileRef.current = rel
     setDiffFile(rel)
-    setSelectedIndex(-1)
+    setSelectedKey(null)
     setIsEditing(true)
     setIsLoadingDiff(true)
     setDiffOriginal('')
@@ -523,16 +567,20 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     </div>
   ) : null
 
-  const renderZone = (label: string, list: GitFileStatus[], accent: string, total = list.length) => {
+  const renderZone = (label: string, list: GitFileStatus[], accent: string, total = list.length, action?: ReactNode) => {
     if (list.length === 0) return null
     return (
       <div style={{ flexShrink: 0 }}>
         <div style={{
-          padding: '4px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, color: accent,
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '4px 10px 4px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, color: accent,
           textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
           borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-subtle)'
         }}>
-          {label} — {filterText ? `${list.length}/${total}` : list.length}
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {label} — {filterText ? `${list.length}/${total}` : list.length}
+          </span>
+          {action}
         </div>
         <FileDiffList
           files={list}
@@ -540,11 +588,12 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           onUnstage={handleUnstage}
           onViewDiff={handleViewDiff}
            activeDiffFile={diffFile}
+           activeStaged={selIdx >= 0 ? !!visFiles[selIdx].staged : null}
            checkMarks={checkMarks}
            onToggleCheck={onToggleCheck}
            onCopyPath={handleCopyPath}
            onReveal={handleReveal}
-           onDiscard={(file, info) => setDiscardTarget({ file, ...info })}
+           onDiscard={(file, info) => setDiscardTarget({ items: [{ file, ...info }] })}
          />
       </div>
     )
@@ -799,14 +848,10 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
         onKeyDown={(e) => {
           if (visFiles.length === 0 || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
           e.preventDefault()
-          // step through the visible (filtered) rows from the open file;
-          // selectedIndex tells apart a path listed both staged and unstaged
-          const cur = visFiles[selectedIndex]?.path === diffFileRef.current
-            ? selectedIndex
-            : visFiles.findIndex(f => f.path === diffFileRef.current)
+          // step through the visible (filtered) rows from the selected one
+          const cur = selIdx >= 0 ? selIdx : visFiles.findIndex(f => f.path === diffFileRef.current)
           const next = e.key === 'ArrowDown' ? Math.min(cur + 1, visFiles.length - 1) : Math.max(cur - 1, 0)
-          setSelectedIndex(next)
-          handleViewDiff(visFiles[next].path)
+          handleViewDiff(visFiles[next].path, !!visFiles[next].staged)
         }}
       >
         {unmergedFiles.length > 0 && (
@@ -832,11 +877,15 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--error-bg)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-card)' }}>
                 <GitMerge size={11} style={{ flexShrink: 0 }} />
-                <span style={{
-                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  color: 'var(--text-primary)'
-                }}>
-                  {f.path}
+                {/* name, folder below: as the FileDiffList rows */}
+                <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', color: 'var(--text-primary)' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileNameOf(f.path)}</span>
+                  {changesShowPath && dirOf(f.path) && (
+                    <span style={{
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)'
+                    }}>{dirOf(f.path)}</span>
+                  )}
                 </span>
                 <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, flexShrink: 0 }}>
                   resolve
@@ -845,8 +894,18 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
             ))}
           </div>
         )}
-        {renderZone('staged changes', visStaged, 'var(--success-color)', stagedFiles.length)}
-        {renderZone('changes', visUnstaged, 'var(--warning-color)', unstagedFiles.length)}
+        {renderZone('staged changes', visStaged, 'var(--success-color)', stagedFiles.length,
+          <ZoneAction onClick={handleUnstageAll} disabled={isDiscarding} color="var(--success-color)" bg="var(--success-bg)"
+            title={filterText ? `unstage dei ${visStaged.length} file filtrati` : 'unstage all'}
+            tipDesc="toglie dallo stage i file elencati qui: le modifiche restano nei changes">
+            <Minus size={10} />
+          </ZoneAction>)}
+        {renderZone('changes', visUnstaged, 'var(--warning-color)', unstagedFiles.length,
+          <ZoneAction onClick={askDiscardAll} disabled={isDiscarding} color="var(--error-color)" bg="var(--error-bg)"
+            title={filterText ? `scarta i ${visUnstaged.length} file filtrati` : 'scarta tutte le modifiche'}
+            tipDesc="riporta i file elencati qui alla versione in stage (o all'ultimo commit) ed elimina i file nuovi non tracciati; chiede conferma">
+            <Undo2 size={10} />
+          </ZoneAction>)}
         {files.length === 0 && unmergedFiles.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             no changes
@@ -1136,15 +1195,25 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <AlertTriangle size={16} style={{ color: 'var(--error-color)', flexShrink: 0 }} />
               <span style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {discardTarget.untracked ? 'Elimina file' : 'Annulla modifiche'}
+                {discardOne ? (discardOne.untracked ? 'Elimina file' : 'Annulla modifiche') : `Scarta ${discardTarget.items.length} modifiche`}
               </span>
             </div>
             <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              {discardTarget.untracked
-                ? 'Il file non è tracciato da git: verrà eliminato dal disco. Operazione non reversibile.'
-                : 'Le modifiche non salvate di questo file verranno ripristinate all\'ultima versione committata. Operazione non reversibile.'}
-              <div style={{ marginTop: '6px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
-                {discardTarget.file}
+              {discardOne
+                ? (discardOne.untracked
+                  ? 'Il file non è tracciato da git: verrà eliminato dal disco. Operazione non reversibile.'
+                  : discardOne.staged
+                    ? 'Le modifiche di questo file verranno ripristinate all\'ultima versione committata. Operazione non reversibile.'
+                    : 'Le modifiche non in stage di questo file tornano alla versione in stage o all\'ultimo commit (lo stage resta com\'è). Operazione non reversibile.')
+                : <>
+                  {discardTracked > 0 && `${discardTracked} file tornano alla versione in stage o all'ultimo commit (lo stage resta com'è). `}
+                  {discardUntracked > 0 && <b style={{ color: 'var(--error-color)' }}>{`${discardUntracked} file nuovi non tracciati verranno eliminati dal disco. `}</b>}
+                  Operazione non reversibile.
+                </>}
+              <div style={{ marginTop: '6px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', wordBreak: 'break-all', maxHeight: '160px', overflowY: 'auto' }}>
+                {discardTarget.items.map(t => (
+                  <div key={t.file}>{t.untracked ? '+ ' : ''}{t.file}</div>
+                ))}
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -1165,12 +1234,28 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                   fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                 }}>
                 {isDiscarding ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Undo2 size={11} />}
-                {isDiscarding ? 'annullamento…' : (discardTarget.untracked ? 'elimina' : 'annulla modifiche')}
+                {isDiscarding ? 'annullamento…' : discardOne ? (discardOne.untracked ? 'elimina' : 'annulla modifiche') : `scarta ${discardTarget.items.length} file`}
               </button>
             </div>
           </div>
         </Modal>
       )}
     </>
+  )
+}
+
+/** Small icon button at the right of a zone header ("unstage all", "scarta tutto"). */
+function ZoneAction({ onClick, disabled, color, bg, title, tipDesc, children }: {
+  onClick: () => void; disabled?: boolean; color: string; bg: string; title: string; tipDesc: string; children: ReactNode
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled} title={title} aria-label={title} data-tip-desc={tipDesc}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        width: '18px', height: '18px', padding: 0, background: bg, border: 'none',
+        borderRadius: 'var(--radius-sm)', color, cursor: disabled ? 'not-allowed' : 'pointer'
+      }}>
+      {children}
+    </button>
   )
 }

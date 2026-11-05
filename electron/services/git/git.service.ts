@@ -1,6 +1,7 @@
 import simpleGit from 'simple-git'
 import type { SimpleGit } from 'simple-git'
 import { rm } from 'fs/promises'
+import { existsSync } from 'fs'
 import { join } from 'path'
 
 export interface SerializableGitStatus {
@@ -30,6 +31,18 @@ export interface SerializableCommitInfo {
   authorName: string
   authorEmail: string
 }
+
+/**
+ * Global flag for READS that run again on every file change (the watcher): status and diff
+ * skip the opportunistic index refresh that takes .git/index.lock, so they never make a
+ * checkout/add/reset/commit running at the same time fail with "index.lock: File exists"
+ * (seen when discarding many files). A flag, not GIT_OPTIONAL_LOCKS via .env(): simple-git
+ * refuses an explicit env that carries EDITOR, GIT_ASKPASS & co.
+ */
+export const NO_OPTIONAL_LOCKS = '--no-optional-locks'
+
+/** Another git process (a terminal, another IDE) holding index.lock for a moment. */
+const isIndexLocked = (e: unknown) => /index\.lock/.test(String((e as Error)?.message ?? e))
 
 export class GitService {
   private getGit(repoPath: string): SimpleGit {
@@ -70,7 +83,7 @@ export class GitService {
     // inside quotes; only names with spaces stay quoted (stripped below).
     // ponytail: a non-ignored build folder (bin/, node_modules/) becomes thousands of rows;
     // cap per folder if that ever shows up, .gitignore covers the usual cases.
-    const out = await git.raw(['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all'])
+    const out = await git.raw([NO_OPTIONAL_LOCKS, '-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all'])
     const staged: { path: string; changeType: string }[] = []
     const unstaged: { path: string; changeType: string }[] = []
     const unmerged: { path: string; changeType: string }[] = []
@@ -105,7 +118,8 @@ export class GitService {
 
   async unstage(repoPath: string, files: string[]): Promise<void> {
     const git = this.getGit(repoPath)
-    await git.reset(['--', ...files])
+    // in chunks: a long list stays under the Windows command line limit (32767 chars)
+    for (let i = 0; i < files.length; i += 100) await git.reset(['--', ...files.slice(i, i + 100)])
   }
 
   /**
@@ -123,10 +137,23 @@ export class GitService {
       await git.reset(['--', file]).catch(() => { /* already unstaged */ })
     }
     if (opts.untracked) {
-      await rm(join(repoPath, file), { force: true, recursive: true }).catch(() => { /* gone */ })
+      // a nested repository (the IDE's own .worktrees/<type>/<id>/, a clone) is listed as one
+      // untracked folder: deleting it would wipe a whole worktree with its uncommitted work
+      if (existsSync(join(repoPath, file, '.git'))) throw new Error(`repository annidato, non eliminato: ${file}`)
+      // force already ignores a file that is gone; any other failure must reach the caller
+      await rm(join(repoPath, file), { force: true, recursive: true })
       return
     }
-    await git.checkout(['--', file])
+    // ponytail: 3 tries, 300 ms apart, when another git process holds index.lock
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await git.checkout(['--', file])
+        return
+      } catch (e) {
+        if (attempt >= 3 || !isIndexLocked(e)) throw e
+        await new Promise(r => setTimeout(r, 300))
+      }
+    }
   }
 
   async commit(repoPath: string, message: string): Promise<void> {

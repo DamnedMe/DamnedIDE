@@ -73,8 +73,9 @@ export const SETTINGS_PAGE_META: SettingsPageMeta[] = [
   },
   {
     id: 'git', group: 'git', label: 'Git', icon: GitBranch,
-    description: 'client GitTree aperto dalla voce Git',
-    keywords: 'git gittree client eseguibile executable percorso scarica download'
+    description: 'client GitTree aperto dalla voce Git e lista delle modifiche',
+    // no « path »: words match by prefix, « pat » must find only the PAT page
+    keywords: 'git gittree client eseguibile executable percorso scarica download changes modifiche file nome cartella folder gruppi raggruppa tipologia worktree'
   },
   {
     id: 'ado-connections', group: 'ado', label: 'Connessioni', icon: Cloud,
@@ -266,7 +267,7 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
   const resetBtn = (
     <button onClick={onReset}
       title="ripristina predefiniti"
-      data-tip-desc="riporta tema, colori, testo, editor, terminale, lingua e GitTree ai valori iniziali (chiede conferma; Azure DevOps, agenti e dispositivi non cambiano)"
+      data-tip-desc="riporta tema, colori, testo, editor, terminale, lingua, GitTree e lista changes ai valori iniziali (chiede conferma; Azure DevOps, agenti e dispositivi non cambiano)"
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexShrink: 0,
         width: compact ? undefined : '100%', padding: compact ? '0 8px' : '0 10px', minHeight: px(28),

@@ -1,7 +1,7 @@
 // Self-check for GitService.discardChanges (worktree "annulla modifiche").
 // Run: node --experimental-strip-types scripts/git-discard.check.ts
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -41,5 +41,21 @@ git(['add', 'staged-new.txt'])
 await service.discardChanges(repo, 'staged-new.txt', { staged: true, untracked: true })
 assert.equal(existsSync(join(repo, 'staged-new.txt')), false, 'staged new file removed')
 
+// 5. a nested repository (a linked worktree under .worktrees/, a clone) is never deleted
+const nested = join(repo, '.worktrees', 'feature', 'x')
+execFileSync('git', ['worktree', 'add', '-q', '-b', 'feature/x', nested], { cwd: repo, windowsHide: true })
+writeFileSync(join(nested, 'wip.txt'), 'uncommitted work\n')
+await assert.rejects(service.discardChanges(repo, '.worktrees/feature/x/', { untracked: true }), /repository annidato/)
+assert.equal(existsSync(join(nested, 'wip.txt')), true, 'linked worktree and its work kept')
+
+// 6. unstage of many paths goes in chunks (Windows command line limit) and clears them all
+const many = Array.from({ length: 230 }, (_, i) => `many/${'deep-folder-name/'.repeat(3)}file-with-a-long-name-${i}.txt`)
+mkdirSync(join(repo, 'many', ...'deep-folder-name/'.repeat(3).split('/').filter(Boolean)), { recursive: true })
+for (const p of many) writeFileSync(join(repo, p), 'x\n')
+git(['add', 'many'])
+await service.unstage(repo, many)
+assert.equal(execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: repo }).toString().trim(), '', 'every path unstaged')
+
+execFileSync('git', ['worktree', 'remove', '--force', nested], { cwd: repo, windowsHide: true })
 rmSync(repo, { recursive: true, force: true })
 console.log('ok — git discardChanges')

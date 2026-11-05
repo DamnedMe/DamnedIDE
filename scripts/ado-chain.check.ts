@@ -355,6 +355,13 @@ try {
 
   reply = () => json({ value: [{ commitId: 'a', comment: 'fix #1', author: { name: 'x' } }] })
   assert.deepEqual(await ado.getCommitsBetween('Themis', 'Themis-API', 'qa', 'main', { strict: true }), [{ commitId: 'a', message: 'fix #1', author: 'x' }])
+  // commits of qa missing on main: ADO wants the target as itemVersion, the source as compareVersion
+  // (swapped, Themis-API listed the 660 commits quality has and develop lacks)
+  {
+    const q = new URL(urls.at(-1)!).searchParams
+    assert.equal(q.get('searchCriteria.itemVersion.version'), 'main', 'target branch is itemVersion')
+    assert.equal(q.get('searchCriteria.compareVersion.version'), 'qa', 'source branch is compareVersion')
+  }
   // not strict (the Release panel): an error still reads as no commit
   reply = () => new Response('', { status: 500 })
   assert.deepEqual(await ado.getCommitsBetween('Themis', 'Themis-API', 'qa', 'main'), [])

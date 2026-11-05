@@ -374,7 +374,10 @@ export class AdoService {
   /** `strict`: an error answer throws (the release chain retries) instead of reading as "no commit". */
   async getCommitsBetween(project: string, repo: string, sourceRef: string, targetRef: string, opts?: { strict?: boolean }): Promise<{ commitId: string; message: string; author: string }[]> {
     // ponytail: one page of 1000 commits (no paging); a bigger promotion lists only the newest 1000
-    const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(sourceRef)}&searchCriteria.itemVersion.versionType=branch&searchCriteria.compareVersion.version=${encodeURIComponent(targetRef)}&searchCriteria.compareVersion.versionType=branch&searchCriteria.$top=1000&api-version=7.0`
+    // Azure DevOps returns the commits of compareVersion that itemVersion cannot reach (git log
+    // item..compare): the target goes in itemVersion, the source in compareVersion. The other way
+    // round lists what the target has and the source lacks (Themis-API: 660 instead of 6).
+    const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(targetRef)}&searchCriteria.itemVersion.versionType=branch&searchCriteria.compareVersion.version=${encodeURIComponent(sourceRef)}&searchCriteria.compareVersion.versionType=branch&searchCriteria.$top=1000&api-version=7.0`
     let data: { value?: Record<string, unknown>[] }
     if (opts?.strict) {
       data = await this.getJson(url)

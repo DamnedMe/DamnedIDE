@@ -9,8 +9,8 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  sanitizeChains, buildChain, afterQaState, withLastError, withProdPr, withNothingToPromote, cancelChain,
-  isChainActive, activeChainItem, chainConnection, chainProjectKey
+  sanitizeChains, buildChain, afterQaState, afterProdState, withLastError, withProdPr, withNothingToPromote, cancelChain,
+  isActiveStatus, isChainActive, activeChainItem, chainConnection, chainProjectKey
 } from '../src/shared/adoChain.ts'
 import type { ChainItem, ChainStartInput, ReleaseChain } from '../src/shared/adoChain.ts'
 import { sanitizePromotionConfig } from '../src/shared/adoSettings.ts'
@@ -67,6 +67,15 @@ assert.equal(buildChain({ ...input, items: [{ side: 'BE', repo: 'Themis-API', br
   'the same repository name in another project is another repository')
 assert.equal(activeChainItem([chain], 'contoso', 'THEMIS', 'themis-frontend')?.item.side, 'FE')
 assert.equal(activeChainItem([cancelChain(chain, T0)], 'Contoso', 'Themis', 'Themis-API'), null, 'a cancelled chain no longer holds the repository')
+// the develop → qa auto-complete that Azure DevOps did not take is kept, only with a qaPr
+{
+  const noAc = buildChain({
+    ...input,
+    items: [{ ...input.items[0], qaNoAutoComplete: true }, { ...input.items[1], qaNoAutoComplete: true }]
+  }, conn, [], 'k1', T0)
+  assert.deepEqual(noAc.items.map(i => i.qaNoAutoComplete), [true, undefined])
+  assert.equal(buildChain(input, conn, [], 'k1', T0).items[0].qaNoAutoComplete, undefined)
+}
 
 // ── transitions ───────────────────────────────────────────────────────────
 const waiting = chain.items[0]
@@ -80,17 +89,37 @@ assert.equal(withLastError(flaky, 'Azure DevOps non raggiungibile: offline', 4),
 assert.equal(afterQaState(flaky, 'active', 5).lastError, undefined, 'an answer clears the last error')
 assert.equal(withLastError({ ...waiting, status: 'done' }, 'x', 3).lastError, undefined, 'a finished item keeps no error')
 const creating: ChainItem = { ...chain.items[1], lastError: 'x' }
-assert.deepEqual(withProdPr(creating, { id: 9, url: 'u' }, false, 6), { ...chain.items[1], prodPr: { id: 9, url: 'u' }, status: 'done', updatedAt: 6 })
+// the qa → prod PR exists: the chain follows it until it is completed
+assert.deepEqual(withProdPr(creating, { id: 9, url: 'u' }, false, 6), { ...chain.items[1], prodPr: { id: 9, url: 'u' }, status: 'waiting-prod', updatedAt: 6 })
 assert.equal(withProdPr(creating, { id: 9, url: 'u' }, true, 6).prodReused, true)
+assert.equal(withProdPr(creating, { id: 9, url: 'u' }, true, 6).status, 'waiting-prod', 'a reused PR is followed too')
 const cancelledLate = withProdPr({ ...creating, status: 'cancelled' }, { id: 9, url: 'u' }, false, 6)
 assert.equal(cancelledLate.status, 'cancelled', 'cancelled while creating: stays cancelled')
 assert.deepEqual(cancelledLate.prodPr, { id: 9, url: 'u' }, '... but the PR that exists is recorded')
 assert.equal(withNothingToPromote(creating, 7).status, 'done')
 assert.equal(withNothingToPromote(creating, 7).note, 'nulla da promuovere: main contiene già tutti i commit di qa')
+const prodWaiting = withProdPr(chain.items[1], { id: 9, url: 'u' }, false, 6)
+assert.equal(afterProdState(prodWaiting, 'active', 7), prodWaiting, 'qa → prod still open: the same item, nothing to write')
+assert.deepEqual(afterProdState(prodWaiting, 'Completed', 7), { ...prodWaiting, status: 'done', prodDone: true, updatedAt: 7 })
+assert.deepEqual(afterProdState(prodWaiting, 'abandoned', 7), { ...prodWaiting, status: 'failed', error: 'PR qa → main abbandonata', updatedAt: 7 })
+assert.equal(afterProdState(waiting, 'completed', 7), waiting, 'only an item waiting for prod')
+assert.equal(afterQaState(prodWaiting, 'completed', 7), prodWaiting, '... and afterQaState leaves it alone')
+const prodFlaky = withLastError(prodWaiting, 'errore Azure DevOps 500', 8)
+assert.equal(prodFlaky.status, 'waiting-prod', 'a transient error keeps waiting for prod')
+assert.equal(prodFlaky.lastError, 'errore Azure DevOps 500')
+assert.equal(afterProdState(prodFlaky, 'active', 9).lastError, undefined, 'an answer clears the last error')
+assert.equal(afterProdState(prodFlaky, 'completed', 9).lastError, undefined)
+assert.equal(isActiveStatus('waiting-prod'), true)
+assert.equal(activeChainItem([{ ...chain, items: [prodWaiting] }], 'Contoso', 'Themis', 'Themis-Frontend')?.item.status, 'waiting-prod',
+  'a repository whose qa → prod PR is open is still in its chain')
 const cancelled = cancelChain({ ...chain, items: [chain.items[0], { ...chain.items[1], status: 'done' }] }, 8)
 assert.deepEqual(cancelled.items.map(i => i.status), ['cancelled', 'done'], 'only running items are cancelled')
 assert.equal(isChainActive(cancelled), false)
 assert.equal(isChainActive(chain), true)
+const cancelledProd = cancelChain({ ...chain, items: [prodWaiting] }, 8).items[0]
+assert.equal(cancelledProd.status, 'cancelled', 'waiting for prod is cancelled too')
+assert.deepEqual(cancelledProd.prodPr, { id: 9, url: 'u' }, '... the PR stays as it is')
+assert.equal(isChainActive({ ...chain, items: [prodWaiting] }), true)
 
 // ── sanitizeChains ────────────────────────────────────────────────────────
 assert.deepEqual(sanitizeChains(null), [])
@@ -108,6 +137,25 @@ const messy = sanitizeChains({
 })
 assert.deepEqual(messy.map(c => c.id), ['k1', 'k6'])
 assert.deepEqual(messy[1].items.map(i => i.side), ['BE'], 'bad items and a repeated side are dropped')
+// the flags round-trip; waiting for a qa → prod PR that is not there is dropped
+{
+  const flagged: ChainItem = { ...prodWaiting, qaPr: { id: 8, url: 'q' }, qaNoAutoComplete: true, prodNoAutoComplete: true }
+  assert.deepEqual(sanitizeChains({ chains: [{ ...chain, items: [flagged] }] })[0].items, [flagged])
+  const done: ChainItem = { ...flagged, status: 'done', prodDone: true }
+  assert.deepEqual(sanitizeChains({ chains: [{ ...chain, items: [done] }] })[0].items, [done])
+  assert.deepEqual(sanitizeChains({ chains: [{ ...chain, items: [{ ...prodWaiting, prodPr: undefined }] }] }), [])
+  assert.equal(sanitizeChains({ chains: [{ ...chain, items: [{ ...done, qaNoAutoComplete: 'yes', prodDone: 1 }] }] })[0].items[0].qaNoAutoComplete, undefined)
+}
+// chains of 0.0.23 / 0.0.24: done as soon as the qa → prod PR existed, never followed. Read
+// again as waiting for it (created or reused), so the owner settles them at its next poll
+{
+  const legacy = (item: Partial<ChainItem>) => sanitizeChains({ chains: [{ ...chain, items: [{ ...chain.items[0], ...item }] }] })[0].items[0]
+  assert.equal(legacy({ status: 'done', prodPr: { id: 4422, url: 'u' } }).status, 'waiting-prod')
+  assert.equal(legacy({ status: 'done', prodPr: { id: 4422, url: 'u' }, prodReused: true }).status, 'waiting-prod', 'a reused one too')
+  assert.equal(legacy({ status: 'done', prodPr: { id: 4422, url: 'u' }, prodDone: true }).status, 'done', 'completed: stays done')
+  assert.equal(legacy({ status: 'done', note: 'nulla da promuovere' }).status, 'done', 'nothing to promote (no PR): stays done')
+  assert.equal(legacy({ status: 'cancelled', prodPr: { id: 4422, url: 'u' } }).status, 'cancelled', 'cancelled: stays cancelled')
+}
 
 // ── chainConnection ───────────────────────────────────────────────────────
 assert.equal(chainConnection(chain, [{ id: 'c9', organization: 'x', project: 'y' }, conn])?.id, 'c1')
@@ -118,7 +166,7 @@ assert.equal(chainProjectKey(' Contoso ', 'Themis'), 'contoso/themis')
 // ── the service, with a fake Azure DevOps ─────────────────────────────────
 interface Call { name: string; args: unknown[] }
 function fakeAdo(calls: Call[], world: {
-  qaState: Record<number, string | Error>
+  prState: Record<number, string | Error>
   existingProd?: { id: number; url: string } | null
   commits?: { commitId: string; message: string; author: string }[] | Error
   workItems?: { id: number; title: string; type: string; state: string; assignedTo: string; url: string }[] | Error
@@ -129,7 +177,7 @@ function fakeAdo(calls: Call[], world: {
     use: (org: string, token: string) => rec('use', org, token),
     getPullRequestState: async (project: string, repo: string, id: number) => {
       rec('state', project, repo, id)
-      const s = world.qaState[id]
+      const s = world.prState[id]
       if (s instanceof Error) throw s
       return { id, status: s ?? 'active', url: `https://pr/${id}` }
     },
@@ -157,7 +205,7 @@ function fakeAdo(calls: Call[], world: {
 const dir = mkdtempSync(join(tmpdir(), 'damned-chain-'))
 try {
   const calls: Call[] = []
-  const world: Parameters<typeof fakeAdo>[1] = { qaState: {} }
+  const world: Parameters<typeof fakeAdo>[1] = { prState: {} }
   const notes: string[] = []
   const alive = new Set([100, 200])
   let changed = 0
@@ -179,7 +227,7 @@ try {
   const itemOf = (svc: InstanceType<typeof PromotionChainService>, side: 'BE' | 'FE') => svc.list()[0]?.items.find(i => i.side === side)
 
   // start: persisted, polled at once by the owner (A takes the lock)
-  world.qaState[501] = 'active'
+  world.prState[501] = 'active'
   world.commits = [
     { commitId: 'a1', message: 'Merged PR 77: #5444 login', author: 'x' },
     { commitId: 'a2', message: 'fix #5445\n\nbody', author: 'y' }
@@ -192,10 +240,16 @@ try {
   assert.ok(existsSync(join(dir, 'ado-chains.lock')), 'the owner holds the lock')
   assert.ok(changed > 0, 'the windows are told')
 
-  // BE still waits for its develop → qa PR; FE (nothing to promote to qa) got its qa → prod PR right away
+  // BE still waits for its develop → qa PR; FE (nothing to promote to qa) got its qa → prod PR
+  // right away and now waits for that one
   assert.equal(itemOf(a, 'BE')?.status, 'waiting-qa')
-  assert.equal(itemOf(a, 'FE')?.status, 'done')
+  assert.equal(itemOf(a, 'FE')?.status, 'waiting-prod')
   assert.deepEqual(itemOf(a, 'FE')?.prodPr, { id: 900, url: 'https://pr/900' })
+  assert.equal(itemOf(a, 'FE')?.prodDone, undefined)
+  // on disk waiting-prod is written as done (prodPr, no prodDone): 0.0.24 keeps it, sanitize reads it back
+  const onDisk = JSON.parse(readFileSync(join(dir, 'ado-chains.json'), 'utf8')).chains[0].items.find((i: ChainItem) => i.side === 'FE')
+  assert.equal(onDisk.status, 'done', 'waiting-prod never reaches the file')
+  assert.equal(onDisk.prodDone, undefined)
   assert.deepEqual(calls.find(c => c.name === 'use')?.args, ['Contoso', 'pat-1'], 'a dedicated client on the chain connection')
   assert.deepEqual(calls.find(c => c.name === 'state')?.args, ['Themis', 'Themis-API', 501])
   assert.deepEqual(calls.find(c => c.name === 'commits')?.args, ['Themis', 'Themis-Frontend', 'qa', 'main', { strict: true }], 'commits read strictly: an error is not "nothing to promote"')
@@ -212,35 +266,63 @@ try {
   assert.deepEqual(opts.workItemIds, [5444])
   assert.equal(opts.deleteSourceBranch, false, 'qa is never deleted')
   assert.equal(opts.forceComplete, false, 'no policy bypass')
-  assert.deepEqual(notes, ['PR qa → main creata per Themis-Frontend'])
+  // the fake answers mode 'open': Azure DevOps did not take the auto-complete the chain asked for
+  assert.equal(itemOf(a, 'FE')?.prodNoAutoComplete, true, 'auto-complete not armed: recorded on the item')
+  assert.deepEqual(notes, ['PR qa → main creata per Themis-Frontend (auto-complete non armato)'])
 
   // B is not the owner: its polls never call Azure DevOps
   calls.length = 0
   await b.tick()
   assert.deepEqual(calls, [], 'only the lock owner polls')
 
-  // a transient error keeps waiting with lastError
-  world.qaState[501] = Object.assign(new TypeError('fetch failed'), { cause: new Error('getaddrinfo ENOTFOUND dev.azure.com') })
+  // a transient error keeps waiting with lastError (develop → qa and qa → prod alike)
+  world.prState[501] = Object.assign(new TypeError('fetch failed'), { cause: new Error('getaddrinfo ENOTFOUND dev.azure.com') })
+  world.prState[900] = new Error('errore Azure DevOps 500')
   await a.tick()
   assert.equal(itemOf(a, 'BE')?.status, 'waiting-qa')
   assert.equal(itemOf(a, 'BE')?.lastError, 'Azure DevOps non raggiungibile: getaddrinfo ENOTFOUND dev.azure.com')
+  assert.equal(itemOf(a, 'FE')?.status, 'waiting-prod')
+  assert.equal(itemOf(a, 'FE')?.lastError, 'errore Azure DevOps 500')
+  assert.ok(calls.some(c => c.name === 'state' && c.args[2] === 900), 'the qa → prod PR is read')
 
   // the owner quits (crash, no release): B takes over at its next poll; qa PR completed -> qa → prod PR
   alive.delete(100)
-  world.qaState[501] = 'completed'
+  world.prState[501] = 'completed'
+  world.prState[900] = 'active'
   world.workItems = new Error('ADO API error: 401')
   world.create = { id: 901, title: 't', mode: 'autocomplete', url: 'https://pr/901' }
   calls.length = 0
   clock = 20_000
   await b.tick()
-  assert.equal(itemOf(b, 'BE')?.status, 'done')
+  assert.equal(itemOf(b, 'BE')?.status, 'waiting-prod')
   assert.deepEqual(itemOf(b, 'BE')?.prodPr, { id: 901, url: 'https://pr/901' })
   assert.equal(itemOf(b, 'BE')?.lastError, undefined)
   assert.equal(itemOf(b, 'BE')?.updatedAt, 20_000)
+  assert.equal(itemOf(b, 'FE')?.status, 'waiting-prod', 'qa → prod still open: keeps waiting')
+  assert.equal(itemOf(b, 'FE')?.lastError, undefined, 'an answer clears the last error')
   const create2 = calls.find(c => c.name === 'create')?.args[2] as Record<string, unknown>
   assert.equal(create2.workItemIds, undefined, 'work items not readable: the PR is created without links')
   assert.doesNotMatch(String(create2.description), /## Work item/)
   assert.equal(notes.at(-1), 'PR qa → main creata per Themis-API')
+  assert.equal(itemOf(b, 'BE')?.prodNoAutoComplete, undefined, 'auto-complete armed: no warning')
+  // the flag survives the chains file (sanitizeChains)
+  assert.equal(itemOf(b, 'FE')?.prodNoAutoComplete, true)
+  assert.equal(isChainActive(b.list()[0]), true, 'both qa → prod PRs are still followed')
+
+  // both qa → prod PRs completed: done, with a notification each
+  world.prState[900] = 'completed'
+  world.prState[901] = 'completed'
+  clock = 30_000
+  calls.length = 0
+  await b.tick()
+  assert.deepEqual(calls.filter(c => c.name === 'state').map(c => c.args[2]), [901, 900], 'only the qa → prod PRs are read')
+  assert.ok(!names().includes('create'), 'no new PR')
+  for (const side of ['BE', 'FE'] as const) {
+    assert.equal(itemOf(b, side)?.status, 'done')
+    assert.equal(itemOf(b, side)?.prodDone, true)
+    assert.equal(itemOf(b, side)?.updatedAt, 30_000)
+  }
+  assert.deepEqual(notes.slice(-2), ['rilascio in main completato per Themis-API', 'rilascio in main completato per Themis-Frontend'])
   assert.equal(isChainActive(b.list()[0]), false, 'every item finished')
   // a finished chain is not polled any more
   calls.length = 0
@@ -250,7 +332,7 @@ try {
   assert.deepEqual(b.list(), [])
 
   // restart: a chain left running resumes in the next instance
-  world.qaState = { 601: 'active', 602: 'completed' }
+  world.prState = { 601: 'active', 602: 'completed' }
   world.existingProd = { id: 77, url: 'https://pr/77' }
   const c2 = b.start({
     connectionId: 'c1', autoComplete: false,
@@ -261,18 +343,26 @@ try {
   }, conn)
   await b.tick()
   assert.equal(itemOf(b, 'BE')?.status, 'waiting-qa')
-  assert.equal(itemOf(b, 'FE')?.status, 'done', 'an active qa → prod PR is reused')
+  assert.equal(itemOf(b, 'FE')?.status, 'waiting-prod', 'an active qa → prod PR is reused and followed')
   assert.deepEqual(itemOf(b, 'FE')?.prodPr, { id: 77, url: 'https://pr/77' })
   assert.equal(itemOf(b, 'FE')?.prodReused, true)
   b.stop()
   assert.equal(existsSync(join(dir, 'ado-chains.lock')), false, 'stop releases the lock')
   alive.add(300)
   const second = make(300)
-  world.qaState[601] = 'abandoned'
+  // abandoned PRs stop the chain, develop → qa and qa → prod alike
+  world.prState[601] = 'abandoned'
+  world.prState[77] = 'abandoned'
   await second.tick()
   assert.equal(itemOf(second, 'BE')?.status, 'failed')
   assert.equal(itemOf(second, 'BE')?.error, 'PR develop → qa abbandonata')
-  assert.equal(notes.at(-1), 'catena interrotta per Themis-API: PR develop → qa abbandonata')
+  assert.equal(itemOf(second, 'FE')?.status, 'failed')
+  assert.equal(itemOf(second, 'FE')?.error, 'PR qa → main abbandonata')
+  assert.equal(itemOf(second, 'FE')?.prodDone, undefined)
+  assert.deepEqual(notes.slice(-2), [
+    'catena interrotta per Themis-API: PR develop → qa abbandonata',
+    'catena interrotta per Themis-Frontend: PR qa → main abbandonata'
+  ])
   second.remove(c2.id)
 
   // creation refused by Azure DevOps: retried with lastError; cancel stops the item before any PR
@@ -302,11 +392,24 @@ try {
   assert.equal(itemOf(second, 'BE')?.prodPr, undefined)
   assert.equal(itemOf(second, 'BE')?.note, 'nulla da promuovere: main contiene già tutti i commit di qa')
   second.remove(second.list()[0].id)
+
+  // a chain written by 0.0.23 / 0.0.24 (done right after creating qa → prod): settled at the next poll
+  writeFileSync(join(dir, 'ado-chains.json'), JSON.stringify({ chains: [{
+    id: 'legacy', connectionId: 'c1', organization: 'Contoso', project: 'Themis', autoComplete: true, createdAt: T0,
+    items: [{ side: 'BE', repo: 'Themis-API', branches, qaPr: { id: 4420, url: '' }, prodPr: { id: 4422, url: '' }, status: 'done', updatedAt: T0 }]
+  }] }))
+  world.prState[4422] = 'completed'
+  assert.equal(itemOf(second, 'BE')?.status, 'waiting-prod', 'read as still waiting for its qa → prod PR')
+  await second.tick()
+  assert.equal(itemOf(second, 'BE')?.status, 'done')
+  assert.equal(itemOf(second, 'BE')?.prodDone, true)
+  assert.equal(notes.at(-1), 'rilascio in main completato per Themis-API')
+  second.remove('legacy')
   second.stop()
 
   // the connection is gone: the item waits with the reason
   const lost = make(300, () => 'connessione Contoso/Themis non trovata')
-  world.qaState[701] = 'completed'
+  world.prState[701] = 'completed'
   lost.start({ connectionId: 'c1', autoComplete: false, items: [{ side: 'BE', repo: 'R5', branches, qaPr: { id: 701, url: '' } }] }, conn)
   await lost.tick()
   assert.equal(itemOf(lost, 'BE')?.status, 'waiting-qa')

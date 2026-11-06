@@ -75,7 +75,7 @@
 | 🔗 **PBI / Bug / Task** | ricerca e dettaglio dei work item |
 | 🔀 **Pull Request** | lista, dettaglio, **approve/reject/complete**, creazione con auto-complete opzionale e link ai work item |
 | 🏷️ **Work item nei commit** | i commit del flusso worktree riportano `#id` → associazioni automatiche |
-| 🚀 **Rilascio develop → qa → prod** | menu *Rilascio*: PR di promozione per BE, FE o entrambi, con i work item dei commit collegati, controllo delle PR già attive, conferma per la produzione; i branch develop/qa non vengono mai cancellati e le policy non vengono bypassate. Le repository **BE e FE** si scelgono da due menu e restano salvate per project (anche in *Impostazioni › Azure DevOps › Rilascio*, con la fase predefinita). La fase **develop → qa → prod** chiede una sola conferma, crea la PR develop → qa e, appena è completata, la PR qa → prod: le catene sono seguite ogni 30 s da una sola istanza dell'IDE, anche dopo un riavvio, con una notifica alla creazione |
+| 🚀 **Rilascio develop → qa → prod** | menu *Rilascio*: PR di promozione per BE, FE o entrambi, con i work item dei commit collegati, controllo delle PR già attive, conferma per la produzione; i branch develop/qa non vengono mai cancellati e le policy non vengono bypassate. Le repository **BE e FE** si scelgono da due menu e restano salvate per project (anche in *Impostazioni › Azure DevOps › Rilascio*, con la fase predefinita). La fase **develop → qa → prod** chiede una sola conferma, crea la PR develop → qa e, appena è completata, la PR qa → prod, seguita a sua volta fino al completamento: le catene sono seguite ogni 30 s da una sola istanza dell'IDE, anche dopo un riavvio, con una notifica alla creazione e al rilascio in prod |
 
 </details>
 

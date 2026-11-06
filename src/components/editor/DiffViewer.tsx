@@ -2,6 +2,7 @@ import { useRef, forwardRef, useImperativeHandle, useEffect, useState } from 're
 import { DiffEditor, DiffOnMount } from '@monaco-editor/react'
 import { Columns2, Rows3, X, Maximize2, Eye } from '@/components/icons'
 import { ZoomControls } from './CodeEditor'
+import { whenLineCanBeShown } from './revealLine'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useUIStore, useSettingsStore, useDiffStore } from '../../store'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
@@ -103,28 +104,13 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
       })
     }
     if (initialLine) {
-      // reveal only when the viewport is real and the model has enough lines
-      // (at mount the container can be collapsed, making the reveal a no-op)
       const modEd = editor.getModifiedEditor()
-      let tries = 0
-      const attempt = () => {
-        if (!modEd) return
-        try {
-          const vr = modEd.getVisibleRanges()?.[0]
-          const viewReady = !!vr && (vr.endLineNumber - vr.startLineNumber) >= 4
-          const modelReady = (modEd.getModel()?.getLineCount() ?? 0) >= initialLine
-          if ((viewReady && modelReady) || tries > 30) {
-            // reveal at the TOP so a previously-scrolled file resumes where it
-            // was left (scroll position is line-based, per file)
-            modEd.revealLine(initialLine, monaco.ScrollType.Immediate)
-            modEd.setPosition({ lineNumber: initialLine, column: 1 })
-          } else {
-            tries++
-            setTimeout(attempt, 60)
-          }
-        } catch { /* ignore */ }
-      }
-      attempt()
+      whenLineCanBeShown(modEd, initialLine, () => {
+        // reveal at the TOP so a previously-scrolled file resumes where it
+        // was left (scroll position is line-based, per file)
+        modEd.revealLine(initialLine, monaco.ScrollType.Immediate)
+        modEd.setPosition({ lineNumber: initialLine, column: 1 })
+      }, 30)
     }
   }
 

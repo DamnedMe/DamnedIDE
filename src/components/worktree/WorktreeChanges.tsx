@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } fro
 import { GitFileStatus } from '../../types/git'
 import { FileDiffList } from '../git/FileDiffList'
 import { ipcMessage } from '../settings/ui'
+import { whenLineCanBeShown } from '../editor/revealLine'
 import { DiffViewer } from '../editor/DiffViewer'
 import type { DiffViewerHandle } from '../editor/DiffViewer'
 import { useEditorStore } from '../../store'
@@ -1019,26 +1020,11 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                   if (pendingScrollLineRef.current) {
                     const line = pendingScrollLineRef.current
                     pendingScrollLineRef.current = null
-                    // wait until the viewport is real (≥4 visible lines) AND the model
-                    // has enough lines: at mount the container can be collapsed to ~1
-                    // line, so revealLineInCenter would not scroll at all
-                    let tries = 0
-                    const attempt = () => {
-                      try {
-                        const vr = editor.getVisibleRanges()?.[0]
-                        const viewReady = !!vr && (vr.endLineNumber - vr.startLineNumber) >= 4
-                        const modelReady = (editor.getModel()?.getLineCount() ?? 0) >= line
-                        if ((viewReady && modelReady) || tries > 30) {
-                          editor.revealLineInCenter(line)
-                          editor.setPosition({ lineNumber: line, column: 1 })
-                          updateEditorNav(line)
-                        } else {
-                          tries++
-                          setTimeout(attempt, 60)
-                        }
-                      } catch { /* ignore */ }
-                    }
-                    attempt()
+                    whenLineCanBeShown(editor, line, () => {
+                      editor.revealLineInCenter(line)
+                      editor.setPosition({ lineNumber: line, column: 1 })
+                      updateEditorNav(line)
+                    }, 30)
                   }
                 }}
                 options={{

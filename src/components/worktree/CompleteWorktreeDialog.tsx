@@ -28,6 +28,8 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
   const [isRunning, setIsRunning] = useState(false)
   const [conflicts, setConflicts] = useState<string[]>([])
   const [prCreated, setPrCreated] = useState<number | null>(null)
+  // what Azure DevOps did with it (auto-complete may not take: see AdoService.createPullRequest)
+  const [prMode, setPrMode] = useState<'autocomplete' | 'completed' | 'open' | null>(null)
   const [prFailed, setPrFailed] = useState(false)
   const [completed, setCompleted] = useState(false)
   // '' = not picked: the folder's resolved repository
@@ -168,6 +170,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
     })
     if (result) {
       setPrCreated(result.id)
+      setPrMode(result.mode)
       setPrFailed(false)
       setCompleted(true)
       updateStep(6, {
@@ -187,6 +190,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
     setIsRunning(true)
     setConflicts([])
     setPrCreated(null)
+    setPrMode(null)
     const initial = [
       { label: 'stage all changes', status: 'pending' as const },
       { label: 'commit', status: 'pending' as const },
@@ -457,7 +461,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
 
           {prCreated !== null && (
             <div style={{ padding: '8px 10px', background: 'var(--success-bg)', color: 'var(--success-color)', borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
-              Pull request #{prCreated} creata verso {targetBranch}{autoComplete ? ' (autocomplete)' : ''}
+              Pull request #{prCreated} creata verso {targetBranch}{prMode === 'autocomplete' ? ' (autocomplete)' : prMode === 'completed' ? ' (completata)' : ''}
             </div>
           )}
 

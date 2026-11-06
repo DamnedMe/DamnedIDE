@@ -17,6 +17,7 @@ import { appFontStack } from '../../utils/fonts'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { MarkdownView } from './MarkdownView'
 import Editor, { OnMount } from '@monaco-editor/react'
+import { whenLineCanBeShown } from './revealLine'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useEditorStore, useWorktreeStore, useUIStore, useSettingsStore } from '../../store'
@@ -649,27 +650,12 @@ export function CodeEditor() {
     openFileRef.current(entry.path, entry.line, true)
   }
 
-  // reveal a line with retries: at open the model may still be loading and the
-  // viewport can be collapsed to ~1 line, so a single revealLineInCenter is a
-  // no-op and the file lands at the top (fix: first Go to Implementation)
   const revealLineInEditor = (editor: monacoEditor.IStandaloneCodeEditor, line: number) => {
-    let tries = 0
-    const attempt = () => {
-      try {
-        const vr = editor.getVisibleRanges()?.[0]
-        const viewReady = !!vr && (vr.endLineNumber - vr.startLineNumber) >= 4
-        const modelReady = (editor.getModel()?.getLineCount() ?? 0) >= line
-        if ((viewReady && modelReady) || tries > 40) {
-          editor.setPosition({ lineNumber: line, column: 1 })
-          editor.revealLineInCenter(line)
-          editor.focus()
-        } else {
-          tries++
-          setTimeout(attempt, 60)
-        }
-      } catch { /* ignore */ }
-    }
-    attempt()
+    whenLineCanBeShown(editor, line, () => {
+      editor.setPosition({ lineNumber: line, column: 1 })
+      editor.revealLineInCenter(line)
+      editor.focus()
+    })
   }
 
   const handleEditorMount: OnMount = (editor, monaco) => {
@@ -1454,6 +1440,9 @@ export function CodeEditor() {
         ) : activeFile && isMarkdownActive && mdPreview ? (
           <MarkdownView content={activeContent} />
         ) : activeFile ? (
+          // ponytail: a controlled `value` makes @monaco-editor/react rewrite the whole document
+          // when React lags behind the keyboard. Seen only in the dev build at 4x CPU, never in
+          // production even ~40x slower; if it ever shows there, stop echoing typed text back.
           <Editor
             height="100%"
             path={activeFile}

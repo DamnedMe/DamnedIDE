@@ -2,7 +2,8 @@
 // Release panel creates the develop → qa pull requests and hands their ids over;
 // from here the instance owning userData/ado-chains.lock polls them every 30 s
 // and, as soon as one is completed, creates the qa → prod pull request of that
-// repository (an active one is reused). Chains live in userData/ado-chains.json,
+// repository (an active one is reused), then follows that one until it is
+// completed (or abandoned). Chains live in userData/ado-chains.json,
 // shared by every IDE instance: read fresh on every call, each change re-reads
 // the file right before its atomic write and touches only its own chain/item, so
 // a chain started or cancelled by another instance is kept; a file that cannot
@@ -18,7 +19,7 @@ import { acquireInstanceLock, releaseInstanceLock } from '../process/instance-lo
 import { extractWorkItemIds, promotionDescription, promotionTitle } from '../../../src/shared/adoPromotion'
 import type { PromotionWorkItem } from '../../../src/shared/adoPromotion'
 import {
-  CHAIN_POLL_MS, afterQaState, buildChain, cancelChain, isActiveStatus, isChainActive, sanitizeChains,
+  CHAIN_POLL_MS, afterProdState, afterQaState, buildChain, cancelChain, isActiveStatus, isChainActive, sanitizeChains,
   withLastError, withNothingToPromote, withProdPr
 } from '../../../src/shared/adoChain'
 import type { ChainItem, ChainSide, ChainStartInput, ChainStatus, ReleaseChain } from '../../../src/shared/adoChain'
@@ -193,10 +194,12 @@ export class PromotionChainService {
       if (current.status === 'waiting-qa' && current.qaPr) {
         const pr = await ado.getPullRequestState(chain.project, current.repo, current.qaPr.id)
         current = this.patchItem(chain.id, current.side, 'waiting-qa', i => afterQaState(i, pr.status, this.now()))
-        if (current?.status === 'failed') {
-          this.deps.notify?.(NOTIFY_TITLE, `catena interrotta per ${current.repo}: ${current.error}`)
-        }
+      } else if (current.status === 'waiting-prod' && current.prodPr) {
+        const pr = await ado.getPullRequestState(chain.project, current.repo, current.prodPr.id)
+        current = this.patchItem(chain.id, current.side, 'waiting-prod', i => afterProdState(i, pr.status, this.now()))
+        if (current?.status === 'done') this.deps.notify?.(NOTIFY_TITLE, `rilascio in ${current.branches.prod} completato per ${current.repo}`)
       }
+      if (current?.status === 'failed') this.deps.notify?.(NOTIFY_TITLE, `catena interrotta per ${current.repo}: ${current.error}`)
       if (current?.status === 'creating-prod') await this.createProdPr(chain, current, ado)
     } catch (e) {
       // transient (network, PAT, policy): keep waiting, retried at the next poll
@@ -239,9 +242,13 @@ export class PromotionChainService {
       forceComplete: false
     })
     if (!created) throw new Error(`creazione PR ${qa} → ${prod} rifiutata da Azure DevOps: controlla branch policy e permessi del PAT`)
+    const noAutoComplete = chain.autoComplete && created.mode !== 'autocomplete'
     // recorded whatever happened meanwhile: the PR exists
-    this.patchItem(chainId, side, null, i => withProdPr(i, { id: created.id, url: created.url }, false, this.now()))
-    this.deps.notify?.(NOTIFY_TITLE, `PR ${qa} → ${prod} creata per ${repo}`)
+    this.patchItem(chainId, side, null, i => {
+      const next = withProdPr(i, { id: created.id, url: created.url }, false, this.now())
+      return noAutoComplete ? { ...next, prodNoAutoComplete: true } : next
+    })
+    this.deps.notify?.(NOTIFY_TITLE, `PR ${qa} → ${prod} creata per ${repo}${noAutoComplete ? ' (auto-complete non armato)' : ''}`)
   }
 
   /**
@@ -272,7 +279,11 @@ export class PromotionChainService {
     const next = mutate(chains)
     if (next === false) return
     mkdirSync(this.deps.dir, { recursive: true })
-    writeJson(this.file, { chains: next })
+    // 0.0.24 drops an item with an unknown status (and a chain left empty) when it rewrites
+    // this file: waiting-prod goes to disk as done (prodPr, no prodDone), which sanitize
+    // reads back as waiting-prod
+    const disk = next.map(c => ({ ...c, items: c.items.map(i => (i.status === 'waiting-prod' ? { ...i, status: 'done' as const } : i)) }))
+    writeJson(this.file, { chains: disk })
     this.lastSeen = readText(this.file)
     this.deps.changed?.()
   }

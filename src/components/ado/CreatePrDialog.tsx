@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Loader2, X, GitPullRequest, RotateCw } from '@/components/icons'
+import { useToastStore } from '../../store'
 
 interface CreatePrDialogProps {
   project: string
@@ -19,6 +20,7 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
   const [isCreating, setIsCreating] = useState(false)
   const [isLoadingCommits, setIsLoadingCommits] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const showToast = useToastStore(s => s.showToast)
 
   useEffect(() => {
     window.electronAPI.ado.branches(project, repo).then(b => {
@@ -48,10 +50,14 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
     setIsCreating(true)
     try {
       const result = await window.electronAPI.ado.createPr(project, repo, {
-        sourceRef: source, targetRef: target, title: title.trim(), description, autoComplete
+        sourceRef: source, targetRef: target, title: title.trim(), description, autoComplete,
+        // auto-complete not taken by Azure DevOps: the PR stays open, never completed directly
+        forceComplete: false
       })
-      if (result) onCreated()
-      else setError('Errore durante la creazione della PR (controlla branches/policies).')
+      if (result) {
+        onCreated()
+        if (autoComplete && result.mode === 'open') showToast(`PR #${result.id} creata, auto-complete non armato: impostalo da Azure DevOps`, 'error')
+      } else setError('Errore durante la creazione della PR (controlla branches/policies).')
     } finally { setIsCreating(false) }
   }
 

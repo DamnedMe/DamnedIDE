@@ -506,16 +506,24 @@ export class AdoService {
     return false
   }
 
-  // Arms auto-complete on a PR and VERIFIES it actually took (ADO can silently ignore
-  // the PATCH when there are no required reviewers/policies, or fail transiently).
+  // Arms auto-complete on a PR and VERIFIES it actually took. Azure DevOps turns auto-complete
+  // on only through autoCompleteSetBy (the identity that set it, here the PAT's user):
+  // completionOptions alone are stored but never arm it, and GitPullRequestCompletionOptions
+  // has no "autoComplete" field (the old body and check relied on it: it never took, so
+  // promotion PRs stayed open and worktree PRs fell back to a direct completion).
   private async armAutoComplete(project: string, repo: string, prId: number, opts: { title: string; deleteSourceBranch?: boolean }): Promise<boolean> {
+    const me = await this.getCurrentUser()
+    if (!me) {
+      console.error('[ado] armAutoComplete: utente del PAT non letto, auto-complete non armato')
+      return false
+    }
     const patchUrl = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}?api-version=7.0`
     const res = await fetch(patchUrl, {
       method: 'PATCH',
       headers: this.authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
+        autoCompleteSetBy: { id: me.id },
         completionOptions: {
-          autoComplete: true,
           deleteSourceBranch: opts.deleteSourceBranch ?? true,
           mergeStrategy: 'noFastForward',
           mergeCommitMessage: opts.title
@@ -531,24 +539,10 @@ export class AdoService {
       const check = await fetch(patchUrl, { headers: this.authHeaders() })
       if (check.ok) {
         const pr = await check.json()
-        return pr.completionOptions?.autoComplete === true || !!pr.autoCompleteSetBy
+        return !!pr.autoCompleteSetBy?.id
       }
     } catch { /* verification failed */ }
     return false
-  }
-
-  // Adds the current user as a REQUIRED reviewer AND approves the PR in one call:
-  // ADO arms auto-complete only when the PR has a required reviewer, and the merge
-  // then proceeds once that reviewer has approved.
-  private async addRequiredReviewer(project: string, repo: string, prId: number, reviewerId: string): Promise<boolean> {
-    const url = `${this.baseUrl}/${project}/_apis/git/repositories/${repo}/pullrequests/${prId}/reviewers/${reviewerId}?api-version=7.0`
-    const res = await fetch(url, {
-      method: 'PUT',
-      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ isRequired: true, vote: 10 })
-    })
-    if (!res.ok) console.error('[ado] addRequiredReviewer: PUT fallita', res.status, await res.text().catch(() => ''))
-    return res.ok
   }
 
   private async getPrSourceCommit(project: string, repo: string, prId: number): Promise<string> {
@@ -571,7 +565,10 @@ export class AdoService {
     description: string
     autoComplete: boolean
     deleteSourceBranch?: boolean
-    /** false: only arm auto-complete, never self-approve nor complete with a policy bypass (default true) */
+    /**
+     * auto-complete asked for but not armed by Azure DevOps: true (default, the worktree flow)
+     * completes the PR directly as a last resort; false leaves it open (branch policies decide)
+     */
     forceComplete?: boolean
     workItemIds?: number[]
   }): Promise<{ id: number; title: string; mode: 'autocomplete' | 'completed' | 'open'; url: string } | null> {
@@ -606,29 +603,18 @@ export class AdoService {
     const prUrl = this.prWebUrl(project, repo, prId)
 
     if (opts.autoComplete && prId) {
-      const armOpts = { title: opts.title, deleteSourceBranch }
       // 1) arm auto-complete with a dedicated PATCH and verify it actually took
-      let armed = await this.armAutoComplete(project, repo, prId, armOpts)
-      if (!armed && !forceComplete) {
-        // promotion PRs: branch policies decide, the PR just stays open
-        console.error('[ado] createPr: auto-complete non armato, PR lasciata aperta (forceComplete=false)')
-        return { id: prId, title: data.title as string || '', mode: 'open', url: prUrl }
-      }
-      if (!armed) {
-        // ADO refuses auto-complete when the PR has no required reviewers/policies:
-        // add the current user as a REQUIRED reviewer on this PR, then retry arming.
-        const me = await this.getCurrentUser()
-        if (me) {
-          const added = await this.addRequiredReviewer(project, repo, prId, me.id)
-          console.error(`[ado] createPr: reviewer richiesto aggiunto e approvato=${added} per armare l'auto-complete`)
-          if (added) armed = await this.armAutoComplete(project, repo, prId, armOpts)
-        }
-      }
+      const armed = await this.armAutoComplete(project, repo, prId, { title: opts.title, deleteSourceBranch })
       if (armed) {
         return { id: prId, title: data.title as string || '', mode: 'autocomplete', url: prUrl }
       }
-      console.error('[ado] createPr: auto-complete non armabile, completo direttamente')
-      // 2) last resort: complete directly so develop gets the merge
+      if (!forceComplete) {
+        // promotion PRs and the "new pull request" dialog: branch policies decide, the PR just stays open
+        console.error('[ado] createPr: auto-complete non armato, PR lasciata aperta (forceComplete=false)')
+        return { id: prId, title: data.title as string || '', mode: 'open', url: prUrl }
+      }
+      console.error('[ado] createPr: auto-complete non armato, completo direttamente')
+      // 2) last resort (worktree flow): complete directly so the target branch gets the merge
       const completed = await this.completePrDirect(project, repo, prId, sourceCommitId, deleteSourceBranch)
       if (completed) {
         return { id: prId, title: data.title as string || '', mode: 'completed', url: prUrl }

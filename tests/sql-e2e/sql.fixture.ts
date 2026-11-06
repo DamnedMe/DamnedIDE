@@ -379,7 +379,7 @@ async function installElectronMock(page: Page) {
       cancel: async (id: string) => {
         adoCall('chainCancel', id)
         for (const item of adoMock.chains.find(c => c.id === id)?.items ?? []) {
-          if (item.status === 'waiting-qa' || item.status === 'creating-prod') item.status = 'cancelled'
+          if (item.status === 'waiting-qa' || item.status === 'creating-prod' || item.status === 'waiting-prod') item.status = 'cancelled'
         }
         chainChanged()
       },

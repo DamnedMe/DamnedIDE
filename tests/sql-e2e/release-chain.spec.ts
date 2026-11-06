@@ -113,6 +113,8 @@ test('Release panel: develop → qa → prod asks one confirmation, creates deve
   // both repositories are now in a running chain: nothing more to start
   await expect(page.getByRole('button', { name: 'avvia catena (0)' })).toBeDisabled()
   await expect(page.getByText('catena di rilascio già in corso per Themis-Frontend', { exact: false })).toBeVisible()
+  // starting a chain does not read the previews again: the badge of the PR just created stays
+  await expect(page.getByRole('button', { name: 'PR #501 creata (auto-complete) ↗' })).toBeVisible()
 })
 
 test('Release panel: the remembered chain stage follows an active develop → qa PR; chains can be cancelled and removed', async ({ page }) => {
@@ -130,7 +132,7 @@ test('Release panel: the remembered chain stage follows an active develop → qa
     chains: [
       {
         id: 'old', connectionId: 'c1', organization: 'Org1', project: 'P1', autoComplete: false, createdAt: t,
-        items: [{ side: 'FE', repo: 'Themis-Frontend', branches, qaPr: { id: 600, url: '' }, prodPr: { id: 900, url: '' }, status: 'done', updatedAt: t }]
+        items: [{ side: 'FE', repo: 'Themis-Frontend', branches, qaPr: { id: 600, url: '' }, prodPr: { id: 900, url: '' }, prodDone: true, status: 'done', updatedAt: t }]
       },
       {
         id: 'running', connectionId: 'c1', organization: 'Org1', project: 'P1', autoComplete: true, createdAt: t + 60_000,
@@ -165,6 +167,7 @@ test('Release panel: the remembered chain stage follows an active develop → qa
   await expect(done.getByRole('button', { name: 'PR #600 ↗' })).toBeVisible()
   await expect(done.getByRole('button', { name: 'PR #900 ↗' })).toBeVisible()
   await expect(done).toContainText('completata')
+  await expect(done).toContainText(/2\. qa → main\s*PR #900 ↗\s*completata/)
   await expect(done.getByRole('button', { name: 'annulla catena' })).toHaveCount(0)
   const broken = chains.getByRole('group', { name: 'catena Legacy' })
   await expect(broken).toContainText('interrotta')
@@ -203,6 +206,136 @@ test('Release panel: the remembered chain stage follows an active develop → qa
   await expect(stage.locator('option')).toHaveText(['develop → qa', 'qa → prod', 'develop → qa → prod'])
   await stage.selectOption('qa-prod')
   await expect.poll(() => adoCalls(page, 'setRelease')).toEqual([['org1/p1', { stage: 'qa-prod' }]])
+})
+
+test('Release panel: a chain follows its qa → prod PR until it is completed', async ({ page }) => {
+  const t = Date.UTC(2026, 10, 5, 9, 30)
+  const chain = (id: string, createdAt: number, items: Record<string, unknown>[]) =>
+    ({ id, connectionId: 'c1', organization: 'Org1', project: 'P1', autoComplete: true, createdAt, items: items.map(i => ({ branches, updatedAt: t, ...i })) })
+  await seedAdo(page, {
+    ...base,
+    release: { 'org1/p1': { stage: 'dev-qa-prod' } },
+    chains: [
+      chain('prod', t + 60_000, [
+        { side: 'BE', repo: 'Themis-API', qaPr: { id: 4420, url: '' }, prodPr: { id: 4422, url: '' }, status: 'waiting-prod' },
+        { side: 'FE', repo: 'Themis-Frontend', qaPr: { id: 4421, url: '' }, prodPr: { id: 4423, url: '' }, prodNoAutoComplete: true, status: 'waiting-prod' }
+      ]),
+      chain('qa', t + 30_000, [{ side: 'BE', repo: 'Legacy', qaPr: { id: 610, url: '' }, qaNoAutoComplete: true, status: 'waiting-qa' }]),
+      chain('released', t, [{ side: 'BE', repo: 'Other', qaPr: { id: 600, url: '' }, prodPr: { id: 900, url: '' }, prodDone: true, status: 'done' }]),
+      chain('abandoned', t - 30_000, [
+        { side: 'FE', repo: 'Dropped', qaPr: { id: 503, url: '' }, prodPr: { id: 505, url: '' }, prodReused: true, status: 'failed', error: 'PR qa → main abbandonata' }
+      ])
+    ]
+  })
+  await openAdoRepo(page, REPO, 'release')
+
+  const chains = page.getByRole('region', { name: 'catene in corso' })
+  await expect(chains.getByRole('group')).toHaveCount(4)
+  // the qa → prod PR is open: still running, followed until it is completed
+  const waiting = chains.getByRole('group', { name: 'catena Themis-API, Themis-Frontend' })
+  await expect(waiting).toContainText('in attesa di prod')
+  await expect(waiting).toContainText(/1\. develop → qa\s*PR #4420 ↗\s*completata/)
+  await expect(waiting).toContainText(/2\. qa → main\s*PR #4422 ↗\s*in attesa del completamento/)
+  await expect(waiting).toContainText(/2\. qa → main\s*PR #4423 ↗\s*in attesa del completamento · auto-complete non armato: impostalo da Azure DevOps/)
+  await expect(waiting.getByRole('button', { name: 'rimuovi' })).toHaveCount(0)
+  // ... so its repositories cannot start another chain
+  await expect(page.getByText('catena di rilascio già in corso per Themis-API', { exact: false })).toBeVisible()
+  // develop → qa not armed by Azure DevOps: said while it waits
+  await expect(chains.getByRole('group', { name: 'catena Legacy' }))
+    .toContainText(/1\. develop → qa\s*PR #610 ↗\s*in attesa del completamento · auto-complete non armato: impostalo da Azure DevOps/)
+  // both PRs completed
+  const released = chains.getByRole('group', { name: 'catena Other' })
+  await expect(released).toContainText(/1\. develop → qa\s*PR #600 ↗\s*completata/)
+  await expect(released).toContainText(/2\. qa → main\s*PR #900 ↗\s*completata/)
+  await expect(released.getByRole('button', { name: 'rimuovi' })).toBeVisible()
+  // the followed qa → prod PR was abandoned: step 2 says so, not "già attiva"
+  const dropped = chains.getByRole('group', { name: 'catena Dropped' })
+  await expect(dropped).toContainText(/2\. qa → main\s*PR #505 ↗\s*abbandonata/)
+  await expect(dropped).toContainText('PR qa → main abbandonata')
+
+  // cancelling while waiting for prod: the PRs stay as they are
+  await waiting.getByRole('button', { name: 'annulla catena' }).click()
+  await expect.poll(() => adoCalls(page, 'chainCancel')).toEqual([['prod']])
+  await expect(waiting).toContainText('annullata')
+  await expect(waiting).toContainText(/2\. qa → main\s*PR #4422 ↗\s*creata/)
+  await expect(waiting.getByRole('button', { name: 'rimuovi' })).toBeVisible()
+})
+
+test('Release panel: the previews are read again when a chain creates the qa → prod PR, not at each poll', async ({ page }) => {
+  const t = Date.UTC(2026, 10, 5, 9, 30)
+  const openPr = {
+    id: 4422, title: 'Release', status: 'active', sourceBranch: 'qa', targetBranch: 'main', createdBy: 'Dev',
+    isDraft: false, needsApproval: false, myVote: 0, reviewers: [], url: 'https://dev.azure.com/mock/P1/_git/Themis-API/pullrequest/4422'
+  }
+  await seedAdo(page, {
+    ...base,
+    release: { 'org1/p1': { stage: 'qa-prod' } },
+    commits: { 'Themis-API:qa->main': [{ commitId: 'c1c2c3c4c5', message: 'fix', author: 'Dev' }] },
+    chains: [{
+      id: 'c', connectionId: 'c1', organization: 'Org1', project: 'P1', autoComplete: true, createdAt: t,
+      items: [{ side: 'BE', repo: 'Themis-API', branches, qaPr: { id: 4420, url: '' }, status: 'waiting-qa', updatedAt: t }]
+    }]
+  })
+  await openAdoRepo(page, REPO, 'release')
+  const chain = page.getByRole('region', { name: 'catene in corso' }).getByRole('group')
+  const existing = page.getByRole('button', { name: 'PR #4422 già attiva ↗' })
+  await expect(chain).toContainText('in attesa di qa')
+  await expect(page.getByRole('button', { name: 'crea 1 PR' })).toBeEnabled()
+
+  // what a poll of the owner does: the item moves and the panel lists the chains again
+  const poll = (patch: Record<string, unknown>, prs: unknown[]) => page.evaluate(({ patch, prs }) => {
+    const m = (window as unknown as { __adoMock: { chains: Array<{ items: Record<string, unknown>[] }>; pullRequests: Record<string, unknown[]> } }).__adoMock
+    Object.assign(m.chains[0].items[0], patch)
+    m.pullRequests['Themis-API'] = prs
+    window.dispatchEvent(new Event('focus'))
+  }, { patch, prs })
+  const reads = async () => (await adoCalls(page, 'branches')).length
+
+  // develop → qa completed: no new PR yet, nothing to read again
+  const before = await reads()
+  await poll({ status: 'creating-prod' }, [])
+  await expect(chain).toContainText('creazione PR prod')
+  expect(await reads()).toBe(before)
+
+  // the qa → prod PR is now active: the card says so instead of offering a duplicate Azure DevOps would refuse
+  await poll({ status: 'waiting-prod', prodPr: { id: 4422, url: '' } }, [openPr])
+  await expect(chain).toContainText('in attesa di prod')
+  await expect(existing).toBeVisible()
+  await expect(page.getByRole('button', { name: 'crea 0 PR' })).toBeDisabled()
+
+  // completed: read again, the PR is no longer active
+  await poll({ status: 'done', prodDone: true }, [])
+  await expect(chain).toContainText('completata')
+  await expect(existing).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'crea 1 PR' })).toBeEnabled()
+})
+
+test('DevOps panel: a new PR whose auto-complete Azure DevOps did not take is left open, and the user is told', async ({ page }) => {
+  await seedAdo(page, base)
+  await openAdoRepo(page, REPO, 'ado')
+  await page.getByTitle('new pull request').waitFor()
+  await page.evaluate(() => {
+    const ado = (window as unknown as { electronAPI: { ado: { createPr: (...a: unknown[]) => Promise<object> } } }).electronAPI.ado
+    const create = ado.createPr
+    ado.createPr = async (...a) => ({ ...(await create(...a)), mode: 'open' })
+  })
+  const createPr = async (title: string, autoComplete: boolean) => {
+    await page.getByTitle('new pull request').click()
+    await page.getByText('source branch').locator('..').locator('select').selectOption('qa')
+    await page.getByPlaceholder('PR title').fill(title)
+    if (autoComplete) await page.getByText('auto-complete when policies pass').locator('..').getByRole('checkbox').check()
+    await page.getByRole('button', { name: 'create', exact: true }).click()
+    await expect(page.getByPlaceholder('PR title')).toHaveCount(0)
+  }
+
+  await createPr('asked', true)
+  await expect(page.getByText('PR #501 creata, auto-complete non armato: impostalo da Azure DevOps')).toBeVisible()
+  expect((await adoCalls(page, 'createPr'))[0][2]).toMatchObject({ autoComplete: true, forceComplete: false })
+
+  // not asked for: left open as expected, nothing to say
+  await createPr('not asked', false)
+  await expect.poll(async () => (await adoCalls(page, 'createPr')).length).toBe(2)
+  await expect(page.getByText('PR #502 creata', { exact: false })).toHaveCount(0)
 })
 
 test('Release panel: in the chain stage a failed develop → qa read is an error, never "nothing to promote"', async ({ page }) => {

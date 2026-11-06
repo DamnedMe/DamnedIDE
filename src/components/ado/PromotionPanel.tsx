@@ -22,7 +22,7 @@ import {
   type PromotionScope
 } from '../../shared/adoPromotion'
 import { ADO_MISSING_PAT, releaseRepos, sameName, siblingRepos, withBeRepo } from '../../shared/adoSettings'
-import { activeChainItem, chainProjectKey, isActiveStatus, isChainActive } from '../../shared/adoChain'
+import { activeChainItem, chainProjectKey, isChainActive } from '../../shared/adoChain'
 import type { ChainItem, ChainStartItem, ChainStatus, ReleaseChain } from '../../shared/adoChain'
 import { ipcMessage } from '../settings/ui'
 
@@ -49,7 +49,8 @@ interface RepoPreview {
   warning?: string
   error?: string
   status?: 'running' | 'ok' | 'error'
-  created?: { id: number; url: string; mode: 'autocomplete' | 'completed' | 'open' }
+  /** notArmed: auto-complete was asked for and Azure DevOps did not take it (the PR stays open) */
+  created?: { id: number; url: string; mode: 'autocomplete' | 'completed' | 'open'; notArmed?: boolean }
 }
 
 type ReadyPreview = RepoPreview & { source: string; target: string }
@@ -62,7 +63,8 @@ type ChainPreview = ReadyPreview & { prod: string }
  * to qa or from qa to prod, with the work items found in the commits linked.
  * The third stage chains both: the develop → qa PRs are created here, then the
  * main process (promotion-chain.service.ts) creates each qa → prod PR as soon as
- * its develop → qa PR is completed; the chains of the project are listed below.
+ * its develop → qa PR is completed and follows it until it is completed too; the
+ * chains of the project are listed below.
  */
 export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
   const setPullRequests = useAdoStore(s => s.setPullRequests)
@@ -156,7 +158,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
       const prs = await api.pullRequests(project, repo)
       const existing = prs.find(p => sameName(p.sourceBranch, source) && sameName(p.targetBranch, target)) ?? null
       // chain with nothing to promote to qa: it starts at qa → prod, worth it only with commits
-      // there and no qa → prod PR already open (a finished chain leaves it open)
+      // there and no qa → prod PR already open (a chain cancelled while waiting for it leaves it open)
       const startsAtProd = chainMode && !!prod && commits.length === 0 && !existing
       const prodExisting = startsAtProd
         ? prs.find(p => sameName(p.sourceBranch, target) && sameName(p.targetBranch, prod)) ?? null
@@ -256,14 +258,17 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     .sort((a, b) => b.createdAt - a.createdAt)
   const runningChain = (repo: string) => activeChainItem(chains, org, project, repo)
 
-  // a chain step that settles (done, failed, cancelled) changes what the previews offer
-  // (a qa → prod PR left open, commits already on qa): read them again
-  const activeItems = projectChains.reduce((n, c) => n + c.items.filter(i => isActiveStatus(i.status)).length, 0)
-  const prevActiveItems = useRef(activeItems)
+  // a chain step that creates the qa → prod PR or settles (done, failed, cancelled) changes
+  // what the previews offer (a qa → prod PR now active, commits already on qa): read them again.
+  // Steps left: pre-prod 2, waiting-prod 1, finished 0, so every forward step lowers the sum
+  // and starting a chain does not (its created / notArmed badges stay)
+  const stepsLeft = projectChains.reduce((n, c) => n + c.items.reduce((m, i) =>
+    m + (i.status === 'waiting-qa' || i.status === 'creating-prod' ? 2 : i.status === 'waiting-prod' ? 1 : 0), 0), 0)
+  const prevStepsLeft = useRef(stepsLeft)
   useEffect(() => {
-    if (activeItems < prevActiveItems.current) setReloadTick(t => t + 1)
-    prevActiveItems.current = activeItems
-  }, [activeItems])
+    if (stepsLeft < prevStepsLeft.current) setReloadTick(t => t + 1)
+    prevStepsLeft.current = stepsLeft
+  }, [stepsLeft])
 
   // the chain also takes a repository whose develop → qa PR is already active (followed) or
   // that has nothing for qa but commits for prod (it starts at step 2)
@@ -308,7 +313,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
         const res = await createPromotionPr(p)
         if (res) {
           done.push(`${p.side} #${res.id}`)
-          patchPreview(p.side, { status: 'ok', created: { id: res.id, url: res.url, mode: res.mode } })
+          patchPreview(p.side, { status: 'ok', created: { id: res.id, url: res.url, mode: res.mode, notArmed: autoComplete && res.mode === 'open' } })
         } else {
           failed.push(p.side)
           patchPreview(p.side, { status: 'error' })
@@ -355,8 +360,12 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
           patchPreview(p.side, { status: 'error' })
           continue
         }
-        patchPreview(p.side, { status: 'ok', created: { id: res.id, url: res.url, mode: res.mode } })
-        items.push({ side: p.side, repo: p.repo, branches, qaPr: { id: res.id, url: res.url } })
+        patchPreview(p.side, { status: 'ok', created: { id: res.id, url: res.url, mode: res.mode, notArmed: autoComplete && res.mode === 'open' } })
+        items.push({
+          side: p.side, repo: p.repo, branches, qaPr: { id: res.id, url: res.url },
+          // asked for, not taken by Azure DevOps: the chain card says so while it waits
+          ...(autoComplete && res.mode !== 'autocomplete' ? { qaNoAutoComplete: true } : {})
+        })
       }
       refreshFolderPrs(items.map(i => i.repo))
       if (items.length > 0) {
@@ -476,12 +485,17 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
               PR #{p.existing.id} già attiva ↗
             </button>
           )}
-          {p.created && (
-            <button onClick={() => openUrl(p.created!.url)} title="open in Azure DevOps" data-tip-desc="the pull request just created"
-              style={{ ...badgeBtnStyle, background: 'var(--success-bg)', color: 'var(--success-color)' }}>
-              <CheckCircle2 size={10} /> PR #{p.created.id} {p.created.mode === 'autocomplete' ? 'creata (auto-complete)' : 'creata'} ↗
-            </button>
-          )}
+          {p.created && (() => {
+            // auto-complete asked for but not taken by Azure DevOps: say so, the PR stays open
+            const { notArmed } = p.created
+            return (
+              <button onClick={() => openUrl(p.created!.url)} title="open in Azure DevOps"
+                data-tip-desc={notArmed ? 'Azure DevOps did not take the auto-complete: set it on the pull request' : 'the pull request just created'}
+                style={{ ...badgeBtnStyle, background: notArmed ? 'var(--warning-bg)' : 'var(--success-bg)', color: notArmed ? 'var(--warning-color)' : 'var(--success-color)' }}>
+                {notArmed ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />} PR #{p.created.id} {p.created.mode === 'autocomplete' ? 'creata (auto-complete)' : notArmed ? 'creata, auto-complete non armato' : 'creata'} ↗
+              </button>
+            )
+          })()}
         </div>
 
         {p.error && <div style={{ ...noteStyle, background: 'var(--error-bg)', color: 'var(--error-color)' }}><XCircle size={11} style={noteIconStyle} />{p.error}</div>}
@@ -578,13 +592,25 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
         PR #{pr.id} ↗
       </button>
     )
+    const qaWaiting = item.status === 'waiting-qa'
+    const prodWaiting = item.status === 'waiting-prod'
+    // auto-complete asked for and not taken by Azure DevOps: the PR waits for someone to set it
+    const notArmed = 'auto-complete non armato: impostalo da Azure DevOps'
+    const warn1 = qaWaiting && !!item.qaNoAutoComplete
+    const warn2 = prodWaiting && !item.prodReused && !!item.prodNoAutoComplete
     const step1 = !item.qaPr
       ? 'nulla da promuovere'
-      : item.status === 'waiting-qa' ? 'in attesa del completamento'
-        : item.status === 'creating-prod' || item.status === 'done' ? 'completata' : ''
+      : qaWaiting ? `in attesa del completamento${warn1 ? ` · ${notArmed}` : ''}`
+        // a qa → prod PR only exists once develop → qa is completed
+        : item.status === 'creating-prod' || prodWaiting || item.status === 'done' || item.prodPr ? 'completata' : ''
     const step2 = item.prodPr
-      ? (item.prodReused ? 'già attiva: seguita dalla catena' : 'creata')
-      : item.status === 'waiting-qa' ? `partirà quando la PR ${dev} → ${qa} è completata`
+      ? prodWaiting
+        ? item.prodReused ? 'già attiva: seguita dalla catena, in attesa del completamento'
+          : `in attesa del completamento${warn2 ? ` · ${notArmed}` : ''}`
+        : item.prodDone ? 'completata'
+          // no longer followed: failed = the qa → prod PR was abandoned; cancelled = it stays as it is in Azure DevOps
+          : item.status === 'failed' ? 'abbandonata' : item.prodReused ? 'già attiva' : 'creata'
+      : qaWaiting ? `partirà quando la PR ${dev} → ${qa} è completata`
         : item.status === 'creating-prod' ? 'creazione in corso…'
           : item.status === 'cancelled' ? 'non creata: catena annullata'
             : item.status === 'failed' ? 'non creata' : item.note ?? ''
@@ -599,15 +625,15 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
         <div style={stepRowStyle}>
           <span style={{ color: 'var(--text-muted)' }}>1. {dev} → {qa}</span>
           {item.qaPr && prLink(item.qaPr, `the ${dev} → ${qa} pull request followed by the chain`)}
-          {item.status === 'waiting-qa' && waiting}
-          <span>{step1}</span>
+          {qaWaiting && waiting}
+          <span style={warn1 ? { color: 'var(--warning-color)' } : undefined}>{step1}</span>
         </div>
         <div style={stepRowStyle}>
           <span style={{ color: 'var(--text-muted)' }}>2. {qa} → {prod}</span>
-          {item.prodPr && prLink(item.prodPr, `the ${qa} → ${prod} pull request of the chain`)}
-          {item.status === 'waiting-qa' && waiting}
+          {item.prodPr && prLink(item.prodPr, `the ${qa} → ${prod} pull request followed by the chain`)}
+          {(qaWaiting || prodWaiting) && waiting}
           {item.status === 'creating-prod' && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
-          <span>{step2}</span>
+          <span style={warn2 ? { color: 'var(--warning-color)' } : undefined}>{step2}</span>
         </div>
         {item.error && (
           <div style={{ ...noteStyle, background: 'var(--error-bg)', color: 'var(--error-color)' }}>
@@ -637,7 +663,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
           <span style={{ flex: 1 }} />
           {active ? (
             <button onClick={() => void chainAction(() => window.electronAPI.adoChain.cancel(chain.id), 'annullamento fallito')}
-              title="annulla catena" data-tip-desc="stop the chain: no qa → prod pull request is created any more (the pull requests already created stay in Azure DevOps)"
+              title="annulla catena" data-tip-desc="stop the chain: no qa → prod pull request is created or followed any more (the pull requests already created stay in Azure DevOps)"
               style={smallBtnStyle}>
               <Ban size={10} /> annulla catena
             </button>
@@ -932,6 +958,7 @@ const smallBtnStyle: React.CSSProperties = {
 const CHAIN_STATUS: Record<ChainStatus, { label: string; bg: string; color: string }> = {
   'waiting-qa': { label: 'in attesa di qa', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
   'creating-prod': { label: 'creazione PR prod', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
+  'waiting-prod': { label: 'in attesa di prod', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
   done: { label: 'completata', bg: 'var(--success-bg)', color: 'var(--success-color)' },
   failed: { label: 'interrotta', bg: 'var(--error-bg)', color: 'var(--error-color)' },
   cancelled: { label: 'annullata', bg: 'var(--bg-tag)', color: 'var(--text-muted)' }

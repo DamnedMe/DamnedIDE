@@ -1,5 +1,6 @@
 // Release chain develop → qa → prod: the develop → qa pull request first, then,
-// as soon as Azure DevOps reports it completed, the qa → prod one. The main
+// as soon as Azure DevOps reports it completed, the qa → prod one, followed in
+// turn until it is completed too. The main
 // process (electron/services/ado/promotion-chain.service.ts) keeps the chains in
 // userData/ado-chains.json and polls them; these are the pure state rules, shared
 // with the Release panel and scripts/ado-chain.check.ts: type imports only, so
@@ -11,10 +12,12 @@ export type ChainSide = 'BE' | 'FE'
 /**
  * waiting-qa: the develop → qa PR is not completed yet; creating-prod: it is
  * (or develop → qa had nothing to promote) and the qa → prod PR is being
- * created; done: the qa → prod PR exists (or there was nothing to promote);
- * failed: the chain stopped (`error`); cancelled: by the user.
+ * created; waiting-prod: the qa → prod PR exists (created, or an active one
+ * reused) and is not completed yet; done: the qa → prod PR is completed (or
+ * there was nothing to promote); failed: the chain stopped (`error`);
+ * cancelled: by the user.
  */
-export type ChainStatus = 'waiting-qa' | 'creating-prod' | 'done' | 'failed' | 'cancelled'
+export type ChainStatus = 'waiting-qa' | 'creating-prod' | 'waiting-prod' | 'done' | 'failed' | 'cancelled'
 
 export interface ChainPr {
   id: number
@@ -34,10 +37,16 @@ export interface ChainItem {
   branches: ChainBranches
   /** the develop → qa PR; absent when develop → qa had nothing to promote (the item starts at qa → prod) */
   qaPr?: ChainPr
+  /** the chain asked for auto-complete on qaPr but Azure DevOps did not take it */
+  qaNoAutoComplete?: boolean
   /** the qa → prod PR, once created (or an active one found and followed) */
   prodPr?: ChainPr
   /** prodPr was already active: it was reused, not created */
   prodReused?: boolean
+  /** the chain asked for auto-complete on prodPr but Azure DevOps did not take it */
+  prodNoAutoComplete?: boolean
+  /** prodPr is completed */
+  prodDone?: boolean
   status: ChainStatus
   /** why the item stopped (failed) */
   error?: string
@@ -65,6 +74,8 @@ export interface ChainStartItem {
   branches: ChainBranches
   /** the develop → qa PR just created or the active one found; none: nothing to promote to qa */
   qaPr?: ChainPr | null
+  /** the chain asked for auto-complete on qaPr but Azure DevOps did not take it */
+  qaNoAutoComplete?: boolean
 }
 
 /** adoChain:start input: organization and project come from the saved connection. */
@@ -74,11 +85,11 @@ export interface ChainStartInput {
   items: ChainStartItem[]
 }
 
-/** How often the owner instance asks Azure DevOps about the develop → qa PRs. */
+/** How often the owner instance asks Azure DevOps about the PRs the chains follow. */
 export const CHAIN_POLL_MS = 30_000
 
 const SIDES: ReadonlySet<unknown> = new Set<ChainSide>(['BE', 'FE'])
-const STATUSES: ReadonlySet<unknown> = new Set<ChainStatus>(['waiting-qa', 'creating-prod', 'done', 'failed', 'cancelled'])
+const STATUSES: ReadonlySet<unknown> = new Set<ChainStatus>(['waiting-qa', 'creating-prod', 'waiting-prod', 'done', 'failed', 'cancelled'])
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
@@ -91,7 +102,7 @@ export function chainProjectKey(org: string, project: string): string {
 }
 
 /** Still moving: the owner polls it. */
-export const isActiveStatus = (s: ChainStatus): boolean => s === 'waiting-qa' || s === 'creating-prod'
+export const isActiveStatus = (s: ChainStatus): boolean => s === 'waiting-qa' || s === 'creating-prod' || s === 'waiting-prod'
 
 export const isChainActive = (chain: ReleaseChain): boolean => chain.items.some(i => isActiveStatus(i.status))
 
@@ -124,11 +135,17 @@ function sanitizeItem(raw: unknown): ChainItem | null {
   }
   const qaPr = sanitizePr(raw.qaPr)
   const prodPr = sanitizePr(raw.prodPr)
-  // waiting for a develop → qa PR that is not there: nothing to wait for
-  if (item.status === 'waiting-qa' && !qaPr) return null
+  // waiting for a PR that is not there: nothing to wait for
+  if ((item.status === 'waiting-qa' && !qaPr) || (item.status === 'waiting-prod' && !prodPr)) return null
   if (qaPr) item.qaPr = qaPr
   if (prodPr) item.prodPr = prodPr
+  if (raw.qaNoAutoComplete === true) item.qaNoAutoComplete = true
   if (raw.prodReused === true) item.prodReused = true
+  if (raw.prodNoAutoComplete === true) item.prodNoAutoComplete = true
+  if (raw.prodDone === true) item.prodDone = true
+  // 0.0.23 / 0.0.24 marked an item done as soon as its qa → prod PR existed and never
+  // followed it: the owner reads it once more and settles it
+  if (item.status === 'done' && prodPr && !item.prodDone) item.status = 'waiting-prod'
   const error = optText(raw.error)
   const lastError = optText(raw.lastError)
   const note = optText(raw.note)
@@ -199,9 +216,11 @@ export function buildChain(
       throw new Error(`una catena di rilascio è già in corso per ${repo}: annullala prima di avviarne un'altra`)
     }
     const qaPr = sanitizePr(isRecord(r) ? r.qaPr : undefined)
-    items.push(qaPr
+    const item: ChainItem = qaPr
       ? { side: side as ChainSide, repo, branches, qaPr, status: 'waiting-qa', updatedAt: now }
-      : { side: side as ChainSide, repo, branches, status: 'creating-prod', updatedAt: now })
+      : { side: side as ChainSide, repo, branches, status: 'creating-prod', updatedAt: now }
+    if (qaPr && isRecord(r) && r.qaNoAutoComplete === true) item.qaNoAutoComplete = true
+    items.push(item)
   }
   return {
     id,
@@ -221,17 +240,27 @@ function settled(item: ChainItem, patch: Partial<ChainItem>, now: number): Chain
   return next
 }
 
+/** An item `waiting` for PR `from → to` after reading its status (see afterQaState). */
+function afterPrState(item: ChainItem, waiting: ChainStatus, from: string, to: string, state: string, completed: Partial<ChainItem>, now: number): ChainItem {
+  if (item.status !== waiting) return item
+  const s = state.trim().toLowerCase()
+  if (s === 'completed') return settled(item, completed, now)
+  if (s === 'abandoned') return settled(item, { status: 'failed', error: `PR ${from} → ${to} abbandonata` }, now)
+  return item.lastError === undefined ? item : settled(item, {}, now)
+}
+
 /**
  * After reading the develop → qa PR's status: completed → creating-prod,
  * abandoned → failed, anything else (active) keeps waiting. A successful read
  * clears the last transient error; nothing else changes the item (same object).
  */
 export function afterQaState(item: ChainItem, state: string, now: number): ChainItem {
-  if (item.status !== 'waiting-qa') return item
-  const s = state.trim().toLowerCase()
-  if (s === 'completed') return settled(item, { status: 'creating-prod' }, now)
-  if (s === 'abandoned') return settled(item, { status: 'failed', error: `PR ${item.branches.dev} → ${item.branches.qa} abbandonata` }, now)
-  return item.lastError === undefined ? item : settled(item, {}, now)
+  return afterPrState(item, 'waiting-qa', item.branches.dev, item.branches.qa, state, { status: 'creating-prod' }, now)
+}
+
+/** The same for the qa → prod PR: completed → done (prodDone), abandoned → failed, else it keeps waiting. */
+export function afterProdState(item: ChainItem, state: string, now: number): ChainItem {
+  return afterPrState(item, 'waiting-prod', item.branches.qa, item.branches.prod, state, { status: 'done', prodDone: true }, now)
 }
 
 /** A transient error: the item keeps its status and is retried at the next poll. */
@@ -242,13 +271,14 @@ export function withLastError(item: ChainItem, message: string, now: number): Ch
 
 /**
  * The qa → prod PR exists (created, or an active one `reused`). Recorded even
- * when the user cancelled meanwhile (the PR is real), but only a running item becomes done.
+ * when the user cancelled meanwhile (the PR is real), but only a running item
+ * goes on to wait for its completion.
  */
 export function withProdPr(item: ChainItem, pr: ChainPr, reused: boolean, now: number): ChainItem {
   const next = settled(item, { prodPr: pr }, now)
   if (reused) next.prodReused = true
   else delete next.prodReused
-  if (isActiveStatus(item.status)) next.status = 'done'
+  if (isActiveStatus(item.status)) next.status = 'waiting-prod'
   return next
 }
 

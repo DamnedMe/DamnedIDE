@@ -78,4 +78,48 @@ assert.equal(
   'Azure DevOps non raggiungibile: getaddrinfo ENOTFOUND dev.azure.com'
 )
 assert.equal(await errorFor(() => new Error('offline')), 'Azure DevOps non raggiungibile: offline')
+
+// ── createPullRequest + auto-complete: armed only through autoCompleteSetBy (the PAT's user) ──
+// (completionOptions alone never arm it: the chain's PR #4420 stayed without auto-complete)
+{
+  const prev = globalThis.fetch
+  const run = async (adoTakesIt: boolean, forceComplete = false) => {
+    const sent: { method: string; url: string; body: any }[] = []
+    let armed = false
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) : null
+      sent.push({ method, url, body })
+      if (url.includes('/_apis/ConnectionData')) return json({ authenticatedUser: { id: 'user-42', providerDisplayName: 'Dev' } })
+      if (method === 'POST' && url.includes('/pullrequests?')) return json({ pullRequestId: 4420, title: 'Release', lastMergeSourceCommit: { commitId: 'abc' } }, 201)
+      if (method === 'PATCH') { armed = adoTakesIt && !!body?.autoCompleteSetBy?.id; return json({}) }
+      if (method === 'GET' && /pullrequests\/4420\?/.test(url)) return json({ pullRequestId: 4420, ...(armed ? { autoCompleteSetBy: { id: 'user-42' } } : {}) })
+      return new Response('', { status: 404 })
+    }) as typeof fetch
+    const svc = new AdoService()
+    svc.use('contoso', 'pat-ac')
+    const pr = await svc.createPullRequest('Themis', 'Themis-API', {
+      sourceRef: 'develop', targetRef: 'quality', title: 'Release develop → quality', description: '', autoComplete: true, forceComplete
+    })
+    return { pr, sent }
+  }
+  const ok = await run(true)
+  assert.equal(ok.pr?.mode, 'autocomplete', 'auto-complete armed and verified')
+  const patch = ok.sent.find(c => c.method === 'PATCH')
+  assert.deepEqual(patch?.body?.autoCompleteSetBy, { id: 'user-42' }, 'the PATCH names the PAT user')
+  assert.equal(patch?.body?.completionOptions?.deleteSourceBranch, false, 'develop is never deleted')
+  assert.equal(patch?.body?.completionOptions?.mergeStrategy, 'noFastForward')
+  // Azure DevOps does not take it: a promotion PR stays open, never self-approved nor completed with a bypass
+  const ko = await run(false)
+  assert.equal(ko.pr?.mode, 'open', 'not armed: left open')
+  assert.ok(!ko.sent.some(c => c.body?.status === 'completed' || /\/reviewers\//.test(c.url)), 'no direct completion, no self-approval')
+  // the worktree flow (forceComplete true): not armed -> straight to the direct completion, never a reviewers call
+  const forced = await run(false, true)
+  assert.equal(forced.pr?.mode, 'completed', 'last resort: completed directly')
+  assert.equal(forced.sent.filter(c => c.method === 'PATCH' && c.body?.autoCompleteSetBy).length, 1, 'armed once, no retry')
+  assert.ok(forced.sent.some(c => c.method === 'PATCH' && c.body?.status === 'completed'), 'direct completion')
+  assert.ok(!forced.sent.some(c => /\/reviewers\//.test(c.url)), 'no reviewers call')
+  globalThis.fetch = prev
+}
 console.log('ok — ado-service')

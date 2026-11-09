@@ -11,6 +11,8 @@ interface ResizableSplitterProps {
   onCollapse?: () => void
   /** raw size in px below which the drag snaps closed (default minSize / 2) */
   collapseAt?: number
+  /** horizontal only: the sized pane (children[0]) sits on the right, and dragging left grows it */
+  reverse?: boolean
   children: [ReactNode, ReactNode]
 }
 
@@ -22,8 +24,10 @@ export function ResizableSplitter({
   collapsed = false,
   onCollapse,
   collapseAt,
+  reverse = false,
   children
 }: ResizableSplitterProps) {
+  const flip = reverse && direction === 'horizontal'
   const [size, setSize] = useState(defaultSize)
   const [isDragging, setIsDragging] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
@@ -78,7 +82,8 @@ export function ResizableSplitter({
     const handleMouseMove = (e: MouseEvent) => {
       if (snapped) return
       const currentPos = direction === 'horizontal' ? e.clientX : e.clientY
-      const delta = currentPos - startPosRef.current
+      // on the right the pane grows towards the left
+      const delta = (currentPos - startPosRef.current) * (flip ? -1 : 1)
 
       const containerSize = containerRef.current
         ? (direction === 'horizontal'
@@ -111,7 +116,7 @@ export function ResizableSplitter({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, direction, minSize, maxSize, collapseAt, onCollapse])
+  }, [isDragging, direction, minSize, maxSize, collapseAt, onCollapse, flip])
 
   const isH = direction === 'horizontal'
 
@@ -120,7 +125,7 @@ export function ResizableSplitter({
       ref={containerRef}
       style={{
         display: 'flex',
-        flexDirection: isH ? 'row' : 'column',
+        flexDirection: isH ? (flip ? 'row-reverse' : 'row') : 'column',
         height: '100%', width: '100%', overflow: 'hidden'
       }}
     >

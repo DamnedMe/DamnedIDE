@@ -40,6 +40,51 @@ export function stripLabel(branch: string, isMain: boolean): string {
   return id !== null ? String(id) : shortBranch(branch.replace(/^refs\/heads\//, '')).slice(0, 5)
 }
 
+/** Kind of a worktree: the logo blurred inside its strip badge and the ring color. */
+export type StripKind = 'main' | 'pbi' | 'bug' | 'branch' | 'detached'
+
+/** Ring and logo color of each kind (the selected badge rings in the accent color instead). */
+export const KIND_COLORS: Record<StripKind, string> = {
+  main: 'var(--text-secondary)',
+  pbi: 'var(--accent-secondary)',
+  bug: 'var(--warning-color)',
+  branch: 'var(--text-muted)',
+  detached: 'var(--text-muted)'
+}
+
+export interface StripBadge {
+  kind: StripKind
+  /** uncommitted count for the red bubble; null when clean or unknown */
+  dirty: string | null
+  /** PBI closed, nothing uncommitted and nothing to push: dimmed with a check. Commits on no
+   *  remote at all are not visible here (overview without localOnly): the cleanup checks them */
+  done: boolean
+  ahead: number
+  behind: number
+}
+
+/** What a strip badge shows around its label. */
+export function stripBadge(
+  branch: string,
+  isMain: boolean,
+  ov: Pick<OverviewStatus, 'dirty' | 'changes' | 'ahead' | 'behind'> | null | undefined,
+  pbiState?: string | null
+): StripBadge {
+  const kind: StripKind = isMain ? 'main'
+    : !branch ? 'detached'
+      : branch.includes('bugfix') ? 'bug'
+        : /(?:^|\/)feature\//i.test(branch) ? 'pbi'
+          : 'branch'
+  const dirty = ov?.dirty ? (ov.changes > 99 ? '99+' : String(ov.changes || '!')) : null
+  return {
+    kind,
+    dirty,
+    done: !isMain && isPbiClosed(pbiState) && ov?.dirty === false && ov.ahead === 0,
+    ahead: ov?.ahead ?? 0,
+    behind: ov?.behind ?? 0
+  }
+}
+
 /** Stack state chip of a stacked worktree (label, color, tooltip). */
 export const STACK_LABELS: Record<WorktreeParentState, { label: string; color: string; tip: string }> = {
   open: { label: 'stacked', color: 'var(--accent-color)', tip: 'il padre non è ancora in develop' },

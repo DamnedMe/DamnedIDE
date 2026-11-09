@@ -47,6 +47,11 @@ if (process.platform === 'linux') {
 
 // IPC wrapper: rejects with a clean one-line Error (no mssql stack trace) so the
 // dev console does not flood with "Error occurred in handler for 'sql:...'".
+/** The window that sent a request (main or detached), for dialog parents and event targets. */
+function senderWindow(e: Electron.IpcMainInvokeEvent): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(e.sender) ?? mainWindow
+}
+
 function ipc<TArgs extends unknown[], TResult>(
   fn: (...args: TArgs) => Promise<TResult> | TResult
 ): (_e: Electron.IpcMainInvokeEvent, ...args: TArgs) => Promise<TResult> {
@@ -464,6 +469,7 @@ function registerIpcHandlers(
   // ─── SQL Server ────────────────────────────────────
   ipcMain.handle('sql:connect', ipc((config: SqlConnectionConfig) => sql.connect(config)))
   ipcMain.handle('sql:disconnect', ipc((connectionId: string) => sql.disconnect(connectionId)))
+  ipcMain.handle('sql:isConnected', (_e, connectionId: string) => sql.isConnected(connectionId))
   ipcMain.handle('sql:query', ipc((connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) =>
     sql.executeQuery(connectionId, query, queryId, maxRows, database)))
   ipcMain.handle('sql:cancelQuery', ipc((queryId: string) => sql.cancelQuery(queryId)))
@@ -494,20 +500,20 @@ function registerIpcHandlers(
   ipcMain.handle('sql:sqlPackageInfo', () => sql.sqlPackageInfo())
   ipcMain.handle('sql:restore', ipc((connectionId: string, options: { path: string; database: string; replace: boolean }) =>
     sql.restoreDatabase(connectionId, options)))
-  ipcMain.handle('sql:dataTier', ipc((connectionId: string, database: string, action: 'extract' | 'export', targetFile: string) =>
-    sql.dataTier(connectionId, database, action, targetFile, mainWindow)))
+  ipcMain.handle('sql:dataTier', (e, connectionId: string, database: string, action: 'extract' | 'export', targetFile: string) =>
+    ipc(() => sql.dataTier(connectionId, database, action, targetFile, senderWindow(e)))(e))
   ipcMain.handle('sql:dataTierCancel', () => { sql.cancelDataTier() })
 
   // ─── Dialog ────────────────────────────────────────
-  ipcMain.handle('dialog:openFolder', async () => {
-    const result = await dialog.showOpenDialog(mainWindow!, {
+  ipcMain.handle('dialog:openFolder', async (e) => {
+    const result = await dialog.showOpenDialog(senderWindow(e)!, {
       properties: ['openDirectory']
     })
     return result.canceled ? null : result.filePaths[0]
   })
-  ipcMain.handle('dialog:saveSqlQuery', async (_e, defaultName: string, content: string) => {
+  ipcMain.handle('dialog:saveSqlQuery', async (e, defaultName: string, content: string) => {
     const safeName = (defaultName || 'query.sql').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/[. ]+$/, '') || 'query.sql'
-    const result = await dialog.showSaveDialog(mainWindow!, {
+    const result = await dialog.showSaveDialog(senderWindow(e)!, {
       title: 'Save SQL query',
       defaultPath: safeName.toLocaleLowerCase().endsWith('.sql') ? safeName : `${safeName}.sql`,
       filters: [{ name: 'SQL query', extensions: ['sql'] }, { name: 'All files', extensions: ['*'] }]
@@ -517,8 +523,8 @@ function registerIpcHandlers(
     return result.filePath
   })
 
-  ipcMain.handle('dialog:saveFile', async (_e, defaultName: string, filters: { name: string; extensions: string[] }[]) => {
-    const result = await dialog.showSaveDialog(mainWindow!, {
+  ipcMain.handle('dialog:saveFile', async (e, defaultName: string, filters: { name: string; extensions: string[] }[]) => {
+    const result = await dialog.showSaveDialog(senderWindow(e)!, {
       title: 'Salva con nome',
       defaultPath: defaultName,
       filters
@@ -526,8 +532,8 @@ function registerIpcHandlers(
     return result.canceled || !result.filePath ? null : result.filePath
   })
 
-  ipcMain.handle('dialog:openFile', async (_e, title: string, filters: { name: string; extensions: string[] }[]) => {
-    const result = await dialog.showOpenDialog(mainWindow!, {
+  ipcMain.handle('dialog:openFile', async (e, title: string, filters: { name: string; extensions: string[] }[]) => {
+    const result = await dialog.showOpenDialog(senderWindow(e)!, {
       title,
       properties: ['openFile'],
       filters
@@ -536,9 +542,9 @@ function registerIpcHandlers(
   })
 
   // The SQL results grid exports a real .xlsx (written here, no renderer library)
-  ipcMain.handle('export:xlsx', async (_e, defaultName: string, sheets: XlsxSheet[]) => {
+  ipcMain.handle('export:xlsx', async (e, defaultName: string, sheets: XlsxSheet[]) => {
     const safeName = (defaultName || 'query_results.xlsx').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/[. ]+$/, '') || 'query_results.xlsx'
-    const result = await dialog.showSaveDialog(mainWindow!, {
+    const result = await dialog.showSaveDialog(senderWindow(e)!, {
       title: 'Esporta in Excel',
       defaultPath: safeName.toLocaleLowerCase().endsWith('.xlsx') ? safeName : `${safeName}.xlsx`,
       filters: [{ name: 'Excel', extensions: ['xlsx'] }, { name: 'All files', extensions: ['*'] }]
@@ -723,8 +729,27 @@ function registerIpcHandlers(
   })
 
   // ─── Filesystem watch (auto-refresh of changes / file tree) ─────────────────
-  ipcMain.handle('fs:watch', (_e, root: string) => { watchRoot(root) })
-  ipcMain.handle('fs:unwatch', (_e, root: string) => { unwatchRoot(root) })
+  // roots watched per window: closing a window (detached ones go away with their trees still
+  // mounted) releases what it still holds
+  const watchedBy = new Map<number, string[]>()
+  ipcMain.handle('fs:watch', (e, root: string) => {
+    watchRoot(root)
+    const id = e.sender.id
+    if (!watchedBy.has(id)) {
+      watchedBy.set(id, [])
+      e.sender.once('destroyed', () => {
+        for (const r of watchedBy.get(id) ?? []) unwatchRoot(r)
+        watchedBy.delete(id)
+      })
+    }
+    watchedBy.get(id)!.push(root)
+  })
+  ipcMain.handle('fs:unwatch', (e, root: string) => {
+    const roots = watchedBy.get(e.sender.id)
+    const i = roots ? roots.indexOf(root) : -1
+    if (i >= 0) roots!.splice(i, 1)
+    unwatchRoot(root)
+  })
 
   // ─── Open with DamnedIDE: the path passed at launch (folder / .md) ──────────
   ipcMain.handle('app:initialTarget', () => {
@@ -768,8 +793,9 @@ function registerIpcHandlers(
   })
 
   // ─── Long-running process ──────────────────────────
-  ipcMain.handle('process:start', (_e, cwd: string, command: string, args: string[]) => {
-    return startProcess(cwd, command, args, mainWindow)
+  ipcMain.handle('process:start', (e, cwd: string, command: string, args: string[]) => {
+    // output and exit go back to the window that started it (a detached Editor too)
+    return startProcess(cwd, command, args, senderWindow(e))
   })
   ipcMain.handle('process:stop', (_e, id: string) => {
     stopProcess(id)
@@ -804,7 +830,14 @@ function registerIpcHandlers(
   ipcMain.on('window:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close())
 
   // ─── Detach panel ───────────────────────────────────
-  ipcMain.handle('window:openDetached', (_e, panelId: string) => {
+  ipcMain.handle('window:openDetached', (_e, panelId: string, context?: { repoPath?: string | null; worktree?: string | null }) => {
+    if (!/^\w+$/.test(panelId)) return false
+    // the repository (and worktree) of the window it came from, read by App.tsx
+    const params = new URLSearchParams()
+    if (context?.repoPath) params.set('repo', context.repoPath)
+    if (context?.repoPath && context.worktree) params.set('wt', context.worktree)
+    const query = params.toString()
+    const hash = `#/panel/${panelId}${query ? `?${query}` : ''}`
     const detached = new BrowserWindow({
       width: 900,
       height: 650,
@@ -823,12 +856,17 @@ function registerIpcHandlers(
     })
 
     const url = process.env.ELECTRON_RENDERER_URL
-      ? `${process.env.ELECTRON_RENDERER_URL}#/panel/${panelId}`
-      : `${pathToFileURL(join(__dirname, '../renderer/index.html')).href}#/panel/${panelId}`
+      ? `${process.env.ELECTRON_RENDERER_URL}${hash}`
+      : `${pathToFileURL(join(__dirname, '../renderer/index.html')).href}${hash}`
 
     detached.loadURL(url)
 
     detached.on('ready-to-show', () => detached.show())
+    // links (target=_blank, window.open) open in the browser, as in the main window
+    detached.webContents.setWindowOpenHandler((details) => {
+      shell.openExternal(details.url)
+      return { action: 'deny' }
+    })
     return true
   })
 

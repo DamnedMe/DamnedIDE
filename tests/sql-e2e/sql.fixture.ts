@@ -25,6 +25,8 @@ async function installElectronMock(page: Page) {
         return config.connectionId || connectionId
       },
       disconnect: emptyAsync,
+      // no pool is shared with another window: the startup reconnect goes on to connect
+      isConnected: async () => false,
       sqlPackageInfo: async () => ({ found: true, path: 'C:\\mock\\SqlPackage.exe', hint: 'dotnet tool install -g microsoft.sqlpackage' }),
       restore: async (_connection: string, options: { path: string; database: string; replace: boolean }) => {
         ;(window as unknown as { __sqlMock: { restores: unknown[] } }).__sqlMock.restores.push(options)

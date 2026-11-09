@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Images, Moon, Palette, Plus, RotateCcw, Save, Sun, Type, X } from '@/components/icons'
+import { ArrowLeft, ArrowRight, ChevronRight, Columns2, Images, Moon, Palette, Plus, RotateCcw, Save, Sun, Type, X } from '@/components/icons'
 import { useSettingsStore, useToastStore, DEFAULT_DARK_COLORS, DEFAULT_LIGHT_COLORS } from '../../../store'
 import type { SettingsPageId, ThemeColorConfig } from '../../../store'
 import { relativeLuminance } from '../../../utils/color'
@@ -34,6 +34,12 @@ export function ThemePage({ onOpenPage }: { onOpenPage: (page: SettingsPageId) =
           <div style={{ display: 'flex', gap: '4px' }}>
             <ThemeBtn icon={<Moon size={11} />} label={t('dark')} active={s.theme === 'dark'} onClick={() => updateSettings({ theme: 'dark' })} />
             <ThemeBtn icon={<Sun size={11} />} label={t('light')} active={s.theme === 'light'} onClick={() => updateSettings({ theme: 'light' })} />
+          </div>
+        </Row>
+        <Row icon={<Columns2 size={13} />} label="menu laterale" hint="lato di worktree, explorer, branch, liste DevOps ed esplora SQL">
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <ThemeBtn icon={<ArrowLeft size={11} />} label="sinistra" active={s.sidebarSide !== 'right'} onClick={() => updateSettings({ sidebarSide: 'left' })} />
+            <ThemeBtn icon={<ArrowRight size={11} />} label="destra" active={s.sidebarSide === 'right'} onClick={() => updateSettings({ sidebarSide: 'right' })} />
           </div>
         </Row>
         <Row icon={<Palette size={13} />} label={t('primary color')} hint="evidenziazioni, pulsanti e selezioni; indipendente dal tema">

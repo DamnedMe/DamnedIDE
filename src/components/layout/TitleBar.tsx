@@ -1,9 +1,12 @@
-import { Minus, Square, X, Settings, FolderOpen, ChevronDown } from '@/components/icons'
+import { useEffect, useState } from 'react'
+import { Minus, Square, X, Settings, FolderOpen, ChevronDown, ExternalLink, type AppIcon } from '@/components/icons'
 
 export interface TitleBarTab {
   id: string
   /** visible text */
   label: string
+  /** shown before the label (decorative: the label names the tab) */
+  icon?: AppIcon
   /** tooltip title (kept stable for tests and screen readers) */
   title: string
   tip?: string
@@ -17,6 +20,8 @@ interface TitleBarProps {
   tabs?: TitleBarTab[]
   activeTab?: string
   onTabChange?: (id: string) => void
+  /** right-click on a tab offers to open that panel in a new window */
+  onTabOpenWindow?: (id: string) => void
   /** repository switcher: its label, and where a menu of recent folders may open */
   repoLabel?: string
   onRepoClick?: (anchor: { x: number; y: number }) => void
@@ -25,9 +30,17 @@ interface TitleBarProps {
 // grows with the IDE text size, like the tab labels it holds
 const BAR_HEIGHT = 'calc(13px * var(--ui-text-scale, 1) + 20px)'
 
-export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, onTabChange, repoLabel, onRepoClick }: TitleBarProps) {
+export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, onTabChange, onTabOpenWindow, repoLabel, onRepoClick }: TitleBarProps) {
   const dragRegion = { WebkitAppRegion: 'drag' } as React.CSSProperties
   const noDragRegion = { WebkitAppRegion: 'no-drag' } as React.CSSProperties
+  const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    if (!tabMenu) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTabMenu(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tabMenu])
 
   return (
     <div style={{
@@ -92,10 +105,11 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
                 <button
                   key={tab.id}
                   onClick={() => onTabChange?.(tab.id)}
+                  onContextMenu={onTabOpenWindow ? (e) => { e.preventDefault(); setTabMenu({ id: tab.id, x: e.clientX, y: e.clientY }) } : undefined}
                   title={tab.title} data-tip-desc={tab.tip}
                   aria-current={active ? 'page' : undefined}
                   style={{
-                    display: 'flex', alignItems: 'center', padding: '0 14px', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '0 14px', flexShrink: 0,
                     border: 'none', borderTop: '2px solid transparent',
                     borderBottom: `2px solid ${active ? 'var(--accent-color)' : 'transparent'}`,
                     background: 'transparent', cursor: 'pointer', whiteSpace: 'nowrap',
@@ -106,11 +120,37 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
                   onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = 'var(--text-secondary)' }}
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = 'var(--text-muted)' }}
                 >
+                  {tab.icon && <tab.icon size={13} style={{ flexShrink: 0, color: active ? 'var(--accent-color)' : undefined }} />}
                   {tab.label}
                 </button>
               )
             })}
           </nav>
+          {tabMenu && onTabOpenWindow && (
+            <>
+              {/* no-drag: over the title bar a drag region would swallow the click that closes the menu */}
+              <div style={{ position: 'fixed', inset: 0, zIndex: 1, ...noDragRegion }} onClick={() => setTabMenu(null)} onContextMenu={(e) => { e.preventDefault(); setTabMenu(null) }} />
+              <div role="menu" aria-label="panel menu" style={{
+                ...noDragRegion, position: 'fixed', zIndex: 2, top: tabMenu.y + 2,
+                left: Math.max(8, Math.min(tabMenu.x, window.innerWidth - 240)),
+                minWidth: '200px', padding: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', animation: 'menuIn 140ms ease'
+              }}>
+                <button role="menuitem" autoFocus
+                  onClick={() => { const id = tabMenu.id; setTabMenu(null); onTabOpenWindow(id) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 10px',
+                    background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                    color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 'calc(11.5px * var(--ui-text-scale, 1))', textAlign: 'left'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}>
+                  <ExternalLink size={13} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
+                  apri in una nuova finestra
+                </button>
+              </div>
+            </>
+          )}
         </>
       ) : (
         <span style={{

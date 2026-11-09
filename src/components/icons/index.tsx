@@ -76,6 +76,7 @@ import hammerSvg from '../../../node_modules/ionicons/dist/svg/hammer-outline.sv
 import hardwareChipSvg from '../../../node_modules/ionicons/dist/svg/hardware-chip-outline.svg?raw'
 import heartSvg from '../../../node_modules/ionicons/dist/svg/heart-outline.svg?raw'
 import heartDislikeSvg from '../../../node_modules/ionicons/dist/svg/heart-dislike-outline.svg?raw'
+import homeSvg from '../../../node_modules/ionicons/dist/svg/home-outline.svg?raw'
 import imageSvg from '../../../node_modules/ionicons/dist/svg/image-outline.svg?raw'
 import imagesSvg from '../../../node_modules/ionicons/dist/svg/images-outline.svg?raw'
 import informationCircleSvg from '../../../node_modules/ionicons/dist/svg/information-circle-outline.svg?raw'
@@ -222,6 +223,7 @@ export const HardDriveUpload = createIcon('HardDriveUpload', cloudUploadSvg)
 export const Heart = createIcon('Heart', heartSvg)
 export const HeartOff = createIcon('HeartOff', heartDislikeSvg)
 export const History = createIcon('History', timeSvg)
+export const Home = createIcon('Home', homeSvg)
 export const Image = createIcon('Image', imageSvg)
 export const Images = createIcon('Images', imagesSvg)
 export const Indent = createIcon('Indent', returnDownForwardSvg)

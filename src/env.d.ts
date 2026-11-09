@@ -254,6 +254,7 @@ interface Window {
     sql: {
       connect: (config: import('./types/sql').SqlConnectionConfig) => Promise<string>
       disconnect: (connectionId: string) => Promise<void>
+      isConnected: (connectionId: string) => Promise<boolean>
       query: (connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) => Promise<import('./types/sql').SqlExecutionResult>
       cancelQuery: (queryId: string) => Promise<void>
       testConnection: (config: import('./types/sql').SqlConnectionConfig) => Promise<import('./types/sql').SqlTestResult>
@@ -318,7 +319,8 @@ interface Window {
       minimize: () => void
       maximize: () => void
       close: () => void
-      openDetached: (panelId: string) => Promise<boolean>
+      /** context: the repository (and worktree) the new window opens with */
+      openDetached: (panelId: string, context?: { repoPath?: string | null; worktree?: string | null }) => Promise<boolean>
     }
     updater: {
       installLatest: () => Promise<UpdateInstallResult>

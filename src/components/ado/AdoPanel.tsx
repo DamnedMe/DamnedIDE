@@ -7,7 +7,7 @@ import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 import { CreatePrDialog } from './CreatePrDialog'
 import { AdoRepoChooser } from './AdoRepoChooser'
-import { useAdoStore, useSettingsNavStore } from '../../store'
+import { useAdoStore, useSettingsNavStore, useSettingsStore } from '../../store'
 import { useAdoFolder } from '../../hooks/useAdoFolder'
 import { ADO_MISSING_PAT } from '../../shared/adoSettings'
 import { AdoPullRequest, AdoPullRequestDetail } from '../../types/ado'
@@ -17,6 +17,8 @@ import { AlertTriangle, Network, PanelLeftClose, PanelLeftOpen, Plus, Settings }
 const openAdoSettings = () => useSettingsNavStore.getState().openSettings('ado-connections')
 
 export function AdoPanel({ repoPath }: { repoPath: string | null }) {
+  // Settings › Tema: the side menu docked on the right
+  const sidebarRight = useSettingsStore(s => s.settings.sidebarSide === 'right')
   const { workItems, setWorkItems, pullRequests, setPullRequests } = useAdoStore()
   // connection + repository of the open folder (Settings › Azure DevOps)
   const ado = useAdoFolder(repoPath)
@@ -140,7 +142,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
         </div>
       )}
       <div style={{ display: 'flex', height: '100%', gap: '4px', overflow: 'hidden', flex: 1, minHeight: 0 }}>
-        {/* Left tool strip — always visible */}
+        {/* tool strip next to the lists — always visible */}
         <div style={{
           width: '36px', flexShrink: 0, background: 'var(--bg-card)',
           border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
@@ -148,7 +150,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
           paddingTop: '6px', gap: '4px'
         }}>
           <button onClick={() => setLeftCollapsed(!leftCollapsed)}
-            title={leftCollapsed ? 'show left panel' : 'collapse left panel'} data-tip-desc="collapse or expand the left panel"
+            title={leftCollapsed ? 'show lists' : 'collapse lists'} data-tip-desc="collapse or expand the pull request and work item lists"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'none', border: 'none',
@@ -156,7 +158,8 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
             }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
-            {leftCollapsed ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
+            {/* the arrow points where the lists go */}
+            {leftCollapsed !== sidebarRight ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
           </button>
           {/* use is sent first, so the dialog's own calls already go to this connection */}
           <button onClick={() => { void selectConnection(); setShowCreatePr(true) }} title="new pull request" data-tip-desc="create a pull request for this branch"
@@ -181,8 +184,9 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
             <Settings size={13} />
           </button>
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-        <ResizableSplitter direction="horizontal" defaultSize={380} minSize={220} maxSize={700} collapsed={leftCollapsed}>
+        {/* on the right the lists come first, so the tool strip stays next to them */}
+        <div style={{ flex: 1, minWidth: 0, order: sidebarRight ? -1 : 0 }}>
+        <ResizableSplitter direction="horizontal" defaultSize={380} minSize={220} maxSize={700} collapsed={leftCollapsed} reverse={sidebarRight}>
           <div ref={leftRef} style={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
             {leftHeight > 0 && (
               <ResizableSplitter
@@ -200,7 +204,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
               </ResizableSplitter>
             )}
           </div>
-          <div style={{ minWidth: 0, paddingLeft: '4px', overflow: 'hidden', height: '100%' }}>
+          <div style={{ minWidth: 0, [sidebarRight ? 'paddingRight' : 'paddingLeft']: '4px', overflow: 'hidden', height: '100%' }}>
             {selectedPr ? (
               <PullRequestDetail project={project} repo={repo} pr={selectedPr} onClose={() => setSelectedPr(null)} onChanged={handlePrChanged} />
             ) : selectedWorkItemId ? (

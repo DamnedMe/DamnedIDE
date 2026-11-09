@@ -48,8 +48,8 @@ export const SETTINGS_PAGE_META: SettingsPageMeta[] = [
   },
   {
     id: 'theme', group: 'appearance', label: 'Tema', icon: Sun,
-    description: 'tema scuro o chiaro, colore primario e tema standard',
-    keywords: 'tema theme scuro chiaro dark light colore primario accento accent standard'
+    description: 'tema scuro o chiaro, colore primario, lato del menu laterale e tema standard',
+    keywords: 'tema theme scuro chiaro dark light colore primario accento accent standard menu laterale sidebar sinistra destra left right layout'
   },
   {
     id: 'text', group: 'appearance', label: 'Testo e icone', icon: Type,

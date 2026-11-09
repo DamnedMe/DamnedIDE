@@ -130,6 +130,13 @@ a:hover { text-decoration: underline; }
   padding: 0 !important; border: 0 !important; overflow: hidden; clip-path: inset(50%);
 }
 
+/* Worktree strip badges (WorktreePanel): hover tint over the card (the tint alone is a 4% wash
+   on black); !important beats the inline background. The list hides its scrollbar for real:
+   scrollbar-width needs Chromium 121 (Electron 28 is 120), and a visible bar clips the
+   selection mark at the strip edge */
+.wt-badge:not(.is-selected):hover { background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg-card) !important; }
+.wt-strip-list::-webkit-scrollbar { display: none; }
+
 /* Rendered Markdown preview */
 .md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 {
   margin: 18px 0 8px;

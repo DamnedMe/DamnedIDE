@@ -15,7 +15,7 @@ import { TooltipHost } from './components/layout/TooltipHost'
 import { RecentReposDialog } from './components/layout/RecentReposDialog'
 import { RecentFoldersMenu } from './components/layout/RecentFoldersMenu'
 import { GitTreeDialog } from './components/git/GitTreeDialog'
-import { X } from './components/icons'
+import { X, GitFork, FileCode, GitBranch, Cloud, Rocket, Database } from './components/icons'
 import { useUIStore, useGitStore, useSettingsStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore, useSettingsNavStore, migrateLegacyAdoStorage } from './store'
 import { useI18n } from './i18n'
 import { hexToRgba } from './utils/color'
@@ -29,6 +29,9 @@ type PanelId = 'worktree' | 'git' | 'ado' | 'release' | 'sql' | 'editor' | 'term
 
 export default function App() {
   const [activePanel, setActivePanel] = useState<PanelId>(() => {
+    // a detached window starts on its own panel (the gear switches it to Settings and back)
+    const detached = window.location.hash.match(/^#\/panel\/(\w+)/)
+    if (detached) return detached[1] as PanelId
     try {
       const p = localStorage.getItem('damnedide_last_panel')
       if (p && ['worktree', 'git', 'ado', 'release', 'sql', 'editor', 'settings', 'mcp'].includes(p)) return p as PanelId
@@ -111,7 +114,13 @@ export default function App() {
       for (const c of conns) {
         if (cancelled || c.isConnected) continue
         try {
-          await window.electronAPI.sql.connect({ ...c, connectionId: c.id })
+          // already open (by another window): attach. A reconnect closes the shared pool first, and
+          // with a password that is not saved it then fails, leaving every window disconnected
+          // a detached window never reconnects: the user may have disconnected it in the main window
+          if (!(await window.electronAPI.sql.isConnected(c.id))) {
+            if (detachedPanel) continue
+            await window.electronAPI.sql.connect({ ...c, connectionId: c.id })
+          }
           if (cancelled) break
           useSqlStore.getState().updateConnection(c.id, { isConnected: true })
         } catch { /* server offline */ }
@@ -202,8 +211,21 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // A panel opened in a new window from the title bar starts on the repository (and the
+  // worktree) of the window it came from: main.ts puts them in the hash.
+  useEffect(() => {
+    if (!detachedPanel) return
+    const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
+    const repo = params.get('repo')
+    const worktree = params.get('wt')
+    if (repo) void openRepo(repo).then((root) => { if (root && worktree) useWorktreeStore.getState().selectWorktree(worktree) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ─── DamnedCloud: mirror the desktop workspace to the remote bridge ────────
   useEffect(() => {
+    // the main window owns the mirror: a detached window would overwrite it with its own panel
+    if (detachedPanel) return
     window.electronAPI.remote?.setWorkspace({
       repoPath,
       selectedWorktree,
@@ -215,6 +237,7 @@ export default function App() {
   // SQL connection metadata (sanitised) so paired devices can browse the
   // databases already open on the desktop without ever receiving credentials.
   useEffect(() => {
+    if (detachedPanel) return
     window.electronAPI.remote?.setSqlConnections(
       sqlConnections.map(c => ({ id: c.id, label: c.label, server: c.server, database: c.database, isConnected: c.isConnected }))
     ).catch(() => { /* bridge not active */ })
@@ -225,8 +248,9 @@ export default function App() {
     window.electronAPI.remote?.broadcast('git.changed', { repoPath }).catch(() => { /* bridge not active */ })
   }, [gitStatus, gitFiles, repoPath])
 
-  // Apply UI changes requested by a remote device (mirror).
+  // Apply UI changes requested by a remote device (mirror): to the main window only.
   useEffect(() => {
+    if (detachedPanel) return
     const off = window.electronAPI.remote?.onApply((change) => {
       switch (change.type) {
         case 'workspace.setRepo':
@@ -263,6 +287,7 @@ export default function App() {
 
   // Remember the last active panel at startup.
   useEffect(() => {
+    if (detachedPanel) return
     try { localStorage.setItem('damnedide_last_panel', activePanel) } catch { /* ignore */ }
   }, [activePanel])
 
@@ -300,12 +325,12 @@ export default function App() {
   const t = useI18n()
   // short visible labels; the title keeps t(id), the panel name used by the title and tests
   const tabs: TitleBarTab[] = [
-    { id: 'worktree', label: 'Worktree', title: t('worktree'), tip: 'manage git worktrees (feature/bugfix)' },
-    { id: 'editor', label: 'Editor', title: t('editor'), tip: 'code editor with C# navigation and references' },
-    { id: 'git', label: 'Git', title: t('git'), tip: 'open the repository (or the selected worktree) in GitTree; stage and commit here' },
-    { id: 'ado', label: 'DevOps', title: t('ado'), tip: 'work items and pull requests from Azure DevOps' },
-    { id: 'release', label: t('Release'), title: t('release'), tip: 'promote develop → qa → prod with Azure DevOps pull requests (BE/FE)' },
-    { id: 'sql', label: 'SQL', title: t('sql'), tip: 'SQL Server connections, queries and schema' }
+    { id: 'worktree', label: 'Worktree', icon: GitFork, title: t('worktree'), tip: 'manage git worktrees (feature/bugfix)' },
+    { id: 'editor', label: 'Editor', icon: FileCode, title: t('editor'), tip: 'code editor with C# navigation and references' },
+    { id: 'git', label: 'Git', icon: GitBranch, title: t('git'), tip: 'open the repository (or the selected worktree) in GitTree; stage and commit here' },
+    { id: 'ado', label: 'DevOps', icon: Cloud, title: t('ado'), tip: 'work items and pull requests from Azure DevOps' },
+    { id: 'release', label: t('Release'), icon: Rocket, title: t('release'), tip: 'promote develop → qa → prod with Azure DevOps pull requests (BE/FE)' },
+    { id: 'sql', label: 'SQL', icon: Database, title: t('sql'), tip: 'SQL Server connections, queries and schema' }
   ]
 
   const lastPanelRef = useRef<PanelId>('worktree')
@@ -354,11 +379,11 @@ export default function App() {
   if (detachedPanel) {
     return (
       <AppShell
-        titleBar={<TitleBar title={`DamnedIDE — ${detachedPanel}`} onSettings={handleSettingsToggle} settingsActive={detachedPanel === 'settings'} />}
+        titleBar={<TitleBar title={`DamnedIDE — ${t(detachedPanel)}${repoPath ? ` · ${basenameOf(repoPath)}` : ''}`} onSettings={handleSettingsToggle} settingsActive={activePanel === 'settings'} />}
         statusBar={null}
         contentPadding="6px 8px"
       >
-        {renderPanel(detachedPanel)}
+        {renderPanel(activePanel === 'settings' ? 'settings' : detachedPanel)}
         <ToastHost />
         <TooltipHost />
       </AppShell>
@@ -375,6 +400,7 @@ export default function App() {
           tabs={tabs}
           activeTab={activePanel}
           onTabChange={(id) => { setActivePanel(id as PanelId); if (id === 'git') void openInGitTree() }}
+          onTabOpenWindow={(id) => { void window.electronAPI.window.openDetached(id, { repoPath, worktree: selectedWorktree }) }}
           repoLabel={repoPath ? basenameOf(repoPath) : t('open repo')}
           onRepoClick={(a) => { if (recentRepos.length) setFolderMenu(a); else void handleOpenFolder() }}
         />

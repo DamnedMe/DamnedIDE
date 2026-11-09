@@ -553,6 +553,8 @@ export interface AppSettings {
   gitTreePath: string
   // Changes lists (worktree, editor): the folder under each file name
   changesShowPath: boolean
+  // side of the panels' side menu (worktree strip + changes, editor explorer, git branches, DevOps lists, SQL explorer)
+  sidebarSide: 'left' | 'right'
   themeColors: {
     dark: ThemeColorConfig
     light: ThemeColorConfig
@@ -602,6 +604,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   accentColor: '#00aaff',
   gitTreePath: '',
   changesShowPath: true,
+  sidebarSide: 'left',
   themeColors: {
     dark: { ...DEFAULT_DARK_COLORS },
     light: { ...DEFAULT_LIGHT_COLORS }

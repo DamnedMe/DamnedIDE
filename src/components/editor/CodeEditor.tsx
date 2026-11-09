@@ -151,6 +151,7 @@ export function CodeEditor() {
   const fontSizeRef = useRef(12.5)
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const settings = useSettingsStore(s => s.settings)
+  const sidebarRight = settings.sidebarSide === 'right'
   const [mdPreview, setMdPreview] = useState(false)
   const isMarkdownActive = !!activeFile?.toLowerCase().endsWith('.md')
   const [quickOutput, setQuickOutput] = useState<OutputEntry[] | null>(null)
@@ -1119,7 +1120,8 @@ export function CodeEditor() {
           onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-secondary)' }}
           onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
         >
-          <PanelLeftClose size={12} />
+          {/* the arrow points where the explorer goes */}
+          {sidebarRight ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
         </button>
       </div>
       {leftPanel === 'explorer' ? (
@@ -1151,7 +1153,7 @@ export function CodeEditor() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {!explorerVisible && (
         <div style={{
-          display: 'flex', gap: '2px', padding: '2px 4px',
+          display: 'flex', gap: '2px', padding: '2px 4px', justifyContent: sidebarRight ? 'flex-end' : 'flex-start',
           borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
         }}>
           <button
@@ -1164,7 +1166,7 @@ export function CodeEditor() {
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
           >
-            <PanelLeftOpen size={12} />
+            {sidebarRight ? <PanelLeftClose size={12} /> : <PanelLeftOpen size={12} />}
           </button>
         </div>
       )}
@@ -1605,6 +1607,7 @@ export function CodeEditor() {
           minSize={150}
           maxSize={500}
           collapsed={!explorerVisible}
+          reverse={sidebarRight}
         >
           {explorerPane}
           {editorPane}

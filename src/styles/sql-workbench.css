@@ -74,6 +74,12 @@
   padding-left: 7px !important;
 }
 
+/* explorer on the right (Settings › Tema › menu laterale): the gap moves to that side */
+.sql-workbench__stage--right {
+  padding-left: 0 !important;
+  padding-right: 7px !important;
+}
+
 .sql-page-title,
 .sql-page-actions {
   display: flex;

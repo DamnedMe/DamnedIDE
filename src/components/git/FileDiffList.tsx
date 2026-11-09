@@ -177,7 +177,8 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setContextMenu(null)} />
           <div style={{
-            position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 1000,
+            // clamped: the list can sit at the right edge (side menu on the right)
+            position: 'fixed', left: Math.min(contextMenu.x, window.innerWidth - 160), top: contextMenu.y, zIndex: 1000,
             background: 'var(--bg-card)', border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
             padding: '4px 0', minWidth: '150px', animation: 'fadeIn 0.1s ease'

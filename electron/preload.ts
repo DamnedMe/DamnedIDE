@@ -159,6 +159,7 @@ const electronAPI = {
   sql: {
     connect: (config: SqlConnectionConfig) => ipcRenderer.invoke('sql:connect', config),
     disconnect: (connectionId: string) => ipcRenderer.invoke('sql:disconnect', connectionId),
+    isConnected: (connectionId: string) => ipcRenderer.invoke('sql:isConnected', connectionId),
     query: (connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) =>
       ipcRenderer.invoke('sql:query', connectionId, query, queryId, maxRows, database),
     cancelQuery: (queryId: string) => ipcRenderer.invoke('sql:cancelQuery', queryId),
@@ -240,7 +241,8 @@ const electronAPI = {
     minimize: () => ipcRenderer.send('window:minimize'),
     maximize: () => ipcRenderer.send('window:maximize'),
     close: () => ipcRenderer.send('window:close'),
-    openDetached: (panelId: string) => ipcRenderer.invoke('window:openDetached', panelId)
+    openDetached: (panelId: string, context?: { repoPath?: string | null; worktree?: string | null }) =>
+      ipcRenderer.invoke('window:openDetached', panelId, context)
   },
   updater: {
     // one click: take the updater lock, check, download if needed, install (see UpdateService)

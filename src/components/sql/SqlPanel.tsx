@@ -7,7 +7,7 @@ import { DatabaseExplorer } from './DatabaseExplorer'
 import { ConnectionDialog } from './ConnectionDialog'
 import { RecentConnectionsMenu } from './RecentConnectionsMenu'
 import { DiagramView } from './DiagramView'
-import { useSqlStore, useSqlRecentStore, useToastStore } from '../../store'
+import { useSqlStore, useSqlRecentStore, useToastStore, useSettingsStore } from '../../store'
 import { Plus, PanelLeftClose, PanelLeftOpen, Loader2, Check, XCircle, Database } from '@/components/icons'
 import { SqlColumnInfo, SqlConnection, SqlConnectionConfig, SqlExecutionResult, SqlForeignKeyInfo, SqlGridQueryState, SqlHistoryEntry, SqlQuerySource, SqlTestResult, SqlWorkspaceState } from '../../types/sql'
 import { connectionLabel, quoteColumn, quoteTable, sqlLiteral as sqlLiteralForType } from './sqlForm'
@@ -66,6 +66,8 @@ function cleanError(e: unknown): string {
 }
 
 export function SqlPanel() {
+  // Settings › Tema: the side menu docked on the right
+  const sidebarRight = useSettingsStore(s => s.settings.sidebarSide === 'right')
   const {
     connections, addConnection, updateConnection, removeConnection,
     activeConnection, setActiveConnection,
@@ -615,7 +617,8 @@ export function SqlPanel() {
             }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)' }}>
-            {sidebarCollapsed ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
+            {/* the arrow points where the explorer goes */}
+            {sidebarCollapsed !== sidebarRight ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
           </button>
           <button
             onClick={(e) => setPlusMenu({ x: e.currentTarget.getBoundingClientRect().right + 4, y: e.currentTarget.getBoundingClientRect().bottom + 4 })}
@@ -640,7 +643,7 @@ export function SqlPanel() {
     >
       <div className="sql-workbench__shell" style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
         <div className="sql-workbench__main" style={{ flex: 1, minHeight: 0 }}>
-          <ResizableSplitter direction="horizontal" defaultSize={250} minSize={190} maxSize={390} collapsed={sidebarCollapsed}>
+          <ResizableSplitter direction="horizontal" defaultSize={250} minSize={190} maxSize={390} collapsed={sidebarCollapsed} reverse={sidebarRight}>
             <DatabaseExplorer
               connections={connections}
               activeConnection={activeConnection}
@@ -662,7 +665,8 @@ export function SqlPanel() {
               onImportDatabase={(conn, database, source) => setImportTarget({ conn, database, source })}
               trackOperation={trackOperation}
             />
-          <main className="sql-workbench__stage" style={{
+          {/* the gap to the explorer: sql-workbench.css sets it with !important, the modifier moves it */}
+          <main className={sidebarRight ? 'sql-workbench__stage sql-workbench__stage--right' : 'sql-workbench__stage'} style={{
             display: 'flex', flex: 1, width: '100%', height: '100%', minHeight: 0,
             flexDirection: 'column', gap: '0px', overflow: 'hidden', padding: '0 0 0 4px'
           }}>

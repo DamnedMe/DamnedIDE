@@ -494,7 +494,8 @@ function FileContextMenu({ x, y, node, onClose, onDelete, onNewFile, onNewFolder
     <>
       <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={onClose} />
       <div style={{
-        position: 'fixed', left: x, top: y, zIndex: 1000,
+        // clamped: the tree can sit at the right edge (side menu on the right)
+        position: 'fixed', left: Math.min(x, window.innerWidth - 190), top: y, zIndex: 1000,
         background: 'var(--bg-card)', border: '1px solid var(--border-color)',
         borderRadius: 'var(--radius-md)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
         padding: '4px 0', minWidth: '180px', animation: 'fadeIn 0.1s ease'

@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { WorktreeService, parseTrack, revParseCommit } from '../electron/services/git/worktree.service.ts'
 import type { WorktreeOverview } from '../electron/services/git/worktree.service.ts'
 import {
-  classifyCleanup, pbiIdFromBranch, worktreeTone, overviewSummary, stripLabel, STACK_LABELS
+  classifyCleanup, pbiIdFromBranch, worktreeTone, overviewSummary, stripLabel, stripBadge, STACK_LABELS
 } from '../src/components/worktree/worktree-cleanup.ts'
 import type { CleanupInput } from '../src/components/worktree/worktree-cleanup.ts'
 import simpleGit from 'simple-git'
@@ -37,6 +37,29 @@ assert.equal(stripLabel('develop', true), 'main', 'the main checkout')
 assert.equal(stripLabel('feature/refactor-login', false), 'refac', 'non-numeric branch: first 5 chars of the last segment')
 assert.equal(stripLabel('refs/heads/develop', false), 'devel')
 assert.equal(stripLabel('', false), '', 'detached: the caller falls back to the head')
+// strip badge (D1): kind logo/ring, uncommitted bubble, done mark, ↑/↓
+const ovClean = { dirty: false, changes: 0, ahead: 0, behind: 0 }
+assert.equal(stripBadge('develop', true, ovClean).kind, 'main', 'the main checkout is main whatever its branch')
+assert.equal(stripBadge('bugfix/6153', false, ovClean).kind, 'bug')
+assert.equal(stripBadge('refs/heads/feature/6077', false, ovClean).kind, 'pbi')
+assert.equal(stripBadge('feature/refactor-login', false, ovClean).kind, 'pbi', 'a feature branch without an id is still PBI work')
+assert.equal(stripBadge('release/2024.11', false, ovClean).kind, 'branch')
+assert.equal(stripBadge('', false, ovClean).kind, 'detached')
+assert.equal(stripBadge('bugfix/1', false, { ...ovClean, dirty: true, changes: 3 }).dirty, '3')
+assert.equal(stripBadge('bugfix/1', false, { ...ovClean, dirty: true, changes: 250 }).dirty, '99+', 'the bubble stays small')
+assert.equal(stripBadge('bugfix/1', false, { ...ovClean, dirty: true, changes: 0 }).dirty, '!', 'dirty without a count still shows')
+assert.equal(stripBadge('bugfix/1', false, ovClean).dirty, null, 'clean: no bubble')
+assert.equal(stripBadge('bugfix/1', false, undefined).dirty, null, 'unknown status: no bubble')
+assert.equal(stripBadge('feature/1', false, ovClean, 'Done').done, true, 'PBI Done + clean -> done')
+assert.equal(stripBadge('feature/1', false, ovClean, 'removed').done, true, 'state compared case-insensitively')
+assert.equal(stripBadge('feature/1', false, ovClean, 'Active').done, false, 'open PBI -> not done')
+assert.equal(stripBadge('feature/1', false, { ...ovClean, dirty: true, changes: 1 }, 'Done').done, false, 'uncommitted work is never shown as done')
+assert.equal(stripBadge('feature/1', false, undefined, 'Done').done, false, 'unknown status -> not done')
+assert.equal(stripBadge('feature/1', false, { ...ovClean, ahead: 2 }, 'Done').done, false, 'commits still to push are never shown as done')
+assert.equal(stripBadge('feature/1', false, ovClean).done, false, 'no ADO -> not done')
+assert.equal(stripBadge('develop', true, ovClean, 'Done').done, false, 'the main checkout is never done')
+assert.deepEqual([stripBadge('main', true, { ...ovClean, ahead: 2, behind: 4 }).ahead, stripBadge('main', true, { ...ovClean, ahead: 2, behind: 4 }).behind], [2, 4])
+assert.deepEqual([stripBadge('main', true, undefined).ahead, stripBadge('main', true, undefined).behind], [0, 0])
 assert.deepEqual(Object.keys(STACK_LABELS).sort(), ['abandoned', 'absorbed', 'merged', 'open', 'rewritten', 'unknown'])
 
 assert.equal(worktreeTone({ dirty: true, unmerged: true }), 'dirty')

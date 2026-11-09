@@ -540,6 +540,11 @@ export class SqlService {
     return id
   }
 
+  /** A pool for this id is open: a window that opens later attaches to it instead of reconnecting (connect closes it first). */
+  isConnected(connectionId: string): boolean {
+    return !!this.connections.get(connectionId)?.pool.connected
+  }
+
   async disconnect(connectionId: string): Promise<void> {
     const entry = this.connections.get(connectionId)
     if (entry) {

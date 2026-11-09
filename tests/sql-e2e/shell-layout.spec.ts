@@ -11,7 +11,8 @@ test('title bar: panel tabs switch panel and mark the active one', async ({ page
   await expect(page.locator('nav')).toHaveCount(1)
 
   await page.getByTitle('sql', { exact: true }).click()
-  await expect(page.getByTitle('sql', { exact: true })).toHaveAttribute('aria-current', 'page')
+  // the pointer stays on the tab: TooltipHost parks its title in data-_title while hovered
+  await expect(page.locator('nav [title="sql"], nav [data-_title="sql"]')).toHaveAttribute('aria-current', 'page')
   await expect(page.getByTitle('worktree', { exact: true })).not.toHaveAttribute('aria-current', 'page')
 
   // the settings gear is not a tab: no tab is marked while settings are open

@@ -4,7 +4,7 @@ import { ResizableSplitter } from '../layout/ResizableSplitter'
 import { StagingArea } from './StagingArea'
 import { CommitDialog } from './CommitDialog'
 import { BranchList } from './BranchList'
-import { useGitStore } from '../../store'
+import { useGitStore, useSettingsStore } from '../../store'
 import { FolderOpen, RefreshCw } from '@/components/icons'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { GitFileStatus } from '../../types/git'
@@ -14,6 +14,8 @@ interface GitPanelProps {
 }
 
 export function GitPanel({ repoPath }: GitPanelProps) {
+  // Settings › Tema: the side menu docked on the right
+  const sidebarRight = useSettingsStore(s => s.settings.sidebarSide === 'right')
   const { status, setStatus, files, setFiles, branches, setBranches, isLoading, setLoading } = useGitStore()
   const [showCommit, setShowCommit] = useState(false)
 
@@ -102,7 +104,7 @@ export function GitPanel({ repoPath }: GitPanelProps) {
     >
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, minHeight: 0 }}>
-          <ResizableSplitter direction="horizontal" defaultSize={220} minSize={160} maxSize={360}>
+          <ResizableSplitter direction="horizontal" defaultSize={220} minSize={160} maxSize={360} reverse={sidebarRight}>
             <BranchList
               branches={branches}
               currentBranch={status?.current || ''}

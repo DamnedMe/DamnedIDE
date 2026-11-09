@@ -6,16 +6,16 @@ import { TerminalDock } from '../terminal/TerminalDock'
 import { CompleteWorktreeDialog } from './CompleteWorktreeDialog'
 import { NewWorktreeDialog } from './NewWorktreeDialog'
 import { WorktreeCleanupDialog } from './WorktreeCleanupDialog'
-import { worktreeTone, toneColor, overviewSummary, pbiIdFromBranch, isPbiClosed, stripLabel, STACK_LABELS } from './worktree-cleanup'
+import { worktreeTone, toneColor, overviewSummary, pbiIdFromBranch, isPbiClosed, stripLabel, stripBadge, KIND_COLORS, STACK_LABELS, type StripKind } from './worktree-cleanup'
 import { FileTree } from '../editor/FileTree'
 import { FileFilterBar } from '../editor/CodeEditor'
 import { Modal } from '../layout/Modal'
-import { useWorktreeStore, useToastStore, useSettingsNavStore } from '../../store'
+import { useWorktreeStore, useToastStore, useSettingsNavStore, useSettingsStore } from '../../store'
 import { useAdoFolder } from '../../hooks/useAdoFolder'
 import { AdoRepoChooser } from '../ado/AdoRepoChooser'
 import { useI18n } from '../../i18n'
 import type { AdoWorkItem } from '../../types/ado'
-import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge, Eraser, DownloadCloud, Loader2, GitBranch, Bug } from '@/components/icons'
+import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge, Eraser, DownloadCloud, Loader2, GitBranch, Bug, Home, ClipboardCheck, GitCommitHorizontal, Check, type AppIcon } from '@/components/icons'
 import { WorktreeEntry } from '../../types/worktree'
 
 type CheckState = 'ok' | 'ko'
@@ -32,6 +32,11 @@ const shortRef = (branch: string) => branch.replace(/^refs\/heads\//, '')
 /** stack states where the parent link is stale: the branch can go back on develop */
 const isPromotable = (info?: WorktreeStackInfo) => !!info && (info.state === 'merged' || info.state === 'abandoned' || info.state === 'rewritten')
 
+/** Logo of each worktree kind: blurred inside the strip badge, plain in the header. */
+const KIND_ICONS: Record<StripKind, AppIcon> = {
+  main: Home, pbi: ClipboardCheck, bug: Bug, branch: GitBranch, detached: GitCommitHorizontal
+}
+
 const chip = (color: string, background: string): React.CSSProperties => ({
   flexShrink: 0, padding: '1px 8px', borderRadius: '10px', color, background,
   fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600, whiteSpace: 'nowrap'
@@ -45,6 +50,8 @@ const chainBtn: React.CSSProperties = {
 }
 
 export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) {
+  // Settings › Tema: the side menu docked on the right
+  const sidebarRight = useSettingsStore(s => s.settings.sidebarSide === 'right')
   const { entries, setEntries, selectedWorktree, isLoading, setLoading, selectWorktree } = useWorktreeStore()
   const t = useI18n()
   const [listCollapsed, setListCollapsed] = useState(false)
@@ -379,7 +386,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const hiddenCount = entries.filter(e => hiddenPaths.has(e.path)).length
   const stripEntries = showHidden ? entries : entries.filter(e => !hiddenPaths.has(e.path))
   const selectedEntry = entries.find(e => e.path === selectedWorktree) ?? null
-  // square badges and the strip grow with the IDE text scale
+  // round badges (the selected one a rounded square) and the strip grow with the IDE text scale
   const badgeSize = 'calc(30px * var(--ui-text-scale, 1) + 8px)'
 
   const stripBtn = (onClick: () => void, title: string, children: React.ReactNode, tipDesc: string, accent = false) => (
@@ -399,53 +406,74 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const Strip = (
     <aside aria-label="worktrees" style={{
       width: 'calc(30px * var(--ui-text-scale, 1) + 24px)', flexShrink: 0,
-      background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)',
+      background: 'var(--bg-sidebar)', [sidebarRight ? 'borderLeft' : 'borderRight']: '1px solid var(--border-color)',
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '10px 0 8px'
     }}>
-      {/* badges: they scroll when they do not fit and push the tools to the bottom */}
-      <div style={{ flex: 1, minHeight: 0, width: '100%', overflowY: 'auto', scrollbarWidth: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+      {/* badges: they scroll when they do not fit and push the tools to the bottom;
+          the padding keeps the corner bubbles and the ↑/↓ capsules inside the scroll box */}
+      <div className="wt-strip-list" style={{ flex: 1, minHeight: 0, width: '100%', overflowY: 'auto', scrollbarWidth: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'calc(6px * var(--ui-text-scale, 1) + 8px)', padding: '6px 0 10px' }}>
         {stripEntries.map((entry) => {
           const isSelected = selectedWorktree === entry.path
           const isHidden = hiddenPaths.has(entry.path)
-          const isBugfix = entry.branch.includes('bugfix')
           const ov = overview[entry.path]
-          const ahead = ov?.ahead ?? 0
-          const behind = ov?.behind ?? 0
-          const tone = toneColor(worktreeTone(ov))
-          // dirty / not in develop win over the bugfix and selection colors (bugfix keeps its border)
-          const labelColor = tone ?? (isBugfix ? 'var(--warning-color)' : (isSelected ? 'var(--accent-color)' : 'var(--text-muted)'))
-          const borderColor = isBugfix ? 'var(--warning-color)' : (isSelected ? 'var(--accent-color)' : 'var(--border-color)')
           const pbiId = pbiIdFromBranch(entry.branch)
           const item = pbiId !== null ? pbiItems[pbiId] : undefined
-          const tip = [item ? `#${item.id} ${item.title}` : '', overviewSummary(ov)].filter(Boolean).join(' · ')
+          const badge = stripBadge(entry.branch, isMainPath(entry.path), ov, item?.state)
+          const KindIcon = KIND_ICONS[badge.kind]
+          const tip = [item ? `#${item.id} ${item.title} (${item.state})` : '', overviewSummary(ov)].filter(Boolean).join(' · ')
           return (
-            <button key={entry.path}
+            <button key={entry.path} className={isSelected ? 'wt-badge is-selected' : 'wt-badge'}
               // selecting a dimmed (hidden) badge brings it back: a hidden worktree is never selected
               onClick={() => selectEntry(entry.path)}
               onContextMenu={(e) => { e.preventDefault(); setStripMenu({ x: e.clientX, y: e.clientY, entry }) }}
               title={entry.branch || entry.head.substring(0, 7)} data-tip-desc={tip || 'select this worktree'}
+              aria-current={isSelected ? 'true' : undefined}
               style={{
-                width: badgeSize, height: badgeSize, flexShrink: 0, padding: 0,
-                borderRadius: 'var(--radius-md)', border: `1.5px solid ${borderColor}`,
-                background: isSelected ? 'var(--accent-bg)' : 'transparent', opacity: isHidden ? 0.4 : 1,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
-                cursor: 'pointer', color: labelColor, fontFamily: 'var(--font-mono)',
-                fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontWeight: 700, lineHeight: 1.1,
-                transition: 'border-color 0.15s ease, color 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (!isSelected) { e.currentTarget.style.borderColor = 'var(--text-secondary)'; e.currentTarget.style.color = tone ?? 'var(--text-secondary)' }
-              }}
-              // always restore: a badge clicked while hovered keeps the hover colors otherwise
-              // (React does not re-apply an unchanged style value)
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = borderColor; e.currentTarget.style.color = labelColor }}>
-              {stripLabel(entry.branch, isMainPath(entry.path)) || entry.head.substring(0, 5)}
-              {(ahead > 0 || behind > 0) && (
-                <span style={{ display: 'flex', gap: '3px', fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontWeight: 600 }}>
-                  {ahead > 0 && <span style={{ color: 'var(--accent-color)' }}>↑{ahead}</span>}
-                  {behind > 0 && <span style={{ color: 'var(--warning-color)' }}>↓{behind}</span>}
+                position: 'relative', width: badgeSize, height: badgeSize, flexShrink: 0, padding: 0,
+                // a circle ringed in the kind color; the selected one turns into an accent rounded square
+                borderRadius: isSelected ? '32%' : '50%',
+                border: `2px ${isHidden ? 'dashed' : 'solid'} ${isSelected ? 'var(--accent-color)' : KIND_COLORS[badge.kind]}`,
+                background: isSelected ? 'var(--accent-bg)' : 'var(--bg-card)',
+                opacity: isHidden ? 0.4 : badge.done ? 0.5 : 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
+                fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontWeight: 700, lineHeight: 1,
+                transition: 'border-radius 0.15s ease, background 0.15s ease'
+              }}>
+              {/* at the outer strip edge: the badge sits 7.5px in ((24px - 8px - the strip's 1px border) / 2), plus its 2px border, minus 0.5px of subpixel slack (no horizontal scroll) */}
+              {isSelected && <span style={{ position: 'absolute', [sidebarRight ? 'right' : 'left']: '-9px', top: '25%', bottom: '25%', width: '3px', borderRadius: sidebarRight ? '3px 0 0 3px' : '0 3px 3px 0', background: 'var(--text-primary)' }} />}
+              {/* the kind logo, blurred behind the label; it follows the badge size, not the icon-size setting */}
+              <KindIcon style={{
+                position: 'absolute', inset: 0, margin: 'auto', width: '74%', height: '74%', zoom: 1,
+                color: KIND_COLORS[badge.kind], opacity: 0.42, filter: 'blur(1.2px)', pointerEvents: 'none'
+              }} />
+              <span style={{ position: 'relative' }}>{stripLabel(entry.branch, isMainPath(entry.path)) || entry.head.substring(0, 5)}</span>
+              {badge.dirty && (
+                <span style={{
+                  position: 'absolute', top: '-6px', right: '-6px', boxSizing: 'border-box',
+                  minWidth: 'calc(8px * var(--ui-text-scale, 1) + 8px)', height: 'calc(8px * var(--ui-text-scale, 1) + 8px)', padding: '0 3px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '999px',
+                  background: 'var(--error-color)', color: 'var(--text-inverse)', border: '2px solid var(--bg-sidebar)',
+                  fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontWeight: 800
+                }}>{badge.dirty}</span>
+              )}
+              {(badge.ahead > 0 || badge.behind > 0) && (
+                <span style={{
+                  position: 'absolute', left: '50%', bottom: '-10px', transform: 'translateX(-50%)',
+                  display: 'flex', alignItems: 'center', gap: '3px', padding: '0 4px', whiteSpace: 'nowrap',
+                  height: 'calc(8px * var(--ui-text-scale, 1) + 5px)', borderRadius: '999px',
+                  background: 'var(--bg-sidebar)', border: '1px solid var(--border-color)',
+                  fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontWeight: 700
+                }}>
+                  {badge.ahead > 0 && <span style={{ color: 'var(--success-color)' }}>↑{badge.ahead}</span>}
+                  {badge.behind > 0 && <span style={{ color: 'var(--info-color)' }}>↓{badge.behind}</span>}
                 </span>
               )}
+              {/* zoom 1: sized by the text scale like the badge, inside the 7.5px margin */}
+              {badge.done && <Check strokeWidth={4} style={{
+                position: 'absolute', right: '-6px', bottom: '-6px', zoom: 1, color: 'var(--success-color)',
+                width: 'calc(6px * var(--ui-text-scale, 1) + 4px)', height: 'calc(6px * var(--ui-text-scale, 1) + 4px)'
+              }} />}
             </button>
           )
         })}
@@ -485,11 +513,12 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   /** Main column of the selected worktree: header, stack row, changes|files column, diff and terminal. */
   const renderMain = (entry: WorktreeEntry) => ({ list, diff, count, conflicts, statusError, syncButtons }: WorktreeChangesParts) => {
     const branch = shortRef(entry.branch)
-    const isBugfix = entry.branch.includes('bugfix')
     const ov = overview[entry.path]
     const tone = toneColor(worktreeTone(ov))
     const pbiId = pbiIdFromBranch(entry.branch)
     const item = pbiId !== null ? pbiItems[pbiId] : undefined
+    const kind = stripBadge(entry.branch, isMainPath(entry.path), ov, item?.state).kind
+    const KindIcon = KIND_ICONS[kind]
     const closed = isPbiClosed(item?.state)
     const info = stack[branch]
     const meta = info ? STACK_LABELS[info.state] : null
@@ -507,12 +536,13 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: 'calc(14px * var(--ui-text-scale, 1) + 10px)', height: 'calc(14px * var(--ui-text-scale, 1) + 10px)', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
-            {listCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+            {/* the arrow points where the column goes: on the right it closes towards the right */}
+            {listCollapsed !== sidebarRight ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
           </button>
           {/* a long branch truncates (after the PBI title) so pull/push/Completa PR stay on screen */}
           <span title={entry.path} data-tip-desc={overviewSummary(ov) || 'worktree folder'}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', fontWeight: 700, fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: tone ?? 'var(--text-primary)' }}>
-            {isBugfix ? <Bug size={14} style={{ color: 'var(--warning-color)', flexShrink: 0 }} /> : <GitBranch size={14} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />}
+            <KindIcon size={14} style={{ color: KIND_COLORS[kind], flexShrink: 0 }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{branch || entry.head.substring(0, 7)}</span>
           </span>
           {item ? (
@@ -617,7 +647,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
           </div>
         )}
         <div style={{ flex: 1, minHeight: 0 }}>
-          <ResizableSplitter direction="horizontal" defaultSize={300} minSize={180} maxSize={600} collapsed={listCollapsed} onCollapse={() => setListCollapsed(true)}>
+          <ResizableSplitter direction="horizontal" defaultSize={300} minSize={180} maxSize={600} collapsed={listCollapsed} onCollapse={() => setListCollapsed(true)} reverse={sidebarRight}>
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
               <div style={{ display: 'flex', gap: '2px', padding: '6px 8px 0', flexShrink: 0 }}>
                 {/* the status error and the conflicts stay visible from the File tab */}
@@ -656,7 +686,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
 
   return (
     <PanelContainer>
-      <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+      <div style={{ height: '100%', display: 'flex', flexDirection: sidebarRight ? 'row-reverse' : 'row', overflow: 'hidden' }}>
         {Strip}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* the folder's ADO repository is not clear: ask here, in view (PBI titles and PRs need it);
@@ -694,7 +724,8 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
           <>
             <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setStripMenu(null)} />
             <div style={{
-              position: 'fixed', left: stripMenu.x, top: stripMenu.y, zIndex: 200,
+              // clamped: with the side menu on the right a right-click lands at the window edge
+              position: 'fixed', left: Math.min(stripMenu.x, window.innerWidth - 190), top: stripMenu.y, zIndex: 200,
               background: 'var(--bg-card)', border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '180px',
               boxShadow: 'var(--shadow-lg)', animation: 'fadeIn 0.1s ease'

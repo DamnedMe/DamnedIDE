@@ -2,7 +2,7 @@
 // Esegui: node --experimental-strip-types scripts/xlsx-export.check.ts
 import assert from 'node:assert/strict'
 import { inflateRawSync } from 'node:zlib'
-import { buildXlsx, columnLetter, sanitizeSheetName } from '../electron/services/export/xlsx.service.ts'
+import { buildXlsx, columnLetter, sanitizeSheetName, uniqueSheetNames } from '../electron/services/export/xlsx.service.ts'
 
 // ─── minimal ZIP reader (only what this writer produces) ─────────────────────
 function readZip(buf: Buffer): Map<string, Buffer> {
@@ -40,14 +40,14 @@ assert.equal(columnLetter(701), 'ZZ')
 assert.equal(sanitizeSheetName('bad/name[with]:chars'), 'bad_name_with__chars')
 assert.equal(sanitizeSheetName('x'.repeat(50)).length, 31)
 
-const xlsx = buildXlsx({
+const xlsx = buildXlsx([{
   name: 'Massive Rows',
   columns: ['Id', 'Code', 'Amount', 'IsActive', 'Notes'],
   rows: [
     [1, 'ROW-1 & <2>', 17.31, true, null],
     [2, 'ROW-2 "quoted"', -5, false, 'ok']
   ]
-})
+}])
 
 const parts = readZip(xlsx)
 for (const required of ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels', 'xl/styles.xml', 'xl/worksheets/sheet1.xml']) {
@@ -70,5 +70,18 @@ assert.doesNotMatch(sheet, /r="E2"/) // null cell is omitted
 // XML escaping
 assert.match(sheet, /ROW-1 &amp; &lt;2&gt;/)
 assert.match(sheet, /ROW-2 &quot;quoted&quot;/)
+
+// ─── several result sets: one sheet each, names unique ignoring case ─────────
+assert.deepEqual(uniqueSheetNames(['Orders', 'orders', 'Orders', 'x'.repeat(40)]), ['Orders', 'orders (2)', 'Orders (3)', 'x'.repeat(31)])
+assert.equal(uniqueSheetNames(['x'.repeat(40), 'x'.repeat(40)])[1], `${'x'.repeat(27)} (2)`, 'the suffix fits in 31 chars')
+const multi = readZip(buildXlsx([
+  { name: 'Orders', columns: ['Id'], rows: [[10]] },
+  { name: 'Orders', columns: ['Name'], rows: [['c1']] }
+]))
+const multiBook = multi.get('xl/workbook.xml')!.toString('utf8')
+assert.match(multiBook, /<sheet name="Orders" sheetId="1" r:id="rId1"\/><sheet name="Orders \(2\)" sheetId="2" r:id="rId2"\/>/)
+assert.match(multi.get('xl/_rels/workbook.xml.rels')!.toString('utf8'), /Id="rId2"[^>]*Target="worksheets\/sheet2.xml"[\s\S]*Id="rId3"[^>]*Target="styles.xml"/)
+assert.match(multi.get('[Content_Types].xml')!.toString('utf8'), /\/xl\/worksheets\/sheet2.xml/)
+assert.match(multi.get('xl/worksheets/sheet2.xml')!.toString('utf8'), /c1/)
 
 console.log('ok — xlsx export')

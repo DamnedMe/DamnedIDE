@@ -1,7 +1,7 @@
 import { deflateRawSync } from 'zlib'
 
 // Minimal, dependency-free XLSX writer (Office Open XML = a ZIP of XML parts).
-// Only what a query result needs: one sheet, inline strings, numbers, booleans,
+// Only what query results need: one sheet per result set, inline strings, numbers, booleans,
 // a bold header row, a frozen header and an autofilter. Written in the main
 // process, so the renderer stays free of heavy spreadsheet libraries.
 
@@ -77,10 +77,26 @@ function sheetXml(sheet: XlsxSheet): string {
 </worksheet>`
 }
 
-function workbookXml(sheetName: string): string {
+/** Sanitized sheet names, unique ignoring case as Excel requires: `Orders`, `Orders (2)`… */
+export function uniqueSheetNames(names: string[]): string[] {
+  const used = new Set<string>()
+  return names.map(raw => {
+    const base = sanitizeSheetName(raw)
+    let name = base
+    for (let n = 2; used.has(name.toLowerCase()); n++) {
+      const suffix = ` (${n})`
+      name = `${base.slice(0, 31 - suffix.length)}${suffix}`
+    }
+    used.add(name.toLowerCase())
+    return name
+  })
+}
+
+function workbookXml(sheetNames: string[]): string {
+  const sheets = sheetNames.map((name, i) => `<sheet name="${escapeXml(name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')
   return `${XML_HEADER}
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheets><sheet name="${escapeXml(sheetName)}" sheetId="1" r:id="rId1"/></sheets>
+<sheets>${sheets}</sheets>
 </workbook>`
 }
 
@@ -96,12 +112,12 @@ const STYLES_XML = `${XML_HEADER}
 </cellXfs>
 </styleSheet>`
 
-const CONTENT_TYPES = `${XML_HEADER}
+const contentTypes = (sheetCount: number) => `${XML_HEADER}
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+${Array.from({ length: sheetCount }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('\n')}
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 </Types>`
 
@@ -110,10 +126,10 @@ const ROOT_RELS = `${XML_HEADER}
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
 </Relationships>`
 
-const WORKBOOK_RELS = `${XML_HEADER}
+const workbookRels = (sheetCount: number) => `${XML_HEADER}
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+${Array.from({ length: sheetCount }, (_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('\n')}
+<Relationship Id="rId${sheetCount + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`
 
 // ─── ZIP container ───────────────────────────────────────────────────────────
@@ -204,14 +220,15 @@ function zip(entries: ZipEntry[]): Buffer {
   return Buffer.concat([...locals, centralBuf, end])
 }
 
-export function buildXlsx(sheet: XlsxSheet): Buffer {
-  const name = sanitizeSheetName(sheet.name)
+export function buildXlsx(sheets: XlsxSheet[]): Buffer {
+  const list = sheets.length > 0 ? sheets : [{ name: 'Results', columns: [], rows: [] }]
+  const names = uniqueSheetNames(list.map(sheet => sheet.name))
   return zip([
-    { name: '[Content_Types].xml', data: Buffer.from(CONTENT_TYPES, 'utf8') },
+    { name: '[Content_Types].xml', data: Buffer.from(contentTypes(list.length), 'utf8') },
     { name: '_rels/.rels', data: Buffer.from(ROOT_RELS, 'utf8') },
-    { name: 'xl/workbook.xml', data: Buffer.from(workbookXml(name), 'utf8') },
-    { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(WORKBOOK_RELS, 'utf8') },
+    { name: 'xl/workbook.xml', data: Buffer.from(workbookXml(names), 'utf8') },
+    { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(workbookRels(list.length), 'utf8') },
     { name: 'xl/styles.xml', data: Buffer.from(STYLES_XML, 'utf8') },
-    { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(sheetXml({ ...sheet, name }), 'utf8') }
+    ...list.map((sheet, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: Buffer.from(sheetXml({ ...sheet, name: names[i] }), 'utf8') }))
   ])
 }

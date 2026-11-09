@@ -201,6 +201,8 @@ export function formatSqlDate(d: Date): string {
 /** SQL literal for a cell value given its sniffed column type. */
 export function sqlLiteral(col: string, v: unknown, colTypes: Record<string, string>): string {
   if (v === null || v === undefined) return 'NULL'
+  // T-SQL has no true/false literal: a bit is 1/0
+  if (typeof v === 'boolean') return v ? '1' : '0'
   if (colTypes[col] === 'date') {
     const d = v instanceof Date ? v : parseDateText(String(v))
     if (d) return `'${formatSqlDate(d)}'`
@@ -231,42 +233,7 @@ function quoteColumn(column: string): string {
 
 export { quoteTable, quoteColumn }
 
-/**
- * UPDATE <table> SET [col] = <literal> WHERE [pk1] = <v1> AND [pk2] = <v2>
- * built from the row's PK values. Returns null when the table or PKs are missing.
- */
-export function buildUpdateStatement(
-  table: string,
-  columns: string[],
-  row: Record<string, unknown>,
-  col: string,
-  newValue: unknown,
-  colTypes: Record<string, string>,
-  primaryKeys: string[]
-): string | null {
-  if (!table || primaryKeys.length === 0 || !columns.includes(col)) return null
-  const pkPreds = primaryKeys
-    .filter(pk => columns.includes(pk))
-    .map(pk => `${quoteColumn(pk)} = ${sqlLiteral(pk, row[pk], colTypes)}`)
-  if (pkPreds.length === 0) return null
-  return `UPDATE ${quoteTable(table)}\nSET ${quoteColumn(col)} = ${sqlLiteral(col, newValue, colTypes)}\nWHERE ${pkPreds.join(' AND ')}`
-}
-
-/** DELETE FROM <table> WHERE [pk1] = <v1> AND ... — null when not applicable. */
-export function buildDeleteStatement(
-  table: string,
-  columns: string[],
-  row: Record<string, unknown>,
-  colTypes: Record<string, string>,
-  primaryKeys: string[]
-): string | null {
-  if (!table || primaryKeys.length === 0) return null
-  const pkPreds = primaryKeys
-    .filter(pk => columns.includes(pk))
-    .map(pk => `${quoteColumn(pk)} = ${sqlLiteral(pk, row[pk], colTypes)}`)
-  if (pkPreds.length === 0) return null
-  return `DELETE FROM ${quoteTable(table)}\nWHERE ${pkPreds.join(' AND ')}`
-}
+// UPDATE/DELETE of a grid row: src/shared/sqlResultSource.ts (table and key per result set)
 
 // ─── Insert row helpers ─────────────────────────────────────────────────────
 

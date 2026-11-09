@@ -10,6 +10,7 @@ import { BrowserWindow } from 'electron'
 import { resolveCommand } from '../process/resolve-command'
 import { connectPoolWithRetry, normalizeSqlConnectionConfig, parseSqlServerTarget, sqlTimeoutMilliseconds, validatePlatformSqlConfig } from '../../../src/shared/sqlConnection'
 import { buildBackupStatement, buildFileListStatement, buildRestoreStatement, dataTierArgs, type BackupFileInfo, type BackupOptions, type DataTierAction } from '../../../src/shared/sqlBackup'
+import { buildResultSource, mapResultSets, type SqlDescribedColumn, type SqlResultSource, type SqlResultStatement } from '../../../src/shared/sqlResultSource'
 
 export type SqlAuthType =
   | 'windows'
@@ -54,6 +55,8 @@ export interface SqlQueryResult {
   foreignKeys?: string[]
   foreignKeyInfo?: SqlForeignKeyInfo[]
   baseTableColumns?: string[]
+  /** table, columns and key a grid edit writes to, resolved from this result set's own statement */
+  source?: SqlResultSource
 }
 
 export interface SqlExecutionResult {
@@ -777,6 +780,7 @@ export class SqlService {
         .filter(rs => rs !== null && rs !== undefined) as RawRecordset[]
       let truncated = false
       const results: SqlQueryResult[] = []
+      const statements = mapResultSets(query, recordsets.length)
       for (let i = 0; i < recordsets.length; i++) {
         let rows = recordsets[i] as Record<string, unknown>[]
         if (rows.length > maxRows) {
@@ -784,8 +788,12 @@ export class SqlService {
           truncated = true
         }
         const declaredColumns = Object.keys(recordsets[i].columns || {})
-        results.push(await this.toQueryResult(connectionId, pool, query, rows, i === 0, database, declaredColumns))
+        const mapped = statements[i]
+        results.push(await this.toQueryResult(connectionId, pool, 'statement' in mapped ? mapped.statement : query, rows, i === 0, database, declaredColumns))
       }
+      await Promise.all(results.map(async (result, i) => {
+        result.source = await this.describeResultSource(pool, statements[i], result.columns, database, i)
+      }))
       return {
         queryId: qid,
         results,
@@ -932,6 +940,36 @@ export class SqlService {
       try { await scoped.close() } catch { /* ignore */ }
     }
     return result
+  }
+
+  // SQL Server describes the statement that produced the result set: source
+  // table/column of every output column and the key it needs (browse mode adds
+  // missing key columns as hidden). The db-qualified system procedure runs in
+  // that database without touching the pool's session context.
+  private async describeResultSource(
+    pool: ConnectionPool,
+    mapped: SqlResultStatement | { blocked: string },
+    columns: string[],
+    database: string | undefined,
+    index: number
+  ): Promise<SqlResultSource> {
+    if ('blocked' in mapped) return { blocked: mapped.blocked }
+    // ponytail: one describe per result set, capped; raise the cap if long batches need edits
+    if (index >= 20) return { blocked: 'Modifica non disponibile oltre il 20° result set del batch.' }
+    const db = mapped.database || database
+    const procedure = db ? `${dbRef(db)}.sys.sp_describe_first_result_set` : 'sys.sp_describe_first_result_set'
+    try {
+      const described = await pool.request()
+        .input('tsql', mapped.describe)
+        .query(`EXEC ${procedure} @tsql = @tsql, @params = NULL, @browse_information_mode = 1`)
+      const base = extractTables(mapped.statement)[0]
+      return buildResultSource(described.recordset as SqlDescribedColumn[], columns, {
+        baseTable: base ? `${base.schema}.${base.name}` : undefined,
+        database: db
+      })
+    } catch (e) {
+      return { blocked: `Modifica non disponibile: SQL Server non ha descritto il result set (${(e as Error).message}).` }
+    }
   }
 
   async listDatabases(connectionId: string): Promise<string[]> {

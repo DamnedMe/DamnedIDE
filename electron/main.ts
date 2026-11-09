@@ -22,7 +22,7 @@ import { UpdateService } from './services/update/update.service'
 import { watchRoot, unwatchRoot, closeAllWatchers } from './services/watch/watch.service'
 import { openTargetFromArgv, resolveOpenTarget, type OpenTarget } from './services/open/open-target'
 import { findGitTree, launchGitTree, GITTREE_DOWNLOAD_URL } from './services/gitclient/gittree'
-import { buildXlsx } from './services/export/xlsx.service'
+import { buildXlsx, type XlsxSheet } from './services/export/xlsx.service'
 import { RemoteService } from './services/remote/remote.service'
 import { loadSharedStorage, setSharedItem } from './services/storage/shared-storage'
 import type { RemoteSqlConnection, RemoteScope, WorkspaceSnapshot } from '../src/shared/remote/protocol'
@@ -536,7 +536,7 @@ function registerIpcHandlers(
   })
 
   // The SQL results grid exports a real .xlsx (written here, no renderer library)
-  ipcMain.handle('export:xlsx', async (_e, defaultName: string, sheetName: string, columns: string[], rows: (string | number | boolean | null)[][]) => {
+  ipcMain.handle('export:xlsx', async (_e, defaultName: string, sheets: XlsxSheet[]) => {
     const safeName = (defaultName || 'query_results.xlsx').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/[. ]+$/, '') || 'query_results.xlsx'
     const result = await dialog.showSaveDialog(mainWindow!, {
       title: 'Esporta in Excel',
@@ -545,7 +545,7 @@ function registerIpcHandlers(
     })
     if (result.canceled || !result.filePath) return null
     const file = result.filePath.toLocaleLowerCase().endsWith('.xlsx') ? result.filePath : `${result.filePath}.xlsx`
-    await writeFile(file, buildXlsx({ name: sheetName || 'Results', columns: columns || [], rows: rows || [] }))
+    await writeFile(file, buildXlsx((sheets || []).map(sheet => ({ name: sheet.name || 'Results', columns: sheet.columns || [], rows: sheet.rows || [] }))))
     return file
   })
 

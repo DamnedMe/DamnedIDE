@@ -12,7 +12,8 @@ import { Plus, PanelLeftClose, PanelLeftOpen, Loader2, Check, XCircle, Database 
 import { SqlColumnInfo, SqlConnection, SqlConnectionConfig, SqlExecutionResult, SqlForeignKeyInfo, SqlGridQueryState, SqlHistoryEntry, SqlQuerySource, SqlTestResult, SqlWorkspaceState } from '../../types/sql'
 import { connectionLabel, quoteColumn, quoteTable, sqlLiteral as sqlLiteralForType } from './sqlForm'
 import { Modal } from '../layout/Modal'
-import { appendJoinedSelectColumns, appendRelatedJoin, buildExplicitSelect, extractSqlBaseTable, getSqlResultTableName } from './sqlQueryUtils'
+import { appendJoinedSelectColumns, appendRelatedJoin, buildExplicitSelect, extractSqlBaseTable } from './sqlQueryUtils'
+import { isReadOnlyBatch } from '../../shared/sqlResultSource'
 import { SqlWorkspaceDrawer } from './SqlWorkspaceDrawer'
 import { addHistoryEntry, EMPTY_SQL_WORKSPACE, favoriteHistoryEntry, updateWorkspaceTabs } from './sqlWorkspace'
 import { buildGridQuery, canRewriteGridQuery } from './sqlGridQuery'
@@ -419,7 +420,7 @@ export function SqlPanel() {
     try {
       const exec = await trackOperation(`Executing ${verb} on ${database || 'server'}`, () =>
         window.electronAPI.sql.query(connectionId, queryWithDb, queryId, undefined, database))
-      if (targetTabId) setTabExecutions(current => ({ ...current, [targetTabId]: exec }))
+      if (targetTabId) setTabExecutions(current => ({ ...current, [targetTabId]: { ...exec, query } }))
       if (targetTabId) {
         const finishedAt = Date.now()
         const affected = exec.rowsAffected.reduce((sum, value) => sum + Math.max(0, value), 0)
@@ -477,10 +478,21 @@ export function SqlPanel() {
     }
   }
 
-  // Re-runs the current editor query (used to refresh the grid after an edit).
-  const refreshGrid = () => {
-    const q = queryEditorRef.current?.getQuery() || ''
-    if (q.trim()) void executeSql(q)
+  // Runs a grid edit/delete/insert, then refreshes the grid by re-running the
+  // text that produced it (not the editor, which may hold other statements).
+  // A batch that also changes data is not re-run: the grid stays as it was.
+  const runGridMutation = async (statement: string): Promise<boolean> => {
+    const shown = execution
+    const tabId = activeQueryTabId
+    const ok = await executeSql(statement)
+    if (!ok || !shown) return ok
+    if (shown.query && isReadOnlyBatch(shown.query)) {
+      void executeSql(shown.query)
+    } else if (tabId) {
+      setTabExecutions(current => ({ ...current, [tabId]: shown }))
+      showToast('modifica salvata · la query contiene altre modifiche ai dati: rieseguila per aggiornare la griglia', 'info')
+    }
+    return ok
   }
 
   const runQuery = (query: string, context?: QueryExecutionContext, source: SqlQuerySource = 'context-menu') => {
@@ -512,16 +524,10 @@ export function SqlPanel() {
   const activeConn = connections.find(c => c.id === activeConnection) || null
   const activeDb = activeConnection ? (activeDatabases[activeConnection] || activeConn?.database || '') : ''
 
-  // Base table of the current query, resolved at click time for "export as SQL INSERT".
-  const getResultTableName = (): string | undefined => {
-    const q = queryEditorRef.current?.getQuery() || ''
-    return getSqlResultTableName(q)
-  }
-
   // Real schema of the result's base table (accurate types, nullability, PK/FK):
   // used by the insert row for typed editors and the FK existence check.
   useEffect(() => {
-    const table = execution ? getResultTableName() : undefined
+    const table = execution?.results.length === 1 ? execution.results[0].source?.table : undefined
     if (!table || !activeConnection) {
       setResultColumnInfo(null)
       return
@@ -709,7 +715,6 @@ export function SqlPanel() {
                 >
                   <ResultViewer
                     execution={execution}
-                    getResultTableName={getResultTableName}
                     onJoinRequest={handleJoinRequest}
                     onFilterRequest={handleFilterRequest}
                     onClear={() => {
@@ -720,12 +725,8 @@ export function SqlPanel() {
                         return next
                       })
                     }}
-                    onExecuteSql={async (q) => {
-                      const ok = await executeSql(q)
-                      if (ok) refreshGrid()
-                      return ok
-                    }}
-                    onDeleteRequest={(query) => { void executeSql(query).then(ok => { if (ok) refreshGrid() }) }}
+                    onExecuteSql={runGridMutation}
+                    onDeleteRequest={(query) => { void runGridMutation(query) }}
                     columnInfo={resultColumnInfo || undefined}
                     onCheckExists={handleCheckExists}
                     gridQueryState={activeGridState}

@@ -199,8 +199,3 @@ export function appendRelatedJoin(query: string, fk: SqlForeignKeyInfo): { query
   if (semicolon) body = body.slice(0, -1).trimEnd()
   return { query: body + join + (semicolon ? ';\n' : '\n'), status: 'added', alias, targetTable: targetName }
 }
-
-export function getSqlResultTableName(query: string): string | undefined {
-  const base = extractSqlBaseTable(query)
-  return base ? `${base.schema}.${base.table}` : undefined
-}

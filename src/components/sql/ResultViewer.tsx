@@ -1,7 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SqlColumnInfo, SqlExecutionResult, SqlForeignKeyInfo, SqlQueryResult } from '../../types/sql'
-import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown, Plus, Sparkles, CalendarDays, ShieldCheck, Loader2, ClipboardCheck, Copy, ChevronDown, FileSpreadsheet } from '@/components/icons'
-import { buildDeleteStatement, buildInsertEntries, buildInsertStatement, buildUpdateStatement, formatGridDate, newGuid, parseEditedValue } from './sqlForm'
+import { Table2, Download, ZoomIn, ZoomOut, KeyRound, Link2, Pin, X, Timer, AlertTriangle, FileCode2, Trash2, Check, Pencil, Filter, ArrowUp, ArrowDown, Plus, Sparkles, CalendarDays, ShieldCheck, Loader2, ClipboardCheck, Copy, ChevronDown, FileSpreadsheet, FileText } from '@/components/icons'
+import { buildInsertEntries, buildInsertStatement, newGuid, parseEditedValue, sqlLiteral } from './sqlForm'
+import { buildCellUpdate, buildRowDelete, canInsertInto, resolveColumnEdit, resolveRowTarget, type SqlEditResolution } from '../../shared/sqlResultSource'
+import { columnText, ExportSet, formatCell, toCsv, toSqlScript, toTextTables, xlsxRows } from './sqlExport'
 import { DateTimePicker } from './DateTimePicker'
 import { calculateColumnMetrics, calculateVisibleRange } from './sqlGridUtils'
 import { SqlGridFilter, SqlGridFilterOperator, SqlGridQueryState } from '../../types/sql'
@@ -13,7 +15,6 @@ type CellKind = 'guid' | 'date' | 'boolean' | 'number' | 'string'
 
 interface ResultViewerProps {
   execution: SqlExecutionResult | null
-  getResultTableName?: () => string | undefined
   onJoinRequest?: (fk: SqlForeignKeyInfo) => void
   onFilterRequest?: (col: string, value: unknown) => void
   onClear?: () => void
@@ -40,40 +41,67 @@ const ROW_H = 26
 const ROW_WINDOW_BUFFER = 8
 const ROW_WINDOW_GUARD = 2
 
-function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
-  const esc = (v: unknown) => {
-    const s = v === null || v === undefined ? '' : String(v)
-    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-    return s
-  }
-  const lines = [columns.map(esc).join(',')]
-  for (const row of rows) lines.push(columns.map((c) => esc(row[c])).join(','))
-  return lines.join('\r\n')
+type ExportFormat = 'csv' | 'sql' | 'xlsx' | 'text'
+
+function downloadText(name: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
-function toSqlInserts(table: string, columns: string[], rows: Record<string, unknown>[], colTypes: Record<string, string>): string {
-  const lit = (col: string, v: unknown): string => {
-    if (v === null || v === undefined) return 'NULL'
-    if (colTypes[col] === 'date' && v instanceof Date) {
-      const p = (n: number) => String(n).padStart(2, '0')
-      return `'${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())} ${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}'`
+/** One export for one or many result sets, with the existing formats and writers. */
+async function exportSets(format: ExportFormat, sets: ExportSet[], notify: (message: string, type?: 'success' | 'error' | 'info') => void) {
+  if (sets.length === 0) return
+  const rowCount = sets.reduce((n, set) => n + set.rows.length, 0)
+  const many = sets.length > 1
+  if (format === 'csv') {
+    // CSV holds one table: one file per result set
+    sets.forEach((set, i) => downloadText(many ? `query_results_${i + 1}.csv` : 'query_results.csv', toCsv(set.columns, set.rows), 'text/csv;charset=utf-8'))
+  } else if (format === 'sql') {
+    const script = sets.map(set => `${many ? `-- ${set.title}\n` : ''}${toSqlScript(set)}`).join('\n\n')
+    downloadText('query_results.sql', script, 'text/plain;charset=utf-8')
+  } else if (format === 'text') {
+    window.electronAPI.clipboard.write(toTextTables(sets))
+    notify(`tabella di testo copiata negli appunti: ${many ? `${sets.length} result set, ` : ''}${rowCount} righe`)
+  } else {
+    try {
+      const sheets = sets.map(set => ({ name: set.table?.split('.').pop() || (many ? set.title : 'Results'), columns: set.columns, rows: xlsxRows(set) }))
+      const saved = await window.electronAPI.export.xlsx('query_results.xlsx', sheets)
+      if (saved) notify(`${many ? `${sets.length} result set, ` : ''}${rowCount} righe esportate in .xlsx`)
+    } catch (e) {
+      notify((e as Error).message || 'esportazione xlsx fallita', 'error')
     }
-    if (colTypes[col] === 'number' || colTypes[col] === 'bigint' || colTypes[col] === 'boolean') return String(v)
-    return `N'${String(v).replace(/'/g, "''")}'`
   }
-  const names = columns.map(c => `[${c}]`).join(', ')
-  const values = rows.map(r => `(${columns.map(c => lit(c, r[c])).join(', ')})`)
-  const chunks: string[] = []
-  for (let i = 0; i < values.length; i += 50) {
-    chunks.push(`INSERT INTO ${table} (${names})\nVALUES\n${values.slice(i, i + 50).join(',\n')};`)
-  }
-  return chunks.join('\n\n')
 }
 
-function formatDate(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  const ms = String(d.getMilliseconds()).padStart(3, '0') + '00'
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${p(d.getFullYear())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${ms}`
+function exportMenuItem(label: string, icon: React.ReactNode, action: () => void, testId: string): React.ReactNode {
+  return (
+    <div role="menuitem" data-testid={testId} onClick={action}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px', cursor: 'pointer',
+        color: 'var(--text-primary)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+      {icon}
+      {label}
+    </div>
+  )
+}
+
+/** The export formats, shared by the single and the multi result set menus. */
+function exportFormatItems(run: (format: ExportFormat) => void, many = false): React.ReactNode {
+  return (
+    <>
+      {exportMenuItem(many ? 'CSV (un file per result set)' : 'CSV (.csv)', <Table2 size={11} />, () => run('csv'), 'export-file-csv')}
+      {exportMenuItem('SQL INSERT (.sql)', <FileCode2 size={11} />, () => run('sql'), 'export-file-sql')}
+      {exportMenuItem(many ? 'Excel (.xlsx, un foglio per result set)' : 'Excel (.xlsx)', <FileSpreadsheet size={11} />, () => run('xlsx'), 'export-file-xlsx')}
+      {exportMenuItem('Testo formattato negli appunti', <FileText size={11} />, () => run('text'), 'export-text-clipboard')}
+    </>
+  )
 }
 
 interface VisibleResultColumn {
@@ -98,7 +126,11 @@ interface ResultGridRowProps {
   scrollLeft: number
   joinStartIndex: number
   editing: { row: number; col: string; value: string } | null
-  editable: boolean
+  /** columns whose edit resolves to a table and key */
+  editableColumns: Set<string>
+  /** the clicked cell's column, on its row only */
+  activeColumn: string | null
+  selectedColumn: string | null
   savingEdit: boolean
   onFilterRequest?: (col: string, value: unknown) => void
   onJoinRequest?: (fk: SqlForeignKeyInfo) => void
@@ -116,8 +148,8 @@ interface ResultGridRowProps {
 
 const ResultGridRow = memo(function ResultGridRow({
   index, row, rowHeight, totalWidth, selected, visibleColumns, primaryKeys, foreignKeys,
-  foreignKeyInfo, pinned, pinnedLeft, scrollLeft, joinStartIndex, editing, editable,
-  savingEdit, onFilterRequest, onJoinRequest, formatValue, isDoubleClick, onRowClick,
+  foreignKeyInfo, pinned, pinnedLeft, scrollLeft, joinStartIndex, editing, editableColumns,
+  activeColumn, selectedColumn, savingEdit, onFilterRequest, onJoinRequest, formatValue, isDoubleClick, onRowClick,
   onRowContextMenu, onStartEdit, onEditValueChange, onCommitEdit, onCancelEdit,
   cellKind, onOpenDatePicker
 }: ResultGridRowProps) {
@@ -145,6 +177,8 @@ const ResultGridRow = memo(function ResultGridRow({
         const clickable = (isPk && !!onFilterRequest) || (!!fk && !!onJoinRequest)
         const isPinned = pinned.includes(col)
         const isEditingCell = editing?.row === index && editing.col === col
+        const editable = editableColumns.has(col)
+        const inSelectedColumn = selectedColumn === col
         return (
           <div
             key={col}
@@ -165,22 +199,28 @@ const ResultGridRow = memo(function ResultGridRow({
                     onJoinRequest(fk)
                   }
                 : undefined}
+            data-active-cell={activeColumn === col ? 'true' : undefined}
             onDoubleClick={(event) => {
               event.stopPropagation()
-              if (editable && !savingEdit) onStartEdit(index, col, raw == null ? '' : String(raw))
+              // a column that cannot be edited explains why in onStartEdit
+              if (!savingEdit) onStartEdit(index, col, raw == null ? '' : String(raw))
             }}
             title={isPk && onFilterRequest
               ? (editable ? 'double-click to edit · ' : '') + `click: filter by ${col} = ${raw === null ? 'NULL' : String(raw)}`
               : fk && onJoinRequest
                 ? (editable ? 'double-click to edit · ' : '') + `click: left join ${fk.referencedTable} on ${fk.referencedColumn}`
                 : editable ? 'double-click to edit' : undefined}
-            data-tip-desc="primary key: click to filter · foreign key: click to join"
+            data-tip-desc="primary key: click to filter · foreign key: click to join · Alt+click: select the column · Ctrl+C copies the selection"
             style={{
               padding: '0 8px', height: rowHeight, display: 'flex', alignItems: 'center',
               borderLeft: ci === joinStartIndex ? JOIN_DIVIDER : undefined,
               borderRight: isPinned ? '1px solid var(--border-color)' : undefined,
+              outline: activeColumn === col ? '1px solid var(--accent-color)' : undefined,
+              outlineOffset: -1,
               color: isNull ? 'var(--text-secondary)' : 'var(--text-primary)',
-              background: isNull
+              background: inSelectedColumn
+                ? 'var(--accent-bg)'
+                : isNull
                 ? 'rgba(127, 140, 155, 0.18)'
                 : isPinned ? (accent?.bg || 'var(--bg-card)') : (accent?.bg || 'transparent'),
               fontStyle: isNull ? 'italic' : undefined,
@@ -380,7 +420,7 @@ function rowMenuItem(label: string, icon: React.ReactNode, action: () => void, d
   return (
     <div onClick={action}
       style={{
-        display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px',
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', whiteSpace: 'nowrap',
         fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', cursor: 'pointer',
         color: danger ? 'var(--error-color)' : 'var(--text-primary)'
       }}
@@ -451,9 +491,17 @@ const tinyGridButton: React.CSSProperties = {
   color: 'var(--text-secondary)', borderRadius: 3, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--ui-text-scale, 1))'
 }
 
-export function ResultViewer({ execution, getResultTableName, onJoinRequest, onFilterRequest, onClear, onExecuteSql, onDeleteRequest, columnInfo, onCheckExists, gridQueryState, gridQuerySupported, onGridQueryStateChange }: ResultViewerProps) {
+export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClear, onExecuteSql, onDeleteRequest, columnInfo, onCheckExists, gridQueryState, gridQuerySupported, onGridQueryStateChange }: ResultViewerProps) {
   const [activeSet, setActiveSet] = useState(0)
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
+  // cell / column selection for Ctrl+C: a plain click marks the cell, Alt+click the column
+  const [activeCell, setActiveCell] = useState<{ row: number; col: string } | null>(null)
+  const [selectedColumn, setSelectedColumn] = useState<string | null>(null)
+  const activeCellRef = useRef(activeCell)
+  activeCellRef.current = activeCell
+  // multi result set export: the menu and the sets chosen in it
+  const [multiExport, setMultiExport] = useState<{ x: number; y: number } | null>(null)
+  const [unchosenSets, setUnchosenSets] = useState<Set<number>>(new Set())
   const [colWidths, setColWidths] = useState<Record<string, number>>({})
   const [pinned, setPinned] = useState<string[]>([])
   const [exportMenu, setExportMenu] = useState<{ x: number; y: number } | null>(null)
@@ -462,7 +510,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const [viewportW, setViewportW] = useState(0)
   const [rowWindow, setRowWindow] = useState({ start: 0, end: 0 })
   const [editing, setEditing] = useState<{ row: number; col: string; value: string } | null>(null)
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; row: number } | null>(null)
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; row: number; col: string | null } | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [filterEditor, setFilterEditor] = useState<{ column: string; x: number; y: number } | null>(null)
   // insert row: the draft values, the review dialog and the per-column FK checks
@@ -496,6 +544,10 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   // Reset selection/tab when a new execution arrives.
   useEffect(() => {
     setSelectedRows(new Set())
+    setActiveCell(null)
+    setSelectedColumn(null)
+    setMultiExport(null)
+    setUnchosenSets(new Set())
     setActiveSet(0)
     setScrollLeft(0)
     setEditing(null)
@@ -587,7 +639,9 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     })
   }, [columnMetrics, columns, defaultColumnWidth, pinned, scrollLeft, viewportW])
   const baseColumnCount = Math.min(columns.length, result?.baseTableColumns?.length || columns.length)
-  const baseTableLabel = getResultTableName?.()?.split('.').pop() || 'result'
+  // the table of this result set's own statement (not of the editor text)
+  const sourceTable = result?.source?.table
+  const baseTableLabel = sourceTable?.split('.').pop() || 'result'
   const columnGroups = useMemo(() => {
     const groups: Array<{ key: string; label: string; joined: boolean; left: number; width: number }> = []
     for (let index = 0; index < columns.length; index++) {
@@ -653,17 +707,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     setZoom('output', stepSqlZoom(clampSqlZoom(output, bounds), delta, bounds))
   }, [settingsFontSize])
 
-  const formatValue = useCallback((col: string, v: unknown): string => {
-    if (v === null || v === undefined) return 'NULL'
-    if (colTypes[col] === 'date') {
-      const d = v instanceof Date ? v : new Date(String(v))
-      if (!isNaN(d.getTime())) return formatDate(d)
-    }
-    return String(v)
-  }, [colTypes])
+  const formatValue = useCallback((col: string, v: unknown): string => formatCell(v, colTypes[col]), [colTypes])
 
-  // Ctrl/Cmd+C copies the selected rows as tab-separated values (with header).
-  // The same text builder powers the row context menu.
+  // Ctrl/Cmd+C copies the selection: an Alt+clicked column, else several
+  // rows as tab-separated values with header, else the clicked cell, else
+  // the row. The same text builders power the row context menu.
   const selectionToText = useCallback((withHeader: boolean): string => {
     const selected = [...selectedRows].sort((a, b) => a - b).map(i => rows[i]).filter(Boolean)
     const cell = (c: string, v: unknown) => {
@@ -682,18 +730,31 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     showToast(`${count} rig${count === 1 ? 'a' : 'he'} copiat${count === 1 ? 'a' : 'e'} ${withHeader ? 'con intestazione' : 'senza intestazione'}`)
   }, [selectedRows.size, selectionToText, showToast])
 
+  const copyCell = useCallback((row: number, col: string) => {
+    if (!rows[row]) return
+    window.electronAPI.clipboard.write(formatValue(col, rows[row][col]))
+    showToast(`valore di «${col}» copiato`)
+  }, [rows, formatValue, showToast])
+
+  const copyColumn = useCallback((col: string) => {
+    window.electronAPI.clipboard.write(columnText(rows, col, colTypes))
+    showToast(`colonna «${col}» copiata: ${rows.length} valor${rows.length === 1 ? 'e' : 'i'}`)
+  }, [rows, colTypes, showToast])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!result || selectedRows.size === 0) return
+      if (!result || (selectedRows.size === 0 && !selectedColumn)) return
       if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c')) return
       const container = scrollRef.current
       if (!container || !container.contains(document.activeElement)) return
       e.preventDefault()
-      copySelection(true)
+      if (selectedColumn) copyColumn(selectedColumn)
+      else if (selectedRows.size === 1 && activeCell && selectedRows.has(activeCell.row)) copyCell(activeCell.row, activeCell.col)
+      else copySelection(true)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [result, selectedRows, copySelection])
+  }, [result, selectedRows, selectedColumn, activeCell, copySelection, copyCell, copyColumn])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -715,61 +776,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     return () => window.removeEventListener('keydown', handler)
   }, [changeZoom])
 
-  const exportCsv = () => {
+  // the selected rows, or all of them
+  const runExport = (format: ExportFormat) => {
     if (!result) return
     const sel = selectedRows.size > 0 ? rows.filter((_, i) => selectedRows.has(i)) : rows
-    const csv = toCsv(columns, sel)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'query_results.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const exportSql = () => {
-    if (!result) return
-    const table = getResultTableName?.()
-    const name = table ? table.split('.').map(p => `[${p}]`).join('.') : '[result]'
-    const sel = selectedRows.size > 0 ? rows.filter((_, i) => selectedRows.has(i)) : rows
-    const header = table
-      ? `-- ${sel.length} row${sel.length === 1 ? '' : 's'} from ${name}`
-      : '-- select a table (FROM clause) to get the real table name'
-    const sql = `${header}\n${toSqlInserts(name, columns, sel, colTypes)}`
-    const blob = new Blob([sql], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'query_results.sql'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  // Real .xlsx written by the main process: numbers/booleans keep their type,
-  // dates are exported as the grid shows them, nulls stay empty cells.
-  const exportXlsx = async () => {
-    if (!result) return
-    const sel = selectedRows.size > 0 ? rows.filter((_, i) => selectedRows.has(i)) : rows
-    const cellFor = (col: string, value: unknown): string | number | boolean | null => {
-      if (value === null || value === undefined) return null
-      if (typeof value === 'number') return Number.isFinite(value) ? value : String(value)
-      if (typeof value === 'boolean') return value
-      if (typeof value === 'bigint') {
-        return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : String(value)
-      }
-      if (value instanceof Date || colTypes[col] === 'date') return formatValue(col, value)
-      return String(value)
-    }
-    const data = sel.map(row => columns.map(col => cellFor(col, row[col])))
-    const table = getResultTableName?.()
-    const sheet = table ? (table.split('.').pop() || 'Results') : 'Results'
-    try {
-      const saved = await window.electronAPI.export.xlsx('query_results.xlsx', sheet, columns, data)
-      if (saved) showToast(`${sel.length} righe esportate in .xlsx`)
-    } catch (e) {
-      showToast((e as Error).message || 'esportazione xlsx fallita', 'error')
-    }
+    void exportSets(format, [{ title: 'Result set', table: sourceTable, columns, rows: sel, colTypes }], showToast)
   }
 
   // Column resize: coalesce writes to one per animation frame.
@@ -830,10 +841,21 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     [startIdx, endIdx, rows]
   )
 
-  const editable = primaryKeys.size > 0 && !!getResultTableName?.() && !!onExecuteSql
-  // a new row needs a table to insert into and a way to run the statement
-  const insertable = !!getResultTableName?.() && !!onExecuteSql && columns.length > 0
-  const resultTableName = useCallback((): string | undefined => getResultTableName?.(), [getResultTableName])
+  // Every column resolves to the table and key its edit writes to (from this
+  // result set's own statement, as SQL Server described it) or to the reason
+  // the edit is refused: joins and batches never fall back to a guess.
+  const editTargets = useMemo(
+    () => new Map<string, SqlEditResolution>(columns.map(col => [col, resolveColumnEdit(result?.source, col)])),
+    [result, columns]
+  )
+  const editableColumns = useMemo(
+    () => new Set(onExecuteSql ? columns.filter(col => editTargets.get(col)?.ok) : []),
+    [columns, editTargets, onExecuteSql]
+  )
+  const rowTarget = useMemo(() => resolveRowTarget(result?.source), [result])
+  const editable = editableColumns.size > 0
+  // a new row needs plain columns of one table and a way to run the statement
+  const insertable = !!onExecuteSql && columns.length > 0 && canInsertInto(result?.source)
 
   // ─── Insert row ──────────────────────────────────────────────────────────
   const cellKind = useCallback((col: string): CellKind => {
@@ -881,8 +903,8 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     [draft, columns, colTypes]
   )
   const draftStatement = useMemo(
-    () => (draft ? buildInsertStatement(getResultTableName?.() || '', draftEntries) : null),
-    [draft, draftEntries, getResultTableName]
+    () => (draft ? buildInsertStatement(sourceTable || '', draftEntries) : null),
+    [draft, draftEntries, sourceTable]
   )
 
   const checkForeignKey = async (col: string) => {
@@ -925,17 +947,35 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
 
   const handleRowClick = useCallback((event: React.MouseEvent, index: number, selected: boolean) => {
     scrollRef.current?.focus({ preventScroll: true })
-    if (event.ctrlKey || event.metaKey || event.shiftKey) toggleRow(index)
-    else setSelectedRows(selected ? new Set() : new Set([index]))
+    const col = (event.target as HTMLElement).closest('[data-result-column]')?.getAttribute('data-result-column') ?? null
+    if (event.altKey && col) {
+      setSelectedColumn(current => current === col ? null : col)
+      setSelectedRows(new Set())
+      setActiveCell(null)
+      return
+    }
+    setSelectedColumn(null)
+    if (event.ctrlKey || event.metaKey || event.shiftKey) { toggleRow(index); return }
+    const active = activeCellRef.current
+    // a second click on the same cell (or outside the cells) clears the selection
+    if (selected && (!col || (active?.row === index && active.col === col))) {
+      setSelectedRows(new Set())
+      setActiveCell(null)
+      return
+    }
+    setSelectedRows(new Set([index]))
+    setActiveCell(col ? { row: index, col } : null)
   }, [toggleRow])
 
   const handleRowContextMenu = useCallback((event: React.MouseEvent, index: number) => {
     event.preventDefault()
     event.stopPropagation()
+    const col = (event.target as HTMLElement).closest('[data-result-column]')?.getAttribute('data-result-column') ?? null
     // right-clicking a row of the current selection keeps the selection, so the
     // copy/delete actions apply to all the selected rows
     setSelectedRows(prev => prev.has(index) ? prev : new Set([index]))
-    setRowMenu({ x: event.clientX, y: event.clientY, row: index })
+    if (col) setActiveCell({ row: index, col })
+    setRowMenu({ x: event.clientX, y: event.clientY, row: index, col })
   }, [])
 
   const isDoubleClick = useCallback((row: number, col: string): boolean => {
@@ -947,10 +987,15 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   }, [])
 
   const startEdit = useCallback((row: number, col: string, value: string) => {
-    if (!editable) return
+    if (!onExecuteSql) return
+    const resolution = editTargets.get(col)
+    if (!resolution?.ok) {
+      showToast(resolution?.reason || 'Modifica non disponibile.', 'error')
+      return
+    }
     setRowMenu(null)
     setEditing({ row, col, value })
-  }, [editable])
+  }, [editTargets, onExecuteSql, showToast])
 
   const changeEditingValue = useCallback((value: string) => {
     setEditing(current => current ? { ...current, value } : current)
@@ -959,14 +1004,12 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const cancelEdit = useCallback(() => setEditing(null), [])
 
   const commitEditWith = useCallback(async (col: string, value: string) => {
-    if (!editing || !result || !onExecuteSql) return
-    const table = resultTableName()
-    if (!table) return
+    const resolution = editTargets.get(col)
+    if (!editing || !onExecuteSql || !resolution?.ok) return
     const raw = rows[editing.row]
     if (!raw) return
     const newValue = parseEditedValue(value, colTypes, col)
-    const update = buildUpdateStatement(table, columns, raw, col, newValue, colTypes, [...primaryKeys])
-    if (!update) return
+    const update = buildCellUpdate(resolution.target, raw, sqlLiteral(col, newValue, colTypes))
     setSavingEdit(true)
     try {
       const ok = await onExecuteSql(update)
@@ -974,7 +1017,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     } finally {
       setSavingEdit(false)
     }
-  }, [colTypes, columns, editing, onExecuteSql, primaryKeys, result, resultTableName, rows])
+  }, [colTypes, editTargets, editing, onExecuteSql, rows])
 
   const commitEdit = useCallback(() => {
     if (!editing) return
@@ -988,20 +1031,6 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
     borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)',
     cursor: 'pointer', transition: 'color 140ms ease'
   }
-
-  const exportItem = (label: string, icon: React.ReactNode, action: () => void, testId: string) => (
-    <div role="menuitem" data-testid={testId}
-      onClick={() => { setExportMenu(null); action() }}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px', cursor: 'pointer',
-        color: 'var(--text-primary)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-      {icon}
-      {label}
-    </div>
-  )
 
   if (!execution || !result) {
     return (
@@ -1019,15 +1048,73 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   }
 
   if (execution.results.length > 1) {
+    // sets without columns (rows affected only) have nothing to export
+    const exportable = execution.results.flatMap((set, index) => set.columns.length > 0 ? [{ set, index }] : [])
+    const chosen = exportable.filter(({ index }) => !unchosenSets.has(index))
+    const runMultiExport = (format: ExportFormat) => {
+      setMultiExport(null)
+      void exportSets(format, chosen.map(({ set, index }) => ({
+        title: `Result set ${index + 1}`, table: set.source?.table, columns: set.columns, rows: set.rows, colTypes: set.colTypes || {}
+      })), showToast)
+    }
     return (
       <div data-testid="sql-multi-result" style={{
         flex: 1, minHeight: 0, overflow: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 10,
         background: 'var(--bg-secondary)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))' }}>
           <span>{execution.results.length} result sets · {execution.totalRowCount} rows total</span>
-          {onClear && <button style={{ ...btnStyle, marginLeft: 'auto' }} title="clear results" data-tip-desc="clear the displayed results" onClick={onClear}><X size={10} /></button>}
+          <button
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              setMultiExport(multiExport ? null : { x: rect.left, y: rect.bottom + 4 })
+            }}
+            disabled={exportable.length === 0}
+            aria-haspopup="menu" aria-expanded={!!multiExport}
+            title="esporta tutti i result set (o quelli scelti) in un colpo solo"
+            data-tip-desc="export several result sets at once: csv, sql insert, excel or text to the clipboard"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto', padding: '2px 8px', height: '18px',
+              background: multiExport ? 'var(--accent-color)' : 'var(--accent-bg)', border: '1px solid var(--accent-color)',
+              borderRadius: 'var(--radius-sm)', color: multiExport ? 'var(--text-inverse)' : 'var(--accent-color)',
+              cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
+            }}>
+            <Download size={9} /> esporta tutti <ChevronDown size={8} />
+          </button>
+          {onClear && <button style={btnStyle} title="clear results" data-tip-desc="clear the displayed results" onClick={onClear}><X size={10} /></button>}
         </div>
+        {multiExport && (
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setMultiExport(null)} />
+            <div role="menu" aria-label="esporta più result set" style={{
+              position: 'fixed', left: Math.min(multiExport.x, window.innerWidth - 290), top: multiExport.y, zIndex: 999,
+              background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-lg)', padding: '4px 0', minWidth: '270px', maxHeight: '70vh', overflow: 'auto', fontFamily: 'var(--font-mono)'
+            }}>
+              <div style={{ padding: '5px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>result set da esportare</div>
+              {exportable.map(({ set, index }) => (
+                <label key={index} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 12px', cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-primary)' }}>
+                  <input type="checkbox" checked={!unchosenSets.has(index)}
+                    aria-label={`esporta result set ${index + 1}`}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setUnchosenSets(current => {
+                        const next = new Set(current)
+                        if (checked) next.delete(index)
+                        else next.add(index)
+                        return next
+                      })
+                    }} />
+                  Result set {index + 1}{set.source?.table ? ` · ${set.source.table}` : ''} · {set.rowCount} rig{set.rowCount === 1 ? 'a' : 'he'}
+                </label>
+              ))}
+              <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
+              {chosen.length === 0
+                ? <div style={{ padding: '5px 12px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--warning-color)' }}>scegli almeno un result set</div>
+                : exportFormatItems(runMultiExport, chosen.length > 1)}
+            </div>
+          </>
+        )}
         {execution.results.map((set, index) => {
           const height = Math.min(500, Math.max(190, 112 + Math.min(set.rowCount, 14) * 25))
           const singleExecution: SqlExecutionResult = {
@@ -1042,12 +1129,13 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
               borderRadius: 'var(--radius-md)', boxShadow: '0 1px 0 var(--border-subtle)'
             }}>
               <div style={{ height: 25, flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 9px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderBottom: 0, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600 }}>
-                Result set {index + 1} · {set.rowCount} row{set.rowCount === 1 ? '' : 's'}
+                Result set {index + 1}{set.source?.table ? ` · ${set.source.table}` : ''} · {set.rowCount} row{set.rowCount === 1 ? '' : 's'}
               </div>
+              {/* each set edits through its own statement's table and key (set.source) */}
               <ResultViewer
                 execution={singleExecution}
-                getResultTableName={() => undefined}
                 onExecuteSql={onExecuteSql}
+                onDeleteRequest={onDeleteRequest}
                 gridQuerySupported={{ supported: false, reason: 'Filtering is available only for a single compatible SELECT result.' }}
               />
             </section>
@@ -1059,15 +1147,11 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
 
   // ─── Edit rows ───────────────────────────────────────────────────────────
   const requestDelete = (rowIdx: number) => {
-    if (!result || !onDeleteRequest) return
-    const table = resultTableName()
-    if (!table) return
-    const raw = rows[rowIdx]
-    if (!raw) return
-    const del = buildDeleteStatement(table, columns, raw, colTypes, [...primaryKeys])
-    if (!del) return
-    onDeleteRequest(del)
     setRowMenu(null)
+    if (!onDeleteRequest) return
+    if (!rowTarget.ok) { showToast(rowTarget.reason, 'error'); return }
+    const raw = rows[rowIdx]
+    if (raw) onDeleteRequest(buildRowDelete(rowTarget.target, raw))
   }
 
   const totalShown = Math.min(rows.length, execution.maxRows)
@@ -1076,12 +1160,15 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
   const renderRowMenu = () => {
     if (!rowMenu) return null
     const count = selectedRows.size
-    const menuLabel = count > 1 ? `${count} righe selezionate` : `row ${rowMenu.row + 1}`
+    const menuLabel = count > 1 ? `${count} righe selezionate` : `row ${rowMenu.row + 1}${rowMenu.col ? ` · ${rowMenu.col}` : ''}`
     return (
       <>
         <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setRowMenu(null)} />
         <div style={{
-          position: 'fixed', left: Math.min(rowMenu.x, window.innerWidth - 260), top: Math.min(rowMenu.y, window.innerHeight - 190),
+          // opens upwards in the lower half, so the longer menu always fits
+          position: 'fixed', left: Math.max(8, Math.min(rowMenu.x, window.innerWidth - 360)),
+          ...(rowMenu.y < window.innerHeight / 2 ? { top: rowMenu.y } : { bottom: window.innerHeight - rowMenu.y }),
+          maxHeight: 'calc(100vh - 16px)', overflowY: 'auto',
           zIndex: 200, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '230px',
           boxShadow: 'var(--shadow-lg)', animation: 'menuIn 140ms ease', fontFamily: 'var(--font-mono)'
@@ -1092,9 +1179,20 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
           }}>
             {menuLabel}
           </div>
+          {rowMenu.col && (
+            <>
+              {rowMenuItem('copia valore cella', <Copy size={12} />, () => { copyCell(rowMenu.row, rowMenu.col!); setRowMenu(null) })}
+              {rowMenuItem(`copia colonna «${rowMenu.col}» (${rows.length} valori)`, <Copy size={12} />, () => { copyColumn(rowMenu.col!); setRowMenu(null) })}
+              {rowMenuItem(`seleziona colonna «${rowMenu.col}» (Ctrl+C)`, <Table2 size={12} />, () => {
+                setSelectedColumn(rowMenu.col); setSelectedRows(new Set()); setActiveCell(null); setRowMenu(null)
+                scrollRef.current?.focus({ preventScroll: true })
+              })}
+              <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
+            </>
+          )}
           {rowMenuItem(`copia ${count > 1 ? `${count} righe` : 'riga'} con intestazione`, <Copy size={12} />, () => { copySelection(true); setRowMenu(null) })}
           {rowMenuItem('copia senza intestazione', <Copy size={12} />, () => { copySelection(false); setRowMenu(null) })}
-          {editable && (
+          {onDeleteRequest && rowTarget.ok && (
             <>
               <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
               {rowMenuItem('delete row', <Trash2 size={12} />, () => requestDelete(rowMenu.row), true)}
@@ -1117,7 +1215,10 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
         color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', flexShrink: 0, gap: '8px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
+        {/* one line: a wrapping hint ("· 1 selected" makes it longer) would grow
+            the toolbar and shift the grid under the pointer between two clicks,
+            so a double-click on the first row hit the column header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
           <span style={{ color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>
             {result.rowCount} rows{selectedRows.size > 0 ? ` · ${selectedRows.size} selected` : ''}
           </span>
@@ -1222,7 +1323,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
             }}
             aria-haspopup="menu" aria-expanded={!!exportMenu}
             title={selectedRows.size > 0 ? `esporta ${selectedRows.size} righe selezionate` : 'esporta tutte le righe'}
-            data-tip-desc="export the grid: csv, sql insert or excel"
+            data-tip-desc="export the grid: csv, sql insert, excel or formatted text to the clipboard"
             style={{
               display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
               padding: '2px 8px', marginLeft: '6px', height: '18px',
@@ -1250,9 +1351,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                 background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', padding: '4px 0', minWidth: '180px'
               }}>
-                {exportItem('CSV (.csv)', <Table2 size={11} />, exportCsv, 'export-file-csv')}
-                {exportItem('SQL INSERT (.sql)', <FileCode2 size={11} />, exportSql, 'export-file-sql')}
-                {exportItem('Excel (.xlsx)', <FileSpreadsheet size={11} />, () => { void exportXlsx() }, 'export-file-xlsx')}
+                {exportFormatItems(format => { setExportMenu(null); runExport(format) })}
               </div>
             </>
           )}
@@ -1484,7 +1583,9 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                 scrollLeft={scrollLeft}
                 joinStartIndex={joinStartIndex}
                 editing={editing}
-                editable={editable}
+                editableColumns={editableColumns}
+                activeColumn={activeCell?.row === index ? activeCell.col : null}
+                selectedColumn={selectedColumn}
                 savingEdit={savingEdit}
                 onFilterRequest={onFilterRequest}
                 onJoinRequest={onJoinRequest}
@@ -1552,7 +1653,7 @@ export function ResultViewer({ execution, getResultTableName, onJoinRequest, onF
                 conferma inserimento
               </span>
               <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
-                {draftEntries.length} colonne · {getResultTableName?.() || ''}
+                {draftEntries.length} colonne · {sourceTable || ''}
               </span>
             </div>
             <pre style={{

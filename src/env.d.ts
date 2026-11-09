@@ -297,7 +297,8 @@ interface Window {
       saveSqlQuery: (defaultName: string, content: string) => Promise<string | null>
     }
     export: {
-      xlsx: (defaultName: string, sheetName: string, columns: string[], rows: (string | number | boolean | null)[][]) => Promise<string | null>
+      /** one workbook, one sheet per result set */
+      xlsx: (defaultName: string, sheets: Array<{ name: string; columns: string[]; rows: (string | number | boolean | null)[][] }>) => Promise<string | null>
     }
     fs: {
       readDir: (dirPath: string) => Promise<{ name: string; isDirectory: boolean; isFile: boolean }[]>

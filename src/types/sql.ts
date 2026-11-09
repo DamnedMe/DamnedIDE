@@ -1,3 +1,5 @@
+import type { SqlResultSource } from '../shared/sqlResultSource'
+
 export type SqlAuthType =
   | 'windows'
   | 'sql'
@@ -68,6 +70,8 @@ export interface SqlQueryResult {
   foreignKeys?: string[]
   foreignKeyInfo?: SqlForeignKeyInfo[]
   baseTableColumns?: string[]
+  /** table, columns and key a grid edit writes to, resolved from this result set's own statement */
+  source?: SqlResultSource
 }
 
 export interface SqlExecutionResult {
@@ -79,6 +83,8 @@ export interface SqlExecutionResult {
   elapsedMs: number
   canceled: boolean
   rowsAffected: number[]
+  /** the text that produced these results (set by the SQL panel, re-run to refresh after an edit) */
+  query?: string
 }
 
 export interface SqlForeignKeyInfo {

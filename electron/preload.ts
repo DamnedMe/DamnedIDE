@@ -213,8 +213,9 @@ const electronAPI = {
     saveSqlQuery: (defaultName: string, content: string) => ipcRenderer.invoke('dialog:saveSqlQuery', defaultName, content)
   },
   export: {
-    xlsx: (defaultName: string, sheetName: string, columns: string[], rows: (string | number | boolean | null)[][]): Promise<string | null> =>
-      ipcRenderer.invoke('export:xlsx', defaultName, sheetName, columns, rows)
+    /** one workbook, one sheet per result set */
+    xlsx: (defaultName: string, sheets: Array<{ name: string; columns: string[]; rows: (string | number | boolean | null)[][] }>): Promise<string | null> =>
+      ipcRenderer.invoke('export:xlsx', defaultName, sheets)
   },
   fs: {
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:readDir', dirPath),

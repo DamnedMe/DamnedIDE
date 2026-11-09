@@ -41,13 +41,57 @@ async function installElectronMock(page: Page) {
       onDataTierLog: () => () => {},
       query: async (_connection: string, query: string, queryId = 'mock-query') => {
         await new Promise(resolve => setTimeout(resolve, 150))
+        // `source` mirrors the main process (src/shared/sqlResultSource.ts): each
+        // result set carries the table, columns and key SQL Server described for
+        // its own statement; result sets of an EXEC cannot be mapped.
+        type SourceColumn = { name: string; hidden: boolean; table?: string; column?: string; key: boolean }
+        const sourceColumn = (name: string, table?: string, column = name, key = false): SourceColumn =>
+          ({ name, hidden: false, ...(table ? { table, column } : {}), key })
+        const tableSource = (table: string, columns: string[], key: string) =>
+          ({ table, columns: columns.map(name => sourceColumn(name, table, name, name === key)) })
         if (/\bsp_help\b/i.test(query)) {
+          const blocked = (n: number) => ({ blocked: `Modifica non disponibile: il result set ${n} viene da EXEC, IF, OUTPUT o da un blocco BEGIN…END, quindi non si sa quale istruzione l'ha prodotto.` })
           const results = [
-            { columns: ['Name', 'Owner', 'Type'], rows: [{ Name: 'MassiveRows', Owner: 'dbo', Type: 'user table' }], rowCount: 1, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [] },
-            { columns: ['Column_name', 'Type', 'Nullable'], rows: [{ Column_name: 'Id', Type: 'int', Nullable: 'no' }, { Column_name: 'Code', Type: 'nvarchar', Nullable: 'yes' }], rowCount: 2, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [] },
-            { columns: ['Index_name', 'Index_description'], rows: [{ Index_name: 'PK_MassiveRows', Index_description: 'clustered, unique, primary key' }], rowCount: 1, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [] }
+            { columns: ['Name', 'Owner', 'Type'], rows: [{ Name: 'MassiveRows', Owner: 'dbo', Type: 'user table' }], rowCount: 1, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [], source: blocked(1) },
+            { columns: ['Column_name', 'Type', 'Nullable'], rows: [{ Column_name: 'Id', Type: 'int', Nullable: 'no' }, { Column_name: 'Code', Type: 'nvarchar', Nullable: 'yes' }], rowCount: 2, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [], source: blocked(2) },
+            { columns: ['Index_name', 'Index_description'], rows: [{ Index_name: 'PK_MassiveRows', Index_description: 'clustered, unique, primary key' }], rowCount: 1, colTypes: {}, primaryKeys: [], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: [], source: blocked(3) }
           ]
           return { queryId, results, totalRowCount: 4, truncated: false, maxRows: 250000, elapsedMs: 8, canceled: false, rowsAffected: [] }
+        }
+        // Shop schema: Orders(Id PK, CustomerId, Total), Customers(Id PK, Name, Code),
+        // Notes(OrderId, Note) without a key. One result set per SELECT of the batch.
+        const body = query.replace(/^USE \[[^\]]*\];\n/, '').trim()
+        if (/\bdbo\.(Orders|Customers)\b/i.test(body) && !/^(UPDATE|DELETE|INSERT)\b/i.test(body)) {
+          const set = (columns: string[], rows: Record<string, unknown>[], source: unknown) => ({
+            columns, rows, rowCount: rows.length,
+            colTypes: Object.fromEntries(columns.map(c => [c, typeof rows[0][c] === 'number' ? 'number' : 'string'])),
+            primaryKeys: ['Id'], foreignKeys: [], foreignKeyInfo: [], baseTableColumns: columns, source
+          })
+          const orders = () => set(['Id', 'CustomerId', 'Total'],
+            [{ Id: 10, CustomerId: 1, Total: 99.5 }, { Id: 11, CustomerId: 2, Total: 12 }],
+            tableSource('dbo.Orders', ['Id', 'CustomerId', 'Total'], 'Id'))
+          const customers = () => set(['Id', 'Name', 'Code'],
+            [{ Id: 1, Name: 'Ada', Code: 'C1' }, { Id: 2, Name: 'Bob', Code: 'C2' }],
+            tableSource('dbo.Customers', ['Id', 'Name', 'Code'], 'Id'))
+          const results = []
+          if (/JOIN\s+dbo\.Customers/i.test(body)) {
+            // SELECT * over the join: both Id columns reach mssql, which merges
+            // equal names into one key holding an array of their values
+            results.push(set(['Id', 'CustomerId', 'Total', 'Name', 'Code', 'OrderId', 'Note'], [
+              { Id: [10, 1], CustomerId: 1, Total: 99.5, Name: 'Ada', Code: 'C1', OrderId: 10, Note: 'fragile' },
+              { Id: [11, 2], CustomerId: 2, Total: 12, Name: 'Bob', Code: 'C2', OrderId: 11, Note: null }
+            ], {
+              table: 'dbo.Orders',
+              columns: [
+                sourceColumn('Id', 'dbo.Orders', 'Id', true), sourceColumn('CustomerId', 'dbo.Orders'), sourceColumn('Total', 'dbo.Orders'),
+                sourceColumn('Id', 'dbo.Customers', 'Id', true), sourceColumn('Name', 'dbo.Customers'), sourceColumn('Code', 'dbo.Customers'),
+                sourceColumn('OrderId', 'dbo.Notes'), sourceColumn('Note', 'dbo.Notes')
+              ]
+            }))
+          } else {
+            for (const match of body.matchAll(/FROM dbo\.(Orders|Customers)\b/gi)) results.push(match[1].toLowerCase() === 'orders' ? orders() : customers())
+          }
+          return { queryId, results, totalRowCount: results.reduce((n, r) => n + r.rowCount, 0), truncated: false, maxRows: 250000, elapsedMs: 4, canceled: false, rowsAffected: [] }
         }
         if (/MassiveRows/i.test(query)) {
           const baseColumns = ['Id', 'ParentId', 'Code', 'Region', 'City', 'Street', 'PostalCode', 'Amount', 'IsActive', 'CreatedAt', 'UpdatedAt', 'Notes']
@@ -84,7 +128,14 @@ async function installElectronMock(page: Page) {
               primaryKeys: ['Id'],
               foreignKeys: ['ParentId'],
               foreignKeyInfo: [{ column: 'ParentId', table: 'dbo.MassiveRows', referencedTable: 'dbo.Parent', referencedColumn: 'Id' }],
-              baseTableColumns: baseColumns
+              baseTableColumns: baseColumns,
+              source: {
+                table: 'dbo.MassiveRows',
+                columns: [
+                  ...tableSource('dbo.MassiveRows', baseColumns, 'Id').columns,
+                  ...(joined ? [sourceColumn('Parent · fk1.Id', 'dbo.Parent', 'Id', true), sourceColumn('Parent · fk1.Name', 'dbo.Parent', 'Name')] : [])
+                ]
+              }
             }],
             totalRowCount: rows.length,
             truncated: false,
@@ -114,7 +165,8 @@ async function installElectronMock(page: Page) {
               primaryKeys: ['WideColumn000'],
               foreignKeys: [],
               foreignKeyInfo: [],
-              baseTableColumns: columns
+              baseTableColumns: columns,
+              source: tableSource('dbo.WideRows', columns, 'WideColumn000')
             }],
             totalRowCount: rows.length,
             truncated: false,
@@ -140,7 +192,8 @@ async function installElectronMock(page: Page) {
                 { column: 'CreatedById', table: 'dbo.AuditLog', referencedTable: 'dbo.Users', referencedColumn: 'Id' },
                 { column: 'UpdatedById', table: 'dbo.AuditLog', referencedTable: 'dbo.Users', referencedColumn: 'Id' }
               ],
-              baseTableColumns: columns
+              baseTableColumns: columns,
+              source: tableSource('dbo.AuditLog', columns, 'Id')
             }],
             totalRowCount: rows.length,
             truncated: false,
@@ -420,16 +473,22 @@ async function installElectronMock(page: Page) {
         adoSettings,
         adoChain,
         export: {
-          xlsx: async (defaultName: string, sheetName: string, columns: string[], rows: unknown[][]) => {
-            ;(window as unknown as { __sqlMock: { xlsx: unknown[] } }).__sqlMock.xlsx.push({ defaultName, sheetName, columns, rows })
+          xlsx: async (defaultName: string, sheets: Array<{ name: string; columns: string[]; rows: unknown[][] }>) => {
+            ;(window as unknown as { __sqlMock: { xlsx: unknown[] } }).__sqlMock.xlsx.push({ defaultName, sheets })
             return 'C:\\mock\\query_results.xlsx'
           }
         },
-        clipboard: { write(text: string) { navigator.clipboard.writeText(text).catch(() => {}) } }
+        clipboard: {
+          write(text: string) {
+            ;(window as unknown as { __sqlMock: { clipboard: string[] } }).__sqlMock.clipboard.push(text)
+            navigator.clipboard.writeText(text).catch(() => {})
+          }
+        }
       }
     })
-    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }>; xlsx: unknown[]; restores: unknown[]; dataTiers: unknown[] } }).__sqlMock = {
+    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }>; xlsx: unknown[]; clipboard: string[]; restores: unknown[]; dataTiers: unknown[] } }).__sqlMock = {
       queries: [],
+      clipboard: [],
       completedQueries: [],
       diagramCalls: 0,
       connectConfigs: [],
@@ -461,6 +520,30 @@ export async function openMockDatabase(page: Page) {
   await page.getByLabel('connection mock-sql-server/massive_mock_db', { exact: true }).click()
   await page.getByLabel('expand connection mock-sql-server/massive_mock_db').click()
   await page.getByLabel('database massive_mock_db').click()
+}
+
+/** Replaces the editor text and runs it (F5); call openMockDatabase first. */
+export async function runEditorQuery(page: Page, text: string) {
+  await page.locator('.monaco-editor').first().click()
+  await page.keyboard.press('Control+A')
+  await page.keyboard.insertText(text)
+  await page.keyboard.press('Escape') // close IntelliSense, if open
+  await page.keyboard.press('F5')
+}
+
+export interface SqlMockState {
+  queries: string[]
+  clipboard: string[]
+  xlsx: Array<{ defaultName: string; sheets: Array<{ name: string; columns: string[]; rows: unknown[][] }> }>
+}
+
+/**
+ * Reads what the mock recorded (queries, clipboard writes, xlsx exports…).
+ * `pick` runs in the page, so only its result crosses over: an export of
+ * 250k rows must not be serialized on every poll.
+ */
+export async function sqlMock<T>(page: Page, pick: (mock: SqlMockState) => T): Promise<T> {
+  return page.evaluate(`(${pick.toString()})(window.__sqlMock)`) as Promise<T>
 }
 
 export async function openMockTables(page: Page) {

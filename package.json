@@ -50,6 +50,8 @@
     "test:sql-zoom": "node --experimental-strip-types scripts/sql-zoom.check.ts",
     "test:sql-backup": "node --experimental-strip-types scripts/sql-backup.check.ts",
     "test:xlsx": "node --experimental-strip-types scripts/xlsx-export.check.ts",
+    "test:sql-result-source": "node --experimental-strip-types scripts/sql-result-source.check.ts",
+    "test:sql-export": "node --experimental-strip-types scripts/sql-export.check.ts",
     "test:update-feed": "node --experimental-strip-types scripts/patch-linux-update-feed.check.ts",
     "test:linux-update": "node --experimental-strip-types scripts/linux-update-install.check.ts",
     "test:sql-playwright": "playwright test --config playwright.config.ts",

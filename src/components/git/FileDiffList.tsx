@@ -4,6 +4,7 @@ import { Plus, Minus, Eye, Check, X, Copy, Undo2, FolderOpen } from '@/component
 import { FileTypeIcon } from '../../utils/file-icon'
 import { useSettingsStore } from '../../store'
 import { dirOf, fileNameOf, groupChanges } from '../../shared/changeGroups'
+import { useI18n } from '../../i18n'
 
 interface FileDiffListProps {
   files: GitFileStatus[]
@@ -24,6 +25,7 @@ interface FileDiffListProps {
 export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiffFile, activeStaged, checkMarks, onToggleCheck, onCopyPath, onDiscard, onReveal }: FileDiffListProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filePath: string; staged: boolean; untracked: boolean } | null>(null)
   const showPath = useSettingsStore(s => s.settings.changesShowPath)
+  const t = useI18n()
 
   if (files.length === 0) {
     return (
@@ -32,7 +34,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
         color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
         fontFamily: 'var(--font-mono)'
       }}>
-        no changes
+        {t('no changes')}
       </div>
     )
   }
@@ -44,13 +46,13 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
         <div key={g.id}>
           {/* the line above is the previous row's (or the zone header's) bottom border;
               one line: the label is cut, the count stays */}
-          <div title={g.label} style={{
+          <div title={t(g.label)} style={{
             display: 'flex', whiteSpace: 'nowrap',
             padding: '4px 12px 2px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600,
             color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px',
             fontFamily: 'var(--font-mono)'
           }}>
-            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.label}</span>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(g.label)}</span>
             <span style={{ flexShrink: 0, whiteSpace: 'pre' }}>{` — ${g.files.length}`}</span>
           </div>
           {g.files.map((f) => {
@@ -105,7 +107,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); onToggleCheck(f.path, checkMarks?.[f.path] === 'ok' ? null : 'ok') }}
-                        className="file-diff-hover" title="mark ok" data-tip-desc="mark this file as checked (ok)"
+                        className="file-diff-hover" title={t('mark ok')} data-tip-desc={t('mark this file as checked (ok)')}
                         style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           width: '18px', height: '18px',
@@ -120,7 +122,7 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); onToggleCheck(f.path, checkMarks?.[f.path] === 'ko' ? null : 'ko') }}
-                        className="file-diff-hover" title="mark ko" data-tip-desc="mark this file as not ok (ko)"
+                        className="file-diff-hover" title={t('mark ko')} data-tip-desc={t('mark this file as not ok (ko)')}
                         style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           width: '18px', height: '18px',
@@ -137,19 +139,19 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
                   )}
                   {onViewDiff && (
                     <IconBtn onClick={(e) => { e.stopPropagation(); onViewDiff(f.path, !!f.staged) }}
-                      title="view diff" data-tip-desc="open the diff for this file" bg="var(--bg-tag)" color="var(--accent-color)">
+                      title={t('view diff')} data-tip-desc={t('open the diff for this file')} bg="var(--bg-tag)" color="var(--accent-color)">
                       <Eye size={9} />
                     </IconBtn>
                   )}
                   {onStage && !f.staged && (
                     <IconBtn onClick={(e) => { e.stopPropagation(); onStage(f.path) }}
-                      className="file-diff-hover" title="stage" data-tip-desc="stage this file" bg="var(--warning-bg)" color="var(--warning-color)">
+                      className="file-diff-hover" title={t('stage')} data-tip-desc={t('stage this file')} bg="var(--warning-bg)" color="var(--warning-color)">
                       <Plus size={10} />
                     </IconBtn>
                   )}
                   {onUnstage && f.staged && (
                     <IconBtn onClick={(e) => { e.stopPropagation(); onUnstage(f.path) }}
-                      className="file-diff-hover" title="unstage" data-tip-desc="unstage this file" bg="var(--success-bg)" color="var(--success-color)">
+                      className="file-diff-hover" title={t('unstage')} data-tip-desc={t('unstage this file')} bg="var(--success-bg)" color="var(--success-color)">
                       <Minus size={10} />
                     </IconBtn>
                   )}
@@ -186,21 +188,21 @@ export function FileDiffList({ files, onStage, onUnstage, onViewDiff, activeDiff
             {onCopyPath && (
               <ContextMenuItem
                 icon={<Copy size={12} />}
-                label="Copy path"
+                label={t('Copy path')}
                 onClick={() => { onCopyPath(contextMenu.filePath); setContextMenu(null) }}
               />
             )}
             {onReveal && (
               <ContextMenuItem
                 icon={<FolderOpen size={12} />}
-                label="Open in file explorer"
+                label={t('Open in file explorer')}
                 onClick={() => { onReveal(contextMenu.filePath); setContextMenu(null) }}
               />
             )}
             {onDiscard && (
               <ContextMenuItem
                 icon={<Undo2 size={12} />}
-                label={contextMenu.untracked ? 'Discard (delete file)' : 'Discard changes'}
+                label={contextMenu.untracked ? t('Discard (delete file)') : t('Discard changes')}
                 danger
                 onClick={() => {
                   onDiscard(contextMenu.filePath, { staged: contextMenu.staged, untracked: contextMenu.untracked })

@@ -1,6 +1,7 @@
 // Kind of a changed file (controller, service, DB, test, ...) for the grouped
 // lists of Worktree › Changes and of the editor's changes panel. Pure, no React:
 // shared by FileDiffList, WorktreeChanges and scripts/change-groups.check.ts.
+// Labels are English i18n keys: the UI shows them with t(label).
 
 export type ChangeGroupId =
   | 'controller' | 'service' | 'repository' | 'db' | 'model' | 'contract'
@@ -13,13 +14,13 @@ export const CHANGE_GROUPS: { id: ChangeGroupId; label: string }[] = [
   { id: 'repository', label: 'Repository' },
   { id: 'db', label: 'DB (migration, context)' },
   { id: 'model', label: 'Model / DTO' },
-  { id: 'contract', label: 'Interfacce' },
+  { id: 'contract', label: 'Interfaces' },
   { id: 'helper', label: 'Helper / Utility' },
   { id: 'ui', label: 'UI (frontend)' },
   { id: 'test', label: 'Test' },
-  { id: 'config', label: 'Configurazione' },
-  { id: 'docs', label: 'Documentazione' },
-  { id: 'other', label: 'Altro' }
+  { id: 'config', label: 'Configuration' },
+  { id: 'docs', label: 'Documentation' },
+  { id: 'other', label: 'Other' }
 ]
 
 type Rule = (dirs: string[], name: string, rawName: string) => boolean

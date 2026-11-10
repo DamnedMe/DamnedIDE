@@ -25,6 +25,7 @@ import chatboxEllipsesSvg from '../../../node_modules/ionicons/dist/svg/chatbox-
 import checkmarkSvg from '../../../node_modules/ionicons/dist/svg/checkmark-outline.svg?raw'
 import checkmarkCircleSvg from '../../../node_modules/ionicons/dist/svg/checkmark-circle-outline.svg?raw'
 import checkmarkDoneSvg from '../../../node_modules/ionicons/dist/svg/checkmark-done-outline.svg?raw'
+import checkmarkDoneCircleSvg from '../../../node_modules/ionicons/dist/svg/checkmark-done-circle-outline.svg?raw'
 import chevronBackSvg from '../../../node_modules/ionicons/dist/svg/chevron-back-outline.svg?raw'
 import chevronBackCircleSvg from '../../../node_modules/ionicons/dist/svg/chevron-back-circle-outline.svg?raw'
 import chevronCollapseSvg from '../../../node_modules/ionicons/dist/svg/chevron-collapse-outline.svg?raw'
@@ -160,6 +161,7 @@ export const CalendarDays = createIcon('CalendarDays', calendarSvg)
 export const CaseSensitive = createIcon('CaseSensitive', textSvg)
 export const Check = createIcon('Check', checkmarkSvg)
 export const CheckCheck = createIcon('CheckCheck', checkmarkDoneSvg)
+export const CheckCheckCircle = createIcon('CheckCheckCircle', checkmarkDoneCircleSvg)
 export const CheckCircle2 = createIcon('CheckCircle2', checkmarkCircleSvg)
 export const ChevronDown = createIcon('ChevronDown', chevronDownSvg)
 export const ChevronLeft = createIcon('ChevronLeft', chevronBackSvg)

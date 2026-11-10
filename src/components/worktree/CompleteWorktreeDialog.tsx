@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react'
 import { Loader2, X, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, FileCode, Layers, Trash2 } from '@/components/icons'
-import { useEditorStore, useToastStore } from '../../store'
+import { useEditorStore, useToastStore, useSettingsStore } from '../../store'
 import { useAdoFolder } from '../../hooks/useAdoFolder'
 import { AdoRepoChooser, useConnectionRepos } from '../ado/AdoRepoChooser'
-import { ADO_MISSING_PAT, sameName } from '../../shared/adoSettings'
-import { joinPath } from '../../utils/paths'
-import { pbiIdFromBranch } from './worktree-cleanup'
+import { sameName } from '../../shared/adoSettings'
+import { joinPath, samePath } from '../../utils/paths'
+import { pbiIdFromBranch, folderKind, withChildren, DEFAULT_WORKTREE_LAYOUT } from './worktree-cleanup'
+import { useI18n, tr } from '../../i18n'
 
 interface CompleteWorktreeDialogProps {
   worktreePath: string
   /** the worktree's branch: its PBI id goes in the commit / PR title */
   branch: string
   repoPath: string
+  /** where a relative worktree root is resolved: the main checkout (default: repoPath) */
+  basePath?: string
   onClose: () => void
   onDone: () => void
 }
@@ -22,7 +25,7 @@ interface StepLog {
   detail?: string
 }
 
-export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose, onDone }: CompleteWorktreeDialogProps) {
+export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, basePath = repoPath, onClose, onDone }: CompleteWorktreeDialogProps) {
   const [message, setMessage] = useState('')
   const [steps, setSteps] = useState<StepLog[]>([])
   const [isRunning, setIsRunning] = useState(false)
@@ -51,9 +54,12 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
   const repo = pickedRepo && repos.includes(pickedRepo) ? pickedRepo : resolvedRepo || repos[0] || ''
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const showToast = useToastStore(s => s.showToast)
+  const t = useI18n()
 
-  // Work item id from the branch convention `feature/{id}` or `bugfix/{id}-text` (NewWorktreeDialog).
-  const workItemId = pbiIdFromBranch(branch)
+  // Work item id from the folder (Settings › Git › worktree), else the branch convention
+  // `feature/{id}` or `bugfix/{id}-text` (NewWorktreeDialog).
+  const layout = useSettingsStore(s => s.settings.worktreeLayout) ?? DEFAULT_WORKTREE_LAYOUT
+  const workItemId = folderKind(worktreePath, basePath, layout)?.id ?? pbiIdFromBranch(branch)
 
   // Commit/PR title with the ADO work item reference (#<id>), unless already present.
   const fullMessage = workItemId !== null && !/#\d+|AB#\d+/i.test(message)
@@ -97,9 +103,9 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
       ? await window.electronAPI.worktree.retargetChildren(repoPath, branch).catch(() => [] as string[])
       : []
     const res = await window.electronAPI.worktree.remove(repoPath, worktreePath)
-    if (!res.ok) { showToast(`worktree non rimosso: ${res.error || 'rimozione fallita'}`, 'error'); return false }
+    if (!res.ok) { showToast(tr('worktree not removed: {error}', { error: res.error || tr('removal failed') }), 'error'); return false }
     if (res.warning) showToast(res.warning, 'error')
-    else showToast(affected.length > 0 ? `${done} (${affected.length} figli riportati su develop)` : done)
+    else showToast(withChildren(done, affected.length, tr))
     return true
   }
 
@@ -107,7 +113,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
   const removeAbsorbedChild = async () => {
     setRemovingChild(true)
     try {
-      if (await disposeWorktree('worktree figlio rimosso')) onDone()
+      if (await disposeWorktree(tr('child worktree removed'))) onDone()
     } finally {
       setRemovingChild(false)
     }
@@ -121,10 +127,13 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
       try {
         await window.electronAPI.worktree.clearLink(repoPath, branch)
         setStackInfo(null)
-        showToast('worktree promosso su develop (legame con il padre rimosso)')
+        showToast(tr('worktree promoted on develop (link to the parent removed)'))
       } catch { /* non bloccante */ }
     }
-    if (!branch || !worktreePath.includes('.worktrees')) return // the main checkout stays
+    // the main checkout stays (git lists it first, wherever the worktrees live; with a bare
+    // repository that first entry is the repository itself); unknown list: keep
+    const list = await window.electronAPI.worktree.list(repoPath).catch(() => null)
+    if (!branch || !list || list.some((e, i) => samePath(e.path, worktreePath) && (e.bare || i === 0))) return
     const [status, stack] = await Promise.all([
       window.electronAPI.git.status(worktreePath),
       window.electronAPI.worktree.stack(repoPath)
@@ -132,10 +141,10 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
     // uncommitted or unpushed work, or worktrees stacked on it: keep it
     if (!status || !status.isClean || !status.tracking || status.ahead > 0) return
     if (!stack || stack.some(i => i.parent === branch)) {
-      showToast('worktree mantenuto: ha worktree impilati sopra')
+      showToast(tr('worktree kept: it has worktrees stacked on it'))
       return
     }
-    if (await disposeWorktree('worktree completato e rimosso')) onDone()
+    if (await disposeWorktree(tr('worktree completed and removed'))) onDone()
   }
 
   const retryPr = async () => {
@@ -148,14 +157,14 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
 
   const createPr = async () => {
     if (!connection || !repo) {
-      updateStep(6, { status: 'warn', detail: 'ADO non connesso o repository non selezionata: PR non creata' })
+      updateStep(6, { status: 'warn', detail: tr('ADO not connected or repository not selected: PR not created') })
       setPrFailed(true)
       return false
     }
     updateStep(6, { status: 'running', detail: undefined })
     // the main-process ADO service serves one connection at a time
     if (!(await window.electronAPI.ado.use(connection.id))) {
-      updateStep(6, { status: 'warn', detail: `${ADO_MISSING_PAT}: PR non creata` })
+      updateStep(6, { status: 'warn', detail: tr('{error}: PR not created', { error: tr('PAT missing or unreadable: enter it in Settings › Azure DevOps › Connections') }) })
       setPrFailed(true)
       return false
     }
@@ -175,12 +184,12 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
       setCompleted(true)
       updateStep(6, {
         status: 'ok',
-        detail: result.mode === 'completed' ? `PR #${result.id} completata` : result.mode === 'autocomplete' ? `PR #${result.id} in autocomplete` : `PR #${result.id} aperta`
+        detail: result.mode === 'completed' ? tr('PR #{id} completed', { id: result.id }) : result.mode === 'autocomplete' ? tr('PR #{id} in autocomplete', { id: result.id }) : tr('PR #{id} open', { id: result.id })
       })
-      showToast(result.mode === 'completed' ? `PR #${result.id} completata` : result.mode === 'autocomplete' ? `PR #${result.id} creata con autocomplete` : `PR #${result.id} creata senza autocomplete`)
+      showToast(result.mode === 'completed' ? tr('PR #{id} completed', { id: result.id }) : result.mode === 'autocomplete' ? tr('PR #{id} created with autocomplete', { id: result.id }) : tr('PR #{id} created without autocomplete', { id: result.id }))
       return true
     }
-    updateStep(6, { status: 'warn', detail: 'creazione PR fallita (ADO)' })
+    updateStep(6, { status: 'warn', detail: tr('PR creation failed (ADO)') })
     setPrFailed(true)
     return false
   }
@@ -192,13 +201,13 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
     setPrCreated(null)
     setPrMode(null)
     const initial = [
-      { label: 'stage all changes', status: 'pending' as const },
+      { label: tr('stage all changes'), status: 'pending' as const },
       { label: 'commit', status: 'pending' as const },
-      { label: 'push feature branch', status: 'pending' as const },
+      { label: tr('push feature branch'), status: 'pending' as const },
       { label: 'fetch', status: 'pending' as const },
       { label: `merge ${targetBranch}`, status: 'pending' as const },
-      { label: 'push after merge', status: 'pending' as const },
-      { label: `create pull request → ${targetBranch}`, status: 'pending' as const }
+      { label: tr('push after merge'), status: 'pending' as const },
+      { label: tr('create pull request → {branch}', { branch: targetBranch }), status: 'pending' as const }
     ]
     setSteps(initial)
 
@@ -228,8 +237,8 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
       const merge = await window.electronAPI.git.merge(worktreePath, mergeRef)
       if (!merge.ok) {
         setConflicts(merge.conflicts)
-        updateStep(4, { status: 'error', detail: `conflitti: ${merge.conflicts.join(', ') || merge.message.slice(0, 120)}` })
-        showToast('Conflitti di merge rilevati: risolvili nell\'editor', 'error')
+        updateStep(4, { status: 'error', detail: tr('conflicts: {files}', { files: merge.conflicts.join(', ') || merge.message.slice(0, 120) }) })
+        showToast(tr('merge conflicts found: resolve them in the editor'), 'error')
         // Stop here; let the user resolve and re-run
         setSteps(prev => prev.map((s, i) => i > 4 ? { ...s, status: 'pending' } : s))
         setIsRunning(false)
@@ -249,7 +258,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
       updateStep(6, { status: 'running' })
       let prOk: boolean
       if (prCreated !== null) {
-        updateStep(6, { status: 'ok', detail: `PR #${prCreated} già creata` })
+        updateStep(6, { status: 'ok', detail: tr('PR #{id} already created', { id: prCreated }) })
         prOk = true
       } else {
         prOk = await createPr()
@@ -260,7 +269,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
     } catch (e) {
       const i = steps.findIndex(s => s.status === 'running')
       updateStep(i >= 0 ? i : 0, { status: 'error', detail: (e as Error).message })
-      showToast('Errore durante la finalizzazione', 'error')
+      showToast(tr('error while completing'), 'error')
       setIsRunning(false)
     }
   }
@@ -291,9 +300,9 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <h3 style={{ margin: 0, fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <GitPullRequest size={15} style={{ color: 'var(--accent-color)' }} />
-            completa worktree
+            {t('complete worktree')}
           </h3>
-          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
+          <button onClick={onClose} title={t('close')} data-tip-desc={t('close this panel or dialog')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -320,9 +329,9 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
               <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>
                 {!adoReady
-                  ? <>Senza una repository Azure DevOps per questa cartella la pull request non verrà creata.</>
-                  : <>Azure DevOps non restituisce le repository del project <b>{connection?.project}</b>{repoList && !repoList.ok ? <> ({repoList.error})</> : null}: la pull request potrebbe fallire.</>}
-                {' '}Configurala in Impostazioni › Azure DevOps prima di avviare, oppure procedi solo con commit, push e merge.
+                  ? <>{t('Without an Azure DevOps repository for this folder the pull request will not be created.')}</>
+                  : <>{t('Azure DevOps does not return the repositories of the project')} <b>{connection?.project}</b>{repoList && !repoList.ok ? <> ({repoList.error})</> : null}: {t('the pull request may fail.')}</>}
+                {' '}{t('Set it up in Settings › Azure DevOps before starting, or go ahead with commit, push and merge only.')}
               </span>
             </div>
           )}
@@ -338,10 +347,10 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
             }}>
               <Layers size={12} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>
-                worktree impilato su <b>{stackInfo.parent}</b> — {stackInfo.detail}.<br />
+                {t('worktree stacked on')} <b>{stackInfo.parent}</b> — {stackInfo.detail}.<br />
                 {targetBranch === 'develop'
-                  ? <>il padre è già in develop: la PR andrà su <b>develop</b> e il legame verrà rimosso (promozione).</>
-                  : <>la PR andrà verso <b>{stackInfo.parent}</b> (allineamento con <span style={{ fontFamily: 'var(--font-mono)' }}>{mergeRef}</span>).</>}
+                  ? <>{t('the parent is already in develop: the PR will go to')} <b>develop</b> {t('and the link will be removed (promotion).')}</>
+                  : <>{t('the PR will target')} <b>{stackInfo.parent}</b> ({t('alignment with')} <span style={{ fontFamily: 'var(--font-mono)' }}>{mergeRef}</span>).</>}
               </span>
             </div>
           )}
@@ -355,7 +364,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
             }}>
               <Layers size={12} style={{ flexShrink: 0 }} />
               <span style={{ flex: 1 }}>
-                il lavoro di questo worktree è già dentro <b>{stackInfo.parent}</b>: non c'è nulla da completare.
+                {t('the work of this worktree is already inside')} <b>{stackInfo.parent}</b>: {t('there is nothing to complete.')}
               </span>
               <button onClick={removeAbsorbedChild} disabled={removingChild}
                 style={{
@@ -365,14 +374,14 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
                   fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                 }}>
                 {removingChild ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={10} />}
-                rimuovi worktree
+                {t('remove worktree')}
               </button>
             </div>
           )}
 
           <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-            commit message
-            <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="es. feat: add new endpoint"
+            {t('commit message')}
+            <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder={t('e.g. {example}', { example: 'feat: add new endpoint' })}
               spellCheck={false}
               style={{
                 display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
@@ -383,14 +392,14 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
             />
             {fullMessage !== message.trim() && (
               <div style={{ marginTop: '4px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--accent-color)', fontFamily: 'var(--font-mono)' }}>
-                commit e titolo PR: <span style={{ color: 'var(--text-secondary)' }}>{fullMessage}</span>
+                {t('commit and PR title:')} <span style={{ color: 'var(--text-secondary)' }}>{fullMessage}</span>
               </div>
             )}
           </label>
 
           {adoReady && (
             <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-              repository
+              {t('repository')}
               <select value={repo} onChange={(e) => setPickedRepo(e.target.value)}
                 disabled={repos.length === 0}
                 style={{
@@ -399,7 +408,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
                   borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
                   fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
                 }}>
-                {repos.length === 0 ? <option value="">loading repositories...</option> : repos.map(r => <option key={r} value={r}>{r}</option>)}
+                {repos.length === 0 ? <option value="">{t('loading repositories...')}</option> : repos.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </label>
           )}
@@ -422,7 +431,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
               }}>
                 {autoComplete && <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--text-inverse)' }} />}
               </span>
-              auto-complete della PR (default: no)
+              {t('PR auto-complete (default: no)')}
             </div>
           )}
 
@@ -443,7 +452,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
               padding: '8px 10px', background: 'var(--error-bg)', color: 'var(--error-color)',
               borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))'
             }}>
-              <div style={{ marginBottom: '4px', fontWeight: 600 }}>Risolvi i conflitti, poi riavvia "completa":</div>
+              <div style={{ marginBottom: '4px', fontWeight: 600 }}>{t('Resolve the conflicts, then run "complete" again:')}</div>
               {conflicts.slice(0, 8).map(f => (
                 <button key={f} onClick={() => openConflictInEditor(f)}
                   style={{
@@ -461,7 +470,9 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
 
           {prCreated !== null && (
             <div style={{ padding: '8px 10px', background: 'var(--success-bg)', color: 'var(--success-color)', borderRadius: 'var(--radius-sm)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
-              Pull request #{prCreated} creata verso {targetBranch}{prMode === 'autocomplete' ? ' (autocomplete)' : prMode === 'completed' ? ' (completata)' : ''}
+              {prMode === 'autocomplete' ? t('Pull request #{id} created towards {branch} (autocomplete)', { id: prCreated, branch: targetBranch })
+                : prMode === 'completed' ? t('Pull request #{id} created towards {branch} (completed)', { id: prCreated, branch: targetBranch })
+                  : t('Pull request #{id} created towards {branch}', { id: prCreated, branch: targetBranch })}
             </div>
           )}
 
@@ -471,14 +482,14 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
                 padding: '7px 16px', background: 'var(--success-bg)', border: '1px solid var(--success-color)',
                 borderRadius: 'var(--radius-md)', color: 'var(--success-color)', cursor: 'pointer',
                 fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
-              }}>done</button>
+              }}>{t('done')}</button>
             ) : prFailed ? (
               <>
                 <button onClick={onClose} style={{
                   padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
                   fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
-                }}>close</button>
+                }}>{t('close')}</button>
                 <button onClick={retryPr} disabled={isRunning}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px',
@@ -488,7 +499,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
                     cursor: isRunning ? 'not-allowed' : 'pointer',
                     fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                   }}>
-                  {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : 'retry PR'}
+                  {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : t('retry PR')}
                 </button>
               </>
             ) : (
@@ -497,7 +508,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
                   padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
                   fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
-                }}>close</button>
+                }}>{t('close')}</button>
                 <button onClick={run} disabled={!message.trim() || isRunning || absorbed}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px',
@@ -507,7 +518,7 @@ export function CompleteWorktreeDialog({ worktreePath, branch, repoPath, onClose
                     cursor: message.trim() && !isRunning && !absorbed ? 'pointer' : 'not-allowed',
                     fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                   }}>
-                  {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : adoReady ? 'start' : 'start senza PR'}
+                  {isRunning ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : adoReady ? t('start') : t('start without PR')}
                 </button>
               </>
             )}

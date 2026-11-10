@@ -12,8 +12,8 @@ async function runMassiveRows(page: import('@playwright/test').Page) {
 test('the export menu offers csv, sql and xlsx; xlsx keeps the cell types', async ({ page }) => {
   await runMassiveRows(page)
 
-  await page.getByRole('button', { name: 'esporta' }).click()
-  await expect(page.getByRole('menu', { name: 'formato di esportazione' })).toBeVisible()
+  await page.getByRole('button', { name: 'export' }).click()
+  await expect(page.getByRole('menu', { name: 'export format' })).toBeVisible()
   await expect(page.getByTestId('export-file-csv')).toBeVisible()
   await expect(page.getByTestId('export-file-sql')).toBeVisible()
   await page.getByTestId('export-file-xlsx').click()
@@ -43,7 +43,7 @@ test('the grid exports the selected rows as an aligned text table to the clipboa
   await page.locator('[data-result-row="0"] [data-result-column="Code"]').click()
   await page.locator('[data-result-row="1"] [data-result-column="Code"]').click({ modifiers: ['Control'] })
 
-  await page.getByRole('button', { name: 'esporta' }).click()
+  await page.getByRole('button', { name: 'export' }).click()
   await page.getByTestId('export-text-clipboard').click()
 
   await expect.poll(async () => (await sqlMock(page, m => m.clipboard)).length).toBe(1)
@@ -54,17 +54,17 @@ test('the grid exports the selected rows as an aligned text table to the clipboa
   expect(lines[2]).toContain('| ROW-0000001 |')
   expect(lines[3]).toContain('| ROW-0000002 |')
   expect(new Set(lines.map(line => line.length)).size).toBe(1) // every line equally wide
-  await expect(page.getByText('tabella di testo copiata negli appunti: 2 righe')).toBeVisible()
+  await expect(page.getByText('text table copied to the clipboard: 2 rows')).toBeVisible()
 })
 
 test('several result sets export in one go: the chosen ones, one sheet, file or text block each', async ({ page }) => {
   await openMockDatabase(page)
   await runEditorQuery(page, 'SELECT * FROM dbo.Orders\nSELECT * FROM dbo.Customers\nSELECT * FROM dbo.Orders')
   await expect(page.getByRole('region', { name: 'Result set 3' })).toBeVisible()
-  const menu = page.getByRole('menu', { name: 'esporta più result set' })
+  const menu = page.getByRole('menu', { name: 'export several result sets' })
 
-  await page.getByRole('button', { name: 'esporta tutti' }).click()
-  await menu.getByLabel('esporta result set 3').uncheck()
+  await page.getByRole('button', { name: 'export all' }).click()
+  await menu.getByLabel('export result set 3').uncheck()
   await menu.getByTestId('export-file-xlsx').click()
   await expect.poll(async () => (await sqlMock(page, m => m.xlsx)).length).toBe(1)
   const workbook = (await sqlMock(page, m => m.xlsx))[0]
@@ -73,25 +73,25 @@ test('several result sets export in one go: the chosen ones, one sheet, file or 
   expect(workbook.sheets[1].rows).toEqual([[1, 'Ada', 'C1'], [2, 'Bob', 'C2']])
 
   // the choice stays while the results stay
-  await page.getByRole('button', { name: 'esporta tutti' }).click()
-  await expect(menu.getByLabel('esporta result set 3')).not.toBeChecked()
+  await page.getByRole('button', { name: 'export all' }).click()
+  await expect(menu.getByLabel('export result set 3')).not.toBeChecked()
   await menu.getByTestId('export-text-clipboard').click()
   await expect.poll(async () => (await sqlMock(page, m => m.clipboard)).length).toBe(1)
   expect((await sqlMock(page, m => m.clipboard))[0]).toBe([
-    'Result set 1 · dbo.Orders · 2 righe',
+    'Result set 1 · dbo.Orders · 2 rows',
     '|  Id | CustomerId | Total |',
     '|----:|-----------:|------:|',
     '|  10 |          1 |  99.5 |',
     '|  11 |          2 |    12 |',
     '',
-    'Result set 2 · dbo.Customers · 2 righe',
+    'Result set 2 · dbo.Customers · 2 rows',
     '|  Id | Name | Code |',
     '|----:|------|------|',
     '|   1 | Ada  | C1   |',
     '|   2 | Bob  | C2   |'
   ].join('\n'))
 
-  await page.getByRole('button', { name: 'esporta tutti' }).click()
+  await page.getByRole('button', { name: 'export all' }).click()
   const [script] = await Promise.all([page.waitForEvent('download'), menu.getByTestId('export-file-sql').click()])
   expect(script.suggestedFilename()).toBe('query_results.sql')
   const sql = readFileSync(await script.path(), 'utf8')
@@ -101,7 +101,7 @@ test('several result sets export in one go: the chosen ones, one sheet, file or 
 
   const downloads: Download[] = []
   page.on('download', download => downloads.push(download))
-  await page.getByRole('button', { name: 'esporta tutti' }).click()
+  await page.getByRole('button', { name: 'export all' }).click()
   await menu.getByTestId('export-file-csv').click()
   await expect.poll(() => downloads.length).toBe(2)
   expect(downloads.map(d => d.suggestedFilename())).toEqual(['query_results_1.csv', 'query_results_2.csv'])

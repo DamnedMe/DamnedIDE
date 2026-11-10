@@ -4,13 +4,14 @@ import {
   useAgentChatStore, useWorktreeStore, useTerminalStore, useClaudeStore, useAiChatStore, useAgentConfigStore,
   type AgentSession, type AiChatMessage
 } from '../../store'
+import { useI18n, tr } from '../../i18n'
 
 function formatMeta(r: ClaudeResult): string {
   const u = r.usage
   const bits: string[] = []
   if (u?.inputTokens != null) bits.push(`${u.inputTokens} in`)
   if (u?.outputTokens != null) bits.push(`${u.outputTokens} out`)
-  if (u?.cacheReadTokens) bits.push(`${u.cacheReadTokens} da cache`)
+  if (u?.cacheReadTokens) bits.push(tr('{n} from cache', { n: u.cacheReadTokens }))
   if (r.costUsd) bits.push(`$${r.costUsd.toFixed(4)}`)
   return bits.join(' · ')
 }
@@ -24,6 +25,7 @@ function shortPath(p: string | null): string {
 // the others are headless CLIs. Each session is independent, so several chats
 // (even on different providers) can be open and stream concurrently.
 export function AiChatPanel() {
+  const t = useI18n()
   const sessions = useAgentChatStore(s => s.sessions)
   const activeId = useAgentChatStore(s => s.activeId)
   const createSession = useAgentChatStore(s => s.createSession)
@@ -198,13 +200,13 @@ export function AiChatPanel() {
       })
       if (res.ok) {
         if (res.sessionId) updateSession(id, { sessionId: res.sessionId })
-        useAgentChatStore.getState().setMessages(id, [...next, { role: 'assistant', text: res.text?.trim() || '(nessuna risposta)' }])
+        useAgentChatStore.getState().setMessages(id, [...next, { role: 'assistant', text: res.text?.trim() || tr('(no reply)') }])
         setMeta(prev => ({ ...prev, [id]: formatMeta(res) }))
       } else {
-        useAgentChatStore.getState().setMessages(id, [...next, { role: 'assistant', text: `Errore: ${res.error}` }])
+        useAgentChatStore.getState().setMessages(id, [...next, { role: 'assistant', text: tr('Error: {message}', { message: res.error ?? '' }) }])
       }
     } catch (e) {
-      useAgentChatStore.getState().setMessages(id, [...next, { role: 'assistant', text: `Errore: ${(e as Error).message}` }])
+      useAgentChatStore.getState().setMessages(id, [...next, { role: 'assistant', text: tr('Error: {message}', { message: (e as Error).message }) }])
     } finally {
       setBusy(prev => ({ ...prev, [id]: false }))
       setStreaming(prev => ({ ...prev, [id]: '' }))
@@ -222,7 +224,7 @@ export function AiChatPanel() {
     <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
       {label}
       <select value={value} onChange={(e) => onChange(e.target.value)}
-        title={value} data-tip={value} data-tip-desc="currently selected value"
+        title={value} data-tip={value} data-tip-desc={t('currently selected value')}
         style={{ ...selectStyle, flex: 1, minWidth: '150px', maxWidth: '290px' }}>
         {value && !options.some(o => o[0] === value) && <option value={value}>{value}</option>}
         {/* the catalog can be long (opencode lists every configured provider):
@@ -233,10 +235,10 @@ export function AiChatPanel() {
   )
 
   const claudeAuthTip = !auth?.cli
-    ? (auth?.hasApiKey ? 'API key Anthropic configurata' : "CLI 'claude' non trovata nel PATH")
+    ? (auth?.hasApiKey ? t('Anthropic API key configured') : t("'claude' CLI not found in PATH"))
     : auth.loggedIn
-      ? `subscription ${auth.subscriptionType || ''} — ${auth.email || auth.authMethod || ''}`.trim()
-      : "non autenticato: esegui 'claude auth login' in un terminale"
+      ? `${t('subscription')} ${auth.subscriptionType || ''} — ${auth.email || auth.authMethod || ''}`.trim()
+      : t("not signed in: run 'claude auth login' in a terminal")
 
   const canSend = !!input.trim() && !activeBusy && !!active && !!providerInfo?.available
 
@@ -253,7 +255,7 @@ export function AiChatPanel() {
           const isBusy = !!busy[s.id]
           return (
             <div key={s.id} onClick={() => setActive(s.id)}
-              title={s.worktree || 'general'} data-tip-desc="switch to this conversation"
+              title={s.worktree || t('general')} data-tip-desc={t('switch to this conversation')}
               style={{
                 display: 'flex', alignItems: 'center', gap: '5px', padding: '2px 6px', flexShrink: 0,
                 borderRadius: 'var(--radius-sm)', cursor: 'pointer', maxWidth: '190px',
@@ -263,15 +265,18 @@ export function AiChatPanel() {
                 color: isActiveTab ? 'var(--accent-color)' : 'var(--text-secondary)'
               }}>
               {isBusy ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <Cpu size={9} />}
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
-              <button onClick={(e) => { e.stopPropagation(); closeSession(s.id) }} title="close chat" data-tip-desc="close this conversation"
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {/* the sentinels stay stored in English (the first message replaces 'new chat'): translated only here */}
+                {s.title === 'new chat' ? t('new chat') : s.title === 'general' ? t('general') : s.title}
+              </span>
+              <button onClick={(e) => { e.stopPropagation(); closeSession(s.id) }} title={t('close chat')} data-tip-desc={t('close this conversation')}
                 style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>
                 <X size={9} />
               </button>
             </div>
           )
         })}
-        <button onClick={newSession} title="new chat" data-tip-desc="open a new independent conversation"
+        <button onClick={newSession} title={t('new chat')} data-tip-desc={t('open a new independent conversation')}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '18px',
             background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)',
@@ -285,17 +290,17 @@ export function AiChatPanel() {
       {active && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0, flexWrap: 'wrap' }}>
           <select value={active.provider} onChange={(e) => changeProvider(e.target.value as AgentProviderId)}
-            title="provider" data-tip-desc="choose the agent that answers this conversation"
+            title="provider" data-tip-desc={t('choose the agent that answers this conversation')}
             style={{ ...selectStyle, maxWidth: '160px' }}>
             {visibleProviders.map(p => (
-              <option key={p.id} value={p.id}>{p.label}{p.available ? '' : ' — non disponibile'}</option>
+              <option key={p.id} value={p.id}>{p.label}{p.available ? '' : ` — ${t('not available')}`}</option>
             ))}
           </select>
 
           <select value={active.worktree || ''} onChange={(e) => updateSession(active.id, { worktree: e.target.value || null })}
-            title="worktree" data-tip-desc="the worktree this conversation works on"
+            title="worktree" data-tip-desc={t('the worktree this conversation works on')}
             style={{ ...selectStyle, maxWidth: '170px' }}>
-            <option value="">general</option>
+            <option value="">{t('general')}</option>
             {worktreeEntries.map(w => (
               <option key={w.path} value={w.path}>{w.branch || shortPath(w.path)}</option>
             ))}
@@ -312,15 +317,15 @@ export function AiChatPanel() {
             <>
               <span title={claudeAuthTip} data-tip-desc={claudeAuthTip}
                 style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: (active.backend === 'api' ? auth?.hasApiKey : auth?.loggedIn) ? 'var(--success-color)' : 'var(--error-color)' }} />
-              {miniSelect('auth', active.backend, [['subscription', 'subscription'], ['api', 'API']], (v) => updateSession(active.id, { backend: v as ClaudeBackend }))}
+              {miniSelect('auth', active.backend, [['subscription', t('subscription')], ['api', 'API']], (v) => updateSession(active.id, { backend: v as ClaudeBackend }))}
             </>
           )}
 
           {providerModels.length > 0
-            ? miniSelect('model', active.model, providerModels.map(m => [m.id, m.label]), (v) => updateSession(active.id, { model: v }))
+            ? miniSelect(t('model'), active.model, providerModels.map(m => [m.id, m.label]), (v) => updateSession(active.id, { model: v }))
             : (
               <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                model
+                {t('model')}
                 <input value={active.model} onChange={(e) => updateSession(active.id, { model: e.target.value })} spellCheck={false}
                   style={{ ...selectStyle, width: '130px', cursor: 'text' }} />
               </label>
@@ -339,14 +344,14 @@ export function AiChatPanel() {
             miniSelect('perm', active.permissionMode, providerInfo.permissionModes.map(p => [p, p]), (v) => updateSession(active.id, { permissionMode: v }))}
 
           <button onClick={() => { useAgentChatStore.getState().clearMessages(active.id); setMeta(prev => ({ ...prev, [active.id]: '' })) }}
-            title="clear this conversation" data-tip-desc="delete all messages of this conversation"
+            title={t('clear this conversation')} data-tip-desc={t('delete all messages of this conversation')}
             style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', marginLeft: 'auto' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
             <Trash2 size={11} />
           </button>
-          <button onClick={() => useTerminalStore.getState().setOpen(false)} title="minimize"
-            data-tip-desc="minimize the panel back to the status bar icon"
+          <button onClick={() => useTerminalStore.getState().setOpen(false)} title={t('minimize')}
+            data-tip-desc={t('minimize the panel back to the status bar icon')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '20px', height: '18px', background: 'none', border: 'none',
@@ -364,15 +369,15 @@ export function AiChatPanel() {
         {active && messages.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             {active.provider === 'claude'
-              ? <>Claude {active.backend === 'api' ? 'via API Anthropic' : 'con la tua subscription'} — {active.model || 'modello predefinito'}{active.effort ? ` / ${active.effort}` : ''}.<br />{claudeAuthTip}<br /></>
-              : <>{providerInfo?.label || active.provider} — {providerInfo?.detail || 'in attesa'}.<br />Provider CLI in modalità headless, con i suoi strumenti sul worktree.<br /></>}
-            {active.worktree ? `Conversazione su ${shortPath(active.worktree)}.` : 'Nessun worktree: conversazione generica.'}
+              ? <>Claude {active.backend === 'api' ? t('via the Anthropic API') : t('with your subscription')} — {active.model || t('default model')}{active.effort ? ` / ${active.effort}` : ''}.<br />{claudeAuthTip}<br /></>
+              : <>{providerInfo?.label || active.provider} — {providerInfo?.detail || t('waiting')}.<br />{t('Headless CLI provider, with its own tools on the worktree.')}<br /></>}
+            {active.worktree ? t('Conversation on {path}.', { path: shortPath(active.worktree) }) : t('No worktree: general conversation.')}
           </div>
         )}
         {visibleProviders.length === 0 && (
           <div style={{ padding: '16px', textAlign: 'center', color: 'var(--warning-color)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
-            nessun agente configurato.<br />
-            aggiungilo da Impostazioni → Agenti AI (accedi con la CLI o inserisci la API key).
+            {t('no agent configured.')}<br />
+            {t('add one from Settings → AI agents (sign in with the CLI or enter the API key).')}
           </div>
         )}
         {messages.map((m, i) => (
@@ -420,7 +425,7 @@ export function AiChatPanel() {
         {active && activeBusy && !activeStreaming && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
             <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-            {activity[active.id] ? `${activity[active.id]}…` : 'lavorando...'}
+            {activity[active.id] ? `${activity[active.id]}…` : t('working...')}
           </div>
         )}
         {active && !activeBusy && meta[active.id] && (
@@ -434,7 +439,7 @@ export function AiChatPanel() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
         <input value={input} onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          placeholder={providerInfo?.available ? `scrivi un messaggio a ${providerInfo.label}…` : 'seleziona un provider disponibile nelle impostazioni'}
+          placeholder={providerInfo?.available ? t('write a message to {name}…', { name: providerInfo.label }) : t('select an available provider in the settings')}
           disabled={!providerInfo?.available || activeBusy}
           spellCheck={false}
           style={{
@@ -445,7 +450,7 @@ export function AiChatPanel() {
         />
         {activeBusy ? (
           <button onClick={() => active && window.electronAPI.ai.cancel(active.id)}
-            title="stop" data-tip-desc="interrompe il turno in corso"
+            title={t('stop')} data-tip-desc={t('stop the running turn')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '24px',
               background: 'var(--error-bg)', border: '1px solid var(--error-color)', borderRadius: 'var(--radius-sm)',
@@ -455,7 +460,7 @@ export function AiChatPanel() {
           </button>
         ) : (
           <button onClick={send} disabled={!canSend}
-            title="send to the agent" data-tip-desc="send the message to the agent"
+            title={t('send to the agent')} data-tip-desc={t('send the message to the agent')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '24px',
               background: canSend ? 'var(--accent-color)' : 'var(--bg-disabled)',

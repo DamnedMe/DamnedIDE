@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Clock3, FileText, Heart, HeartOff, Pencil, Plus, Search, Trash2, X } from '@/components/icons'
-import { SqlFavoriteQuery, SqlHistoryEntry, SqlWorkspaceState } from '../../types/sql'
+import { SqlFavoriteQuery, SqlHistoryEntry, SqlQuerySource, SqlWorkspaceState } from '../../types/sql'
+import { tr, useI18n } from '../../i18n'
 
 interface SqlWorkspaceDrawerProps {
   workspace: SqlWorkspaceState
@@ -19,7 +20,22 @@ interface SqlWorkspaceDrawerProps {
 type Section = 'workspace' | 'history' | 'favorites'
 
 function queryTitle(query: string): string {
-  return query.replace(/\s+/g, ' ').trim().slice(0, 76) || 'Empty query'
+  return query.replace(/\s+/g, ' ').trim().slice(0, 76) || tr('Empty query')
+}
+
+/** Where a history entry was run from, as shown; the stored value stays the enum. */
+function sourceLabel(source: SqlQuerySource, t: (key: string) => string): string {
+  switch (source) {
+    case 'editor': return t('editor')
+    case 'context-menu': return t('context menu')
+    case 'diagram': return t('diagram')
+    case 'grid': return t('grid')
+    case 'foreign-key': return t('foreign key')
+    case 'mutation': return t('data change')
+    case 'history': return t('history')
+    case 'favorite': return t('favorite')
+    default: return source // a value saved by another version: shown as stored
+  }
 }
 
 function tinyButton(active = false): React.CSSProperties {
@@ -35,6 +51,7 @@ export function SqlWorkspaceDrawer({
   workspace, onClose, onOpenQuery, onFavoriteHistory, onRemoveFavorite,
   onDeleteHistory, onClearHistory, onRenameTab, onRenameFavorite, onNewQuery, onActivateTab
 }: SqlWorkspaceDrawerProps) {
+  const t = useI18n()
   const [section, setSection] = useState<Section>('history')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<'all' | SqlHistoryEntry['status']>('all')
@@ -59,36 +76,36 @@ export function SqlWorkspaceDrawer({
   }, [search, workspace.favorites])
 
   return (
-    <aside className="sql-workspace-drawer" role="complementary" aria-label="SQL workspace" style={{
+    <aside className="sql-workspace-drawer" role="complementary" aria-label={t('SQL workspace')} style={{
       position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(390px, 42vw)', zIndex: 40,
       display: 'flex', flexDirection: 'column', background: 'var(--bg-card)',
       borderLeft: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)'
     }}>
       <header className="sql-workspace-drawer__header" style={{ height: 42, display: 'flex', alignItems: 'center', padding: '0 10px', borderBottom: '1px solid var(--border-subtle)', gap: 7 }}>
         <Clock3 size={13} color="var(--accent-color)" />
-        <strong style={{ flex: 1, fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600 }}>SQL workspace</strong>
-        <button aria-label="close SQL workspace" title="close" data-tip-desc="close the SQL workspace drawer" onClick={onClose} style={tinyButton()}><X size={11} /></button>
+        <strong style={{ flex: 1, fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600 }}>{t('SQL workspace')}</strong>
+        <button aria-label={t('close SQL workspace')} title={t('close')} data-tip-desc={t('close the SQL workspace drawer')} onClick={onClose} style={tinyButton()}><X size={11} /></button>
       </header>
 
-      <nav className="sql-workspace-drawer__tabs" aria-label="SQL workspace sections" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', padding: '7px 8px 0', gap: 4 }}>
+      <nav className="sql-workspace-drawer__tabs" aria-label={t('SQL workspace sections')} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', padding: '7px 8px 0', gap: 4 }}>
         {(['workspace', 'history', 'favorites'] as Section[]).map(value => (
-          <button key={value} aria-label={value} onClick={() => setSection(value)} style={tinyButton(section === value)}>{value}</button>
+          <button key={value} aria-label={t(value)} onClick={() => setSection(value)} style={tinyButton(section === value)}>{t(value)}</button>
         ))}
       </nav>
 
       {section === 'workspace' && (
         <div style={{ padding: '8px 8px 0' }}>
-          <button aria-label="add query to workspace" onClick={onNewQuery} style={{
+          <button aria-label={t('add query to workspace')} onClick={onNewQuery} style={{
             ...tinyButton(true), width: '100%', height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             fontWeight: 600
-          }}><Plus size={11} /> new query</button>
+          }}><Plus size={11} /> {t('new query')}</button>
         </div>
       )}
 
       <div style={{ padding: '8px', display: 'flex', gap: 5 }}>
         <label style={{ position: 'relative', flex: 1 }}>
           <Search size={10} style={{ position: 'absolute', left: 7, top: 7, color: 'var(--text-muted)' }} />
-          <input aria-label="search SQL workspace" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search SQL or database…" style={{
+          <input aria-label={t('search SQL workspace')} value={search} onChange={event => setSearch(event.target.value)} placeholder={t('Search SQL or database…')} style={{
             width: '100%', height: 26, padding: '0 7px 0 23px', background: 'var(--bg-input)', color: 'var(--text-primary)',
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', outline: 'none', fontSize: 'calc(9px * var(--ui-text-scale, 1))'
           }} />
@@ -97,13 +114,13 @@ export function SqlWorkspaceDrawer({
 
       {section === 'history' && (
         <div style={{ display: 'flex', gap: 5, padding: '0 8px 7px' }}>
-          <select aria-label="history status" value={status} onChange={event => setStatus(event.target.value as typeof status)} style={{ ...tinyButton(), flex: 1 }}>
-            <option value="all">all statuses</option><option value="success">success</option><option value="error">error</option><option value="canceled">canceled</option>
+          <select aria-label={t('history status')} value={status} onChange={event => setStatus(event.target.value as typeof status)} style={{ ...tinyButton(), flex: 1 }}>
+            <option value="all">{t('all statuses')}</option><option value="success">{t('success')}</option><option value="error">{t('error')}</option><option value="canceled">{t('canceled')}</option>
           </select>
-          <select aria-label="history period" value={period} onChange={event => setPeriod(event.target.value as typeof period)} style={{ ...tinyButton(), flex: 1 }}>
-            <option value="all">all time</option><option value="day">24 hours</option><option value="week">7 days</option><option value="month">30 days</option>
+          <select aria-label={t('history period')} value={period} onChange={event => setPeriod(event.target.value as typeof period)} style={{ ...tinyButton(), flex: 1 }}>
+            <option value="all">{t('all time')}</option><option value="day">{t('24 hours')}</option><option value="week">{t('7 days')}</option><option value="month">{t('30 days')}</option>
           </select>
-          {workspace.history.length > 0 && <button aria-label="clear query history" title="clear history" data-tip-desc="delete the entire query history" onClick={onClearHistory} style={tinyButton()}><Trash2 size={10} /></button>}
+          {workspace.history.length > 0 && <button aria-label={t('clear query history')} title={t('clear history')} data-tip-desc={t('delete the entire query history')} onClick={onClearHistory} style={tinyButton()}><Trash2 size={10} /></button>}
         </div>
       )}
 
@@ -111,36 +128,36 @@ export function SqlWorkspaceDrawer({
         {section === 'workspace' && workspace.tabs.map(tab => (
           <article key={tab.id} style={{ padding: '9px', borderBottom: '1px solid var(--border-subtle)' }}>
             {editingTab === tab.id ? (
-              <input autoFocus aria-label={`rename ${tab.title}`} value={draftTitle} onChange={event => setDraftTitle(event.target.value)}
+              <input autoFocus aria-label={t('rename {title}', { title: tab.title })} value={draftTitle} onChange={event => setDraftTitle(event.target.value)}
                 onBlur={() => { onRenameTab(tab.id, draftTitle); setEditingTab(null) }}
                 onKeyDown={event => { if (event.key === 'Enter') { onRenameTab(tab.id, draftTitle); setEditingTab(null) } if (event.key === 'Escape') setEditingTab(null) }}
                 style={{ width: '100%', height: 25, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--accent-color)', color: 'var(--text-primary)', borderRadius: 3 }} />
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <button aria-label={`open ${tab.title}`} onClick={() => onActivateTab(tab.id)} style={{
+                <button aria-label={t('open {title}', { title: tab.title })} onClick={() => onActivateTab(tab.id)} style={{
                   border: 0, padding: 0, flex: 1, textAlign: 'left', background: 'transparent', color: 'var(--text-primary)',
                   cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600
                 }}>{tab.title}</button>
-                <button aria-label={`rename ${tab.title}`} title="rename query" data-tip-desc="rename the current query" onClick={() => { setDraftTitle(tab.title); setEditingTab(tab.id) }} style={tinyButton()}><Pencil size={9} /></button>
+                <button aria-label={t('rename {title}', { title: tab.title })} title={t('rename query')} data-tip-desc={t('rename the current query')} onClick={() => { setDraftTitle(tab.title); setEditingTab(tab.id) }} style={tinyButton()}><Pencil size={9} /></button>
               </div>
             )}
-            <div style={{ color: 'var(--text-muted)', fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', marginTop: 4 }}>{tab.context?.database || 'no database'} · {queryTitle(tab.query)}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', marginTop: 4 }}>{tab.context?.database || t('no database')} · {queryTitle(tab.query)}</div>
           </article>
         ))}
 
         {section === 'history' && history.map(entry => (
           <article data-testid="sql-history-item" key={entry.id} style={{ padding: '9px', borderBottom: '1px solid var(--border-subtle)' }}>
-            <button aria-label={`open ${queryTitle(entry.query)}`} onClick={() => onOpenQuery(entry.query, { connectionId: entry.connectionId, database: entry.database }, 'history')}
+            <button aria-label={t('open {title}', { title: queryTitle(entry.query) })} onClick={() => onOpenQuery(entry.query, { connectionId: entry.connectionId, database: entry.database }, 'history')}
               style={{ border: 0, padding: 0, width: '100%', textAlign: 'left', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', lineHeight: 1.45 }}>
               {queryTitle(entry.query)}
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
-              <span style={{ color: entry.status === 'success' ? 'var(--success-color)' : 'var(--error-color)' }}>{entry.status}</span>
-              <span>{entry.database || 'server'}</span><span>{entry.source}</span><span>{entry.durationMs} ms</span><span>{entry.rowCount} rows</span>
+              <span style={{ color: entry.status === 'success' ? 'var(--success-color)' : 'var(--error-color)' }}>{t(entry.status)}</span>
+              <span>{entry.database || 'server'}</span><span>{sourceLabel(entry.source, t)}</span><span>{entry.durationMs} ms</span><span>{entry.rowCount === 1 ? t('1 row') : t('{n} rows', { n: entry.rowCount })}</span>
               {entry.runCount > 1 && <span>×{entry.runCount}</span>}
               <span style={{ flex: 1 }} />
-              <button aria-label="add query to favorites" title="add to favorites" data-tip-desc="save this query to the favorites" onClick={() => onFavoriteHistory(entry)} style={tinyButton()}><Heart size={9} /></button>
-              <button aria-label="delete history entry" title="delete" data-tip-desc="delete this item" onClick={() => onDeleteHistory(entry.id)} style={tinyButton()}><Trash2 size={9} /></button>
+              <button aria-label={t('add query to favorites')} title={t('add to favorites')} data-tip-desc={t('save this query to the favorites')} onClick={() => onFavoriteHistory(entry)} style={tinyButton()}><Heart size={9} /></button>
+              <button aria-label={t('delete history entry')} title={t('delete')} data-tip-desc={t('delete this item')} onClick={() => onDeleteHistory(entry.id)} style={tinyButton()}><Trash2 size={9} /></button>
             </div>
           </article>
         ))}
@@ -148,23 +165,23 @@ export function SqlWorkspaceDrawer({
         {section === 'favorites' && favorites.map((favorite: SqlFavoriteQuery) => (
           <article data-testid="sql-favorite-item" key={favorite.id} style={{ padding: '9px', borderBottom: '1px solid var(--border-subtle)' }}>
             {editingFavorite === favorite.id ? (
-              <input autoFocus aria-label={`rename favorite ${favorite.title}`} value={draftTitle} onChange={event => setDraftTitle(event.target.value)}
+              <input autoFocus aria-label={t('rename favorite {title}', { title: favorite.title })} value={draftTitle} onChange={event => setDraftTitle(event.target.value)}
                 onBlur={() => { onRenameFavorite(favorite.id, draftTitle); setEditingFavorite(null) }}
                 onKeyDown={event => { if (event.key === 'Enter') { onRenameFavorite(favorite.id, draftTitle); setEditingFavorite(null) } if (event.key === 'Escape') setEditingFavorite(null) }}
                 style={{ width: '100%', height: 25, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--accent-color)', color: 'var(--text-primary)', borderRadius: 3 }} />
             ) : (
-              <button aria-label={`rename favorite ${favorite.title}`} onClick={() => { setDraftTitle(favorite.title); setEditingFavorite(favorite.id) }} style={{ border: 0, padding: 0, background: 'transparent', color: 'var(--text-primary)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600, cursor: 'text' }}>{favorite.title}</button>
+              <button aria-label={t('rename favorite {title}', { title: favorite.title })} onClick={() => { setDraftTitle(favorite.title); setEditingFavorite(favorite.id) }} style={{ border: 0, padding: 0, background: 'transparent', color: 'var(--text-primary)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontWeight: 600, cursor: 'text' }}>{favorite.title}</button>
             )}
             <div style={{ fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', margin: '4px 0 7px' }}>{queryTitle(favorite.query)}</div>
             <div style={{ display: 'flex', gap: 5 }}>
-              <button aria-label={`open ${favorite.title}`} onClick={() => onOpenQuery(favorite.query, { connectionId: favorite.connectionId, database: favorite.database }, 'favorite')} style={tinyButton(true)}><FileText size={9} /> open</button>
-              <button aria-label={`remove ${favorite.title} from favorites`} title="remove favorite" data-tip-desc="remove this query from the favorites" onClick={() => onRemoveFavorite(favorite.id)} style={tinyButton()}><HeartOff size={9} /></button>
+              <button aria-label={t('open {title}', { title: favorite.title })} onClick={() => onOpenQuery(favorite.query, { connectionId: favorite.connectionId, database: favorite.database }, 'favorite')} style={tinyButton(true)}><FileText size={9} /> {t('open')}</button>
+              <button aria-label={t('remove {title} from favorites', { title: favorite.title })} title={t('remove favorite')} data-tip-desc={t('remove this query from the favorites')} onClick={() => onRemoveFavorite(favorite.id)} style={tinyButton()}><HeartOff size={9} /></button>
             </div>
           </article>
         ))}
 
         {((section === 'history' && history.length === 0) || (section === 'favorites' && favorites.length === 0) || (section === 'workspace' && workspace.tabs.length === 0)) && (
-          <div style={{ padding: '32px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>No matching items</div>
+          <div style={{ padding: '32px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>{t('No matching items')}</div>
         )}
       </div>
     </aside>

@@ -1,5 +1,6 @@
 import { BranchInfo } from '../../types/git'
 import { GitBranch, GitBranchPlus } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface BranchListProps {
   branches: BranchInfo[]
@@ -9,6 +10,7 @@ interface BranchListProps {
 }
 
 export function BranchList({ branches, currentBranch }: BranchListProps) {
+  const t = useI18n()
   const localBranches = branches.filter(b => !b.remote)
   const remoteBranches = branches.filter(b => b.remote)
 
@@ -24,7 +26,7 @@ export function BranchList({ branches, currentBranch }: BranchListProps) {
         letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
         borderBottom: '1px solid var(--border-subtle)'
       }}>
-        branches ({localBranches.length})
+        {t('branches ({n})', { n: localBranches.length })}
       </div>
       <div style={{ flex: 1, overflow: 'auto', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
         {localBranches.map((b) => (
@@ -54,7 +56,7 @@ export function BranchList({ branches, currentBranch }: BranchListProps) {
               letterSpacing: '0.5px', fontFamily: 'var(--font-mono)',
               borderTop: '1px solid var(--border-subtle)'
             }}>
-              remote ({remoteBranches.length})
+              {t('remote ({n})', { n: remoteBranches.length })}
             </div>
             {remoteBranches.map((b) => (
               <div key={b.name} style={{

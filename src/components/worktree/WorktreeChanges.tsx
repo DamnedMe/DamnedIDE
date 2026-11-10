@@ -7,7 +7,7 @@ import { DiffViewer } from '../editor/DiffViewer'
 import type { DiffViewerHandle } from '../editor/DiffViewer'
 import { useEditorStore } from '../../store'
 import { Modal } from '../layout/Modal'
-import { Loader2, AlertCircle, GitCompare, RefreshCw, Pencil, Save, X, ListPlus, GitMerge, Eye, GitCommitHorizontal, Download, Upload, Check, ArrowRightLeft, AlertTriangle, Undo2, Minus } from '@/components/icons'
+import { Loader2, AlertCircle, GitCompare, RefreshCw, FileEdit, Save, X, ListPlus, GitMerge, Eye, GitCommitHorizontal, Download, Upload, Check, ArrowRightLeft, AlertTriangle, Undo2, Minus } from '@/components/icons'
 import { MergeTool } from './MergeTool'
 import { MarkdownView } from '../editor/MarkdownView'
 import Editor from '@monaco-editor/react'
@@ -21,6 +21,7 @@ import { FileFilterBar } from '../editor/CodeEditor'
 import { compileFileFilter, matchPathOrName } from '../../utils/file-filter'
 import type { FileFilterMode } from '../../utils/file-filter'
 import { dirOf, fileNameOf, groupChanges } from '../../shared/changeGroups'
+import { useI18n, tr } from '../../i18n'
 
 function applyEditorTheme(monaco: typeof import('monaco-editor')) {
   const theme = useUIStore.getState().theme
@@ -65,6 +66,7 @@ export interface WorktreeChangesHandle {
 }
 
 export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCheck, onFileSelected, handleRef, onGitChanged, sync, layout }: WorktreeChangesProps) {
+  const t = useI18n()
   const [files, setFiles] = useState<GitFileStatus[]>([])
   const [stagedFiles, setStagedFiles] = useState<GitFileStatus[]>([])
   const [unstagedFiles, setUnstagedFiles] = useState<GitFileStatus[]>([])
@@ -200,7 +202,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
       const indexed = staged ? await window.electronAPI.git.showRef(worktreePath, path, ':').catch(() => '') : ''
       if (indexed) return { text: indexed, error: null }
       const msg = ((e as Error).message || String(e)).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '')
-      return { text: '', error: `impossibile leggere il file: ${msg}` }
+      return { text: '', error: tr('could not read the file: {msg}', { msg }) }
     }
   }
   const noRead = { text: '', error: null }
@@ -279,7 +281,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
       const paths = !filterText && unmergedFiles.length === 0 ? ['.'] : visStaged.map(f => f.path)
       await window.electronAPI.git.unstage(worktreePath, paths)
     } catch (e) {
-      showToast((e as Error).message || 'unstage fallito', 'error')
+      showToast((e as Error).message || tr('unstage failed'), 'error')
     }
     loadStatus()
   }
@@ -289,7 +291,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     const items = visUnstaged.filter(f => !/[\\/]$/.test(f.path))
       .map(f => ({ file: f.path, staged: false, untracked: !!f.isNew }))
     if (items.length) setDiscardTarget({ items })
-    else showToast('niente da scartare: ci sono solo repository annidati', 'error')
+    else showToast(t('nothing to discard: there are only nested repositories'), 'error')
   }
   // the confirmation reads differently for one file and for a whole zone
   const discardOne = discardTarget?.items.length === 1 ? discardTarget.items[0] : null
@@ -312,14 +314,14 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           done.push(t.file)
         } catch (e) {
           failed++
-          firstErr ||= ipcMessage(e, 'annullamento fallito')
+          firstErr ||= ipcMessage(e, tr('discard failed'))
         }
       }
       const one = items.length === 1 ? items[0] : null
-      if (failed) showToast(one ? firstErr : `${done.length} scartati, ${failed} non riusciti: ${firstErr}`, 'error')
+      if (failed) showToast(one ? firstErr : tr('{done} discarded, {failed} failed: {error}', { done: done.length, failed, error: firstErr }), 'error')
       else showToast(one
-        ? (one.untracked ? `file eliminato: ${one.file}` : `modifiche annullate: ${one.file}`)
-        : `modifiche scartate: ${done.length} file`)
+        ? (one.untracked ? tr('file deleted: {file}', { file: one.file }) : tr('changes undone: {file}', { file: one.file }))
+        : tr('changes discarded: {n} files', { n: done.length }))
     } finally {
       if (diffFileRef.current && done.includes(diffFileRef.current)) {
         diffFileRef.current = null
@@ -354,7 +356,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
       // pull moves the remote refs of every branch; the rest touch this worktree (and the transfer target)
       onGitChanged?.(id === 'pull' ? undefined : id === 'transfer' ? [worktreePath, moveTarget] : [worktreePath])
     } catch (e) {
-      showToast((e as Error).message || 'operazione fallita', 'error')
+      showToast((e as Error).message || tr('operation failed'), 'error')
     } finally {
       setBusy(null)
     }
@@ -365,15 +367,15 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     await runGit('commit', async () => {
       await window.electronAPI.git.commit(worktreePath, commitMsg.trim())
       if (commitAndPush) await window.electronAPI.git.push(worktreePath)
-    }, commitAndPush ? 'committed & pushed' : 'committed')
+    }, commitAndPush ? t('committed & pushed') : t('committed'))
     setIsCommitOpen(false)
     setCommitMsg('')
     setCommitAndPush(false)
     loadStatus()
   }
 
-  const handlePull = () => runGit('pull', () => window.electronAPI.git.pull(worktreePath), 'pulled')
-  const handlePush = () => runGit('push', () => window.electronAPI.git.push(worktreePath), 'pushed')
+  const handlePull = () => runGit('pull', () => window.electronAPI.git.pull(worktreePath), t('pulled'))
+  const handlePush = () => runGit('push', () => window.electronAPI.git.push(worktreePath), t('pushed'))
 
   const toggleTransfer = async () => {
     if (isMoveOpen) {
@@ -388,7 +390,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
       setMoveTarget(prev => prev && targets.some(t => t.path === prev) ? prev : (targets[0]?.path ?? ''))
       setIsMoveOpen(true)
     } catch (e) {
-      showToast((e as Error).message || 'failed to load worktrees', 'error')
+      showToast((e as Error).message || tr('failed to load worktrees'), 'error')
     }
   }
 
@@ -397,7 +399,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
     await runGit('transfer', async () => {
       const res = await window.electronAPI.git.transferChanges(worktreePath, moveTarget, { copy: !moveIsMove, stagedOnly: moveStagedOnly })
       if (!res.ok) throw new Error(res.message)
-    }, moveIsMove ? 'changes moved' : 'changes copied')
+    }, moveIsMove ? t('changes moved') : t('changes copied'))
     setIsMoveOpen(false)
     loadStatus()
   }
@@ -629,10 +631,12 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
   const syncButtons = (
     <>
       {syncBtn('pull', 'Pull', <Download size={11} />, handlePull,
-        behind > 0 ? `${behind} commit da pullare (rispetto all'ultimo fetch)` : 'pull the latest changes from the remote into this worktree',
+        behind > 1 ? t('{n} commits to pull (since the last fetch)', { n: behind })
+          : behind === 1 ? t('1 commit to pull (since the last fetch)') : t('pull the latest changes from the remote into this worktree'),
         behind > 0 && <span style={{ color: 'var(--warning-color)' }}>↓{behind}</span>)}
       {syncBtn('push', 'Push', <Upload size={11} />, handlePush,
-        ahead > 0 ? `${ahead} commit da pushare (rispetto all'ultimo fetch)` : 'push the local commits of this worktree to the remote',
+        ahead > 1 ? t('{n} commits to push (since the last fetch)', { n: ahead })
+          : ahead === 1 ? t('1 commit to push (since the last fetch)') : t('push the local commits of this worktree to the remote'),
         ahead > 0 && <span>↑{ahead}</span>, true)}
     </>
   )
@@ -650,7 +654,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', alignItems: 'center' }}>
           <button
             onClick={handleStageAll}
-            title="stage all changes" data-tip-desc="stage every modified file at once"
+            title={t('stage all changes')} data-tip-desc={t('stage every modified file at once')}
             style={{
               display: 'flex', background: 'none', border: 'none',
               color: 'var(--text-muted)', cursor: 'pointer', padding: '2px'
@@ -662,7 +666,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           </button>
           <button
             onClick={() => setIsCommitOpen(o => !o)}
-            title="commit" data-tip-desc="commit the staged changes of this worktree; tick commit &amp; push to also push"
+            title="commit" data-tip-desc={t('commit the staged changes of this worktree; tick commit & push to also push')}
             style={{
               display: 'flex', background: 'none', border: 'none',
               color: isCommitOpen ? 'var(--accent-color)' : 'var(--text-muted)',
@@ -675,7 +679,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           </button>
           <button
             onClick={toggleTransfer}
-            title="transfer changes" data-tip-desc="move or copy the pending changes to another worktree via a shared stash (optionally only the staged ones)"
+            title={t('transfer changes')} data-tip-desc={t('move or copy the pending changes to another worktree via a shared stash (optionally only the staged ones)')}
             style={{
               display: 'flex', background: 'none', border: 'none',
               color: isMoveOpen ? 'var(--accent-color)' : 'var(--text-muted)',
@@ -688,7 +692,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           </button>
           <button
             onClick={() => loadStatus()}
-            title="refresh" data-tip-desc="reload the current data from the repository"
+            title={t('refresh')} data-tip-desc={t('reload the current data from the repository')}
             style={{
               display: 'flex', background: 'none', border: 'none',
               color: 'var(--text-muted)', cursor: 'pointer', padding: '2px'
@@ -709,7 +713,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
             value={commitMsg}
             onChange={(e) => setCommitMsg(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleCommit() }}
-            placeholder="commit message"
+            placeholder={t('commit message')}
             spellCheck={false}
             autoFocus
             style={{
@@ -731,7 +735,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
             <button
               onClick={handleCommit}
               disabled={!commitMsg.trim() || busy === 'commit'}
-              title="commit" data-tip-desc={commitAndPush ? 'commit and push the staged changes' : 'commit the staged changes'}
+              title="commit" data-tip-desc={commitAndPush ? t('commit and push the staged changes') : t('commit the staged changes')}
               style={{
                 display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 10px', height: '20px',
                 background: commitMsg.trim() && busy !== 'commit' ? 'var(--accent-color)' : 'var(--bg-disabled)',
@@ -746,7 +750,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
             </button>
             <button
               onClick={() => { setIsCommitOpen(false); setCommitMsg(''); setCommitAndPush(false) }}
-              title="cancel" data-tip-desc="close the commit form"
+              title={t('cancel')} data-tip-desc={t('close the commit form')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '20px', background: 'transparent',
@@ -769,7 +773,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           <select
             value={moveTarget}
             onChange={(e) => setMoveTarget(e.target.value)}
-            title="target worktree" data-tip-desc="the worktree that receives the changes"
+            title={t('target worktree')} data-tip-desc={t('the worktree that receives the changes')}
             style={{
               width: '100%', padding: '3px 6px', boxSizing: 'border-box',
               fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
@@ -777,7 +781,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
               borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', outline: 'none'
             }}
           >
-            {moveTargets.length === 0 && <option value="">no other worktrees</option>}
+            {moveTargets.length === 0 && <option value="">{t('no other worktrees')}</option>}
             {moveTargets.map(w => (
               <option key={w.path} value={w.path}>
                 {w.branch || w.head.slice(0, 7)} — {w.path}
@@ -791,7 +795,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
               color: 'var(--text-secondary)', flexShrink: 0
             }}>
               <input type="checkbox" checked={moveIsMove} onChange={(e) => setMoveIsMove(e.target.checked)} />
-              move (remove from this worktree)
+              {t('move (remove from this worktree)')}
             </label>
             <label style={{
               display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer',
@@ -799,12 +803,12 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
               color: 'var(--text-secondary)', flexShrink: 0
             }}>
               <input type="checkbox" checked={moveStagedOnly} onChange={(e) => setMoveStagedOnly(e.target.checked)} />
-              only staged (keep unstaged here)
+              {t('only staged (keep unstaged here)')}
             </label>
             <button
               onClick={handleTransfer}
               disabled={!moveTarget || busy === 'transfer'}
-              title="transfer" data-tip-desc={moveIsMove ? 'move the changes to the selected worktree' : 'copy the changes to the selected worktree'}
+              title={t('transfer')} data-tip-desc={moveIsMove ? t('move the changes to the selected worktree') : t('copy the changes to the selected worktree')}
               style={{
                 display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 10px', height: '20px',
                 background: moveTarget && busy !== 'transfer' ? 'var(--accent-color)' : 'var(--bg-disabled)',
@@ -815,11 +819,11 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
               }}
             >
               {busy === 'transfer' ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowRightLeft size={10} />}
-              {moveIsMove ? 'move' : 'copy'}
+              {moveIsMove ? t('move') : t('copy')}
             </button>
             <button
               onClick={() => { setIsMoveOpen(false); setMoveTarget('') }}
-              title="cancel" data-tip-desc="close the transfer form"
+              title={t('cancel')} data-tip-desc={t('close the transfer form')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '20px', background: 'transparent',
@@ -840,7 +844,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
           mode={filterMode} onModeChange={setFilterMode}
           caseSensitive={filterCase} onCaseToggle={() => setFilterCase(c => !c)}
           spaceSensitive={filterSpace} onSpaceToggle={() => setFilterSpace(s => !s)}
-          placeholder="filter changes (regex)..."
+          placeholder={t('filter changes (regex)...')}
         />
       )}
       <div
@@ -864,11 +868,11 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
               background: 'var(--error-bg)', display: 'flex', alignItems: 'center', gap: '5px'
             }}>
               <GitMerge size={10} />
-              conflicts — {unmergedFiles.length}
+              {t('conflicts')} — {unmergedFiles.length}
             </div>
             {unmergedFiles.map((f) => (
               <div key={`conflict:${f.path}`} onClick={() => setMergeTarget(f.path)}
-                title={`resolve conflicts in ${f.path}`} data-tip-desc="open the merge tool for this file"
+                title={t('resolve conflicts in {path}', { path: f.path })} data-tip-desc={t('open the merge tool for this file')}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 10px',
                   borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer',
@@ -889,32 +893,32 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                   )}
                 </span>
                 <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, flexShrink: 0 }}>
-                  resolve
+                  {t('resolve')}
                 </span>
               </div>
             ))}
           </div>
         )}
-        {renderZone('staged changes', visStaged, 'var(--success-color)', stagedFiles.length,
+        {renderZone(t('staged changes'), visStaged, 'var(--success-color)', stagedFiles.length,
           <ZoneAction onClick={handleUnstageAll} disabled={isDiscarding} color="var(--success-color)" bg="var(--success-bg)"
-            title={filterText ? `unstage dei ${visStaged.length} file filtrati` : 'unstage all'}
-            tipDesc="toglie dallo stage i file elencati qui: le modifiche restano nei changes">
+            title={!filterText ? t('unstage all') : visStaged.length === 1 ? t('unstage the filtered file') : t('unstage the {n} filtered files', { n: visStaged.length })}
+            tipDesc={t('unstage the files listed here: the changes stay in changes')}>
             <Minus size={10} />
           </ZoneAction>)}
-        {renderZone('changes', visUnstaged, 'var(--warning-color)', unstagedFiles.length,
+        {renderZone(t('changes'), visUnstaged, 'var(--warning-color)', unstagedFiles.length,
           <ZoneAction onClick={askDiscardAll} disabled={isDiscarding} color="var(--error-color)" bg="var(--error-bg)"
-            title={filterText ? `scarta i ${visUnstaged.length} file filtrati` : 'scarta tutte le modifiche'}
-            tipDesc="riporta i file elencati qui alla versione in stage (o all'ultimo commit) ed elimina i file nuovi non tracciati; chiede conferma">
+            title={!filterText ? t('discard all changes') : visUnstaged.length === 1 ? t('discard the filtered file') : t('discard the {n} filtered files', { n: visUnstaged.length })}
+            tipDesc={t('revert the files listed here to the staged version (or the last commit) and delete the new untracked files; asks for confirmation')}>
             <Undo2 size={10} />
           </ZoneAction>)}
         {files.length === 0 && unmergedFiles.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-            no changes
+            {t('no changes')}
           </div>
         )}
         {files.length > 0 && visFiles.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-            no matching files
+            {t('no matching files')}
           </div>
         )}
       </div>
@@ -950,14 +954,14 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                   background: 'var(--warning-bg)', color: 'var(--warning-color)',
                   fontWeight: 700, fontSize: 'calc(9px * var(--ui-text-scale, 1))', flexShrink: 0
                 }}>
-                  editing
+                  {t('editing')}
                 </span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diffFile}</span>
               </div>
               <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
                 {diffFile?.toLowerCase().endsWith('.md') && (
                   <button onClick={() => setMdPreview(p => !p)}
-                    title={mdPreview ? 'show source' : 'preview rendered markdown'} data-tip-desc={mdPreview ? 'show the markdown source code' : 'render the markdown preview'}
+                    title={mdPreview ? t('show source') : t('preview rendered markdown')} data-tip-desc={mdPreview ? t('show the markdown source code') : t('render the markdown preview')}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '20px',
                       background: mdPreview ? 'var(--accent-bg)' : 'transparent',
@@ -968,21 +972,21 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                       fontFamily: 'var(--font-mono)', fontWeight: 600
                     }}>
                     <Eye size={10} />
-                    {mdPreview ? 'source' : 'preview'}
+                    {mdPreview ? t('source') : t('preview')}
                   </button>
                 )}
-                <button onClick={handleCancelEdit} title="cancel" data-tip-desc="cancel and close"
+                <button onClick={handleCancelEdit} title={t('cancel')} data-tip-desc={t('cancel and close')}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '20px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer' }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)'; e.currentTarget.style.borderColor = 'var(--error-color)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}>
                   <X size={11} />
                 </button>
-                <button onClick={handleSave} disabled={isSaving} title="save" data-tip-desc="save the changes"
+                <button onClick={handleSave} disabled={isSaving} title={t('save')} data-tip-desc={t('save the changes')}
                   style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '20px', background: 'var(--accent-color)', border: 'none', borderRadius: 'var(--radius-sm)', color: 'var(--text-inverse)', cursor: isSaving ? 'not-allowed' : 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600 }}
                   onMouseEnter={(e) => { if (!isSaving) e.currentTarget.style.opacity = '0.9' }}
                   onMouseLeave={(e) => { if (!isSaving) e.currentTarget.style.opacity = '1' }}>
                   {isSaving ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={10} />}
-                  {isSaving ? 'saving' : 'save'}
+                  {isSaving ? t('saving') : t('save')}
                 </button>
               </div>
             </div>
@@ -1075,17 +1079,6 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                 </span>
                 <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diffFile}</span>
               </div>
-              <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
-                {/* no edit on an unreadable file: saving would write an empty one */}
-                {!diffError && (
-                <button onClick={handleStartEdit} title="edit file" data-tip-desc="open the file in edit mode"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '20px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)'; e.currentTarget.style.borderColor = 'var(--accent-color)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}>
-                  <Pencil size={11} />
-                </button>
-                )}
-              </div>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
               {diffError ? (
@@ -1110,7 +1103,22 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                   updateEditorNav(line)
                 }}
                 initialLine={diffInitialLine}
-              />
+              >
+                {/* floats over the diff, left of the 10px scrollbar and Monaco's 30px overview ruler; not on an
+                    unreadable file (it has no DiffViewer), where saving would write an empty one */}
+                <button className="wt-edit-fab" onClick={handleStartEdit} title={t('edit the file')} data-tip-desc={t('open the file in the editor to change it')}
+                  style={{
+                    position: 'absolute', top: '8px', right: '46px', zIndex: 5,
+                    display: 'flex', alignItems: 'center', gap: '5px', height: '24px', padding: '0 10px',
+                    background: 'linear-gradient(var(--accent-bg), var(--accent-bg)), var(--bg-card)',
+                    border: '1px solid var(--accent-color)', borderRadius: '999px', color: 'var(--accent-color)',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)', cursor: 'pointer',
+                    fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600
+                  }}>
+                  <FileEdit size={13} />
+                  {t('Edit')}
+                </button>
+              </DiffViewer>
               )}
             </div>
           </>
@@ -1123,9 +1131,9 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
         }}>
           <GitCompare size={28} strokeWidth={1} />
           <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', textAlign: 'center', lineHeight: 1.7 }}>
-            click a file to see its changes<br />
+            {t('click a file to see its changes')}<br />
             <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
-              green = added · red = removed · markers in the scroll zone
+              {t('green = added · red = removed · markers in the scroll zone')}
             </span>
           </div>
         </div>
@@ -1176,25 +1184,29 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
       )}
 
       {discardTarget && (
-        <Modal onClose={() => { if (!isDiscarding) setDiscardTarget(null) }} width={440} label="discard changes">
+        <Modal onClose={() => { if (!isDiscarding) setDiscardTarget(null) }} width={440} label={t('discard changes')}>
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <AlertTriangle size={16} style={{ color: 'var(--error-color)', flexShrink: 0 }} />
               <span style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {discardOne ? (discardOne.untracked ? 'Elimina file' : 'Annulla modifiche') : `Scarta ${discardTarget.items.length} modifiche`}
+                {discardOne ? (discardOne.untracked ? t('Delete file') : t('Undo changes')) : t('Discard {n} changes', { n: discardTarget.items.length })}
               </span>
             </div>
             <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               {discardOne
                 ? (discardOne.untracked
-                  ? 'Il file non è tracciato da git: verrà eliminato dal disco. Operazione non reversibile.'
+                  ? t('The file is not tracked by git: it will be deleted from disk. This cannot be undone.')
                   : discardOne.staged
-                    ? 'Le modifiche di questo file verranno ripristinate all\'ultima versione committata. Operazione non reversibile.'
-                    : 'Le modifiche non in stage di questo file tornano alla versione in stage o all\'ultimo commit (lo stage resta com\'è). Operazione non reversibile.')
+                    ? t('The changes of this file will be reverted to the last committed version. This cannot be undone.')
+                    : t('The unstaged changes of this file go back to the staged version or the last commit (the stage stays as it is). This cannot be undone.'))
                 : <>
-                  {discardTracked > 0 && `${discardTracked} file tornano alla versione in stage o all'ultimo commit (lo stage resta com'è). `}
-                  {discardUntracked > 0 && <b style={{ color: 'var(--error-color)' }}>{`${discardUntracked} file nuovi non tracciati verranno eliminati dal disco. `}</b>}
-                  Operazione non reversibile.
+                  {discardTracked > 0 && `${discardTracked === 1
+                    ? t('1 file goes back to the staged version or the last commit (the stage stays as it is).')
+                    : t('{n} files go back to the staged version or the last commit (the stage stays as it is).', { n: discardTracked })} `}
+                  {discardUntracked > 0 && <b style={{ color: 'var(--error-color)' }}>{`${discardUntracked === 1
+                    ? t('1 new untracked file will be deleted from disk.')
+                    : t('{n} new untracked files will be deleted from disk.', { n: discardUntracked })} `}</b>}
+                  {t('This cannot be undone.')}
                 </>}
               <div style={{ marginTop: '6px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', wordBreak: 'break-all', maxHeight: '160px', overflowY: 'auto' }}>
                 {discardTarget.items.map(t => (
@@ -1210,7 +1222,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                   color: 'var(--text-secondary)', cursor: isDiscarding ? 'not-allowed' : 'pointer',
                   fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                 }}>
-                annulla
+                {t('cancel')}
               </button>
               <button onClick={confirmDiscard} disabled={isDiscarding}
                 style={{
@@ -1220,7 +1232,7 @@ export function WorktreeChanges({ worktreePath, repoPath, checkMarks, onToggleCh
                   fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
                 }}>
                 {isDiscarding ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Undo2 size={11} />}
-                {isDiscarding ? 'annullamento…' : discardOne ? (discardOne.untracked ? 'elimina' : 'annulla modifiche') : `scarta ${discardTarget.items.length} file`}
+                {isDiscarding ? t('discarding…') : discardOne ? (discardOne.untracked ? t('delete') : t('undo changes')) : t('discard {n} files', { n: discardTarget.items.length })}
               </button>
             </div>
           </div>

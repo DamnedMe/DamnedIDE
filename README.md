@@ -42,8 +42,11 @@
 |---|---|
 | 🪵 **Worktree paralleli** | crea `feature/{id}` da un PBI, lavora in isolamento, senza toccare il branch principale |
 | 📦 **Strip per worktree** | un cerchio per worktree con id del PBI, anello e logo sfocato per tipo (main, PBI, bugfix), bolla rossa con le modifiche non committate, capsula ↑ da pushare (verde) / ↓ da pullare (blu); PBI chiuso e nulla da committare o pushare = attenuato con ✓ |
+| 📁 **Cartelle dei worktree** | Impostazioni › Git › Worktree: dove stanno i worktree (`.worktrees`, `.` accanto ai sorgenti, oppure una cartella esterna) e le sottocartelle di PBI e bug; il main è sempre il checkout principale di git. Finché non è salvata, il pannello Worktree e la voce Git delle impostazioni lo segnalano, già dal primo avvio |
+| ✏️ **Modifica dal diff** | pulsante «Modifica» fisso in alto a destra sul diff: apre il file nell'editor |
 | 🪟 **Nuova finestra** | tasto destro su una voce del menu in alto › apri in una nuova finestra, con lo stesso repository e worktree |
 | ↔️ **Menu laterale** | Impostazioni › Tema › menu laterale: a sinistra o a destra in Worktree, Editor, Git, DevOps e SQL |
+| 🌐 **Lingua** | Impostazioni › Lingua: tutta l'interfaccia in italiano o in inglese (traduzioni in `src/locales/it/`, `npm run test:i18n` segnala i testi senza traduzione) |
 | 🗃️ **Changes per tipologia** | nella lista delle modifiche il nome del file con la cartella sotto (tagliata dall'inizio, si può nascondere in Impostazioni › Git) e i file raggruppati per tipo: Controller, Service, Repository, DB (migration, context), Model / DTO, Interfacce, Helper, UI, Test, Configurazione, Documentazione. ok / ko / stage compaiono al passaggio del mouse (il nome resta barrato se ok, in grassetto rosso se ko); **unstage all** sulla zona staged e **scarta tutto** sui changes, con conferma e senza mai toccare i repository annidati (`.worktrees/…`) |
 | 🧹 **Pulizia worktree** | propone i worktree inutili (PBI Done/Removed su ADO, già in develop) e li elimina in blocco, ricontrollando che nulla vada perso |
 | 🚀 **Completa PR** | dall'intestazione del worktree: commit (con `#id` del work item), push, merge con develop, **creazione PR** verso develop con work item linkati |

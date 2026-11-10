@@ -1,6 +1,10 @@
 import type * as Monaco from 'monaco-editor'
 import type { SqlForeignKeyEdge, SqlRoutineInfo, SqlSchemaObject, SqlSchemaSnapshot } from '../../types/sql'
 
+/** Suggestion details are English; QueryEditor passes `tr` (i18n), read when Monaco asks, so they follow the language. */
+export type Translate = (key: string, vars?: Record<string, string | number>) => string
+const en: Translate = (key, vars) => (vars ? key.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : key)
+
 export interface SqlAssistantContext {
   connectionId: string | null
   database?: string
@@ -200,16 +204,21 @@ const CLAUSE_KEYWORDS: Record<SqlCompletionClause, string[]> = {
   exec: ['EXEC', 'OUTPUT']
 }
 
-const SQL_SNIPPETS: Array<{ label: string; detail: string; insertText: string }> = [
-  { label: 'sp_help', detail: 'Show object metadata in multiple result sets', insertText: "EXEC sys.sp_help N'${1:schema.object}';" },
-  { label: 'sp_helptext', detail: 'Show the definition of a SQL object', insertText: "EXEC sys.sp_helptext N'${1:schema.object}';" },
-  { label: 'sp_who2', detail: 'Show current SQL Server sessions', insertText: 'EXEC sys.sp_who2;' },
-  { label: 'cte', detail: 'Common table expression', insertText: 'WITH ${1:cte_name} AS (\n\tSELECT ${2:*}\n\tFROM ${3:schema.table}\n)\nSELECT *\nFROM ${1:cte_name};' },
+// built per request so the details follow the current language; labels and insertText are SQL, never translated
+const sqlSnippets = (t: Translate): Array<{ label: string; detail: string; insertText: string }> => [
+  { label: 'sp_help', detail: t('Show object metadata in multiple result sets'), insertText: "EXEC sys.sp_help N'${1:schema.object}';" },
+  { label: 'sp_helptext', detail: t('Show the definition of a SQL object'), insertText: "EXEC sys.sp_helptext N'${1:schema.object}';" },
+  { label: 'sp_who2', detail: t('Show current SQL Server sessions'), insertText: 'EXEC sys.sp_who2;' },
+  { label: 'cte', detail: t('Common table expression'), insertText: 'WITH ${1:cte_name} AS (\n\tSELECT ${2:*}\n\tFROM ${3:schema.table}\n)\nSELECT *\nFROM ${1:cte_name};' },
   { label: 'trycatch', detail: 'T-SQL TRY/CATCH', insertText: "BEGIN TRY\n\t${1:-- statement}\nEND TRY\nBEGIN CATCH\n\tTHROW;\nEND CATCH;" },
-  { label: 'transaction', detail: 'Safe transaction block', insertText: "BEGIN TRANSACTION;\nBEGIN TRY\n\t${1:-- statement}\n\tCOMMIT;\nEND TRY\nBEGIN CATCH\n\tIF @@TRANCOUNT > 0 ROLLBACK;\n\tTHROW;\nEND CATCH;" },
-  { label: 'groupby', detail: 'Grouped SELECT', insertText: 'SELECT ${1:column}, COUNT(*) AS [Count]\nFROM ${2:schema.table}\nGROUP BY ${1:column}\nORDER BY [Count] DESC;' },
-  { label: 'exec', detail: 'Execute stored procedure', insertText: 'EXEC ${1:schema.procedure} ${2:@parameter = value};' }
+  { label: 'transaction', detail: t('Safe transaction block'), insertText: "BEGIN TRANSACTION;\nBEGIN TRY\n\t${1:-- statement}\n\tCOMMIT;\nEND TRY\nBEGIN CATCH\n\tIF @@TRANCOUNT > 0 ROLLBACK;\n\tTHROW;\nEND CATCH;" },
+  { label: 'groupby', detail: t('Grouped SELECT'), insertText: 'SELECT ${1:column}, COUNT(*) AS [Count]\nFROM ${2:schema.table}\nGROUP BY ${1:column}\nORDER BY [Count] DESC;' },
+  { label: 'exec', detail: t('Execute stored procedure'), insertText: 'EXEC ${1:schema.procedure} ${2:@parameter = value};' }
 ]
+
+/** "table · 12 columns" (a view says view) */
+const objectDetail = (object: SqlSchemaObject, t: Translate): string =>
+  `${object.kind === 'view' ? t('view') : t('table')} · ${object.columns.length === 1 ? t('1 column') : t('{n} columns', { n: object.columns.length })}`
 
 function routineInsertText(routine: SqlRoutineInfo): string {
   if (routine.kind === 'procedure') {
@@ -224,7 +233,8 @@ function routineInsertText(routine: SqlRoutineInfo): string {
 export function registerSqlAssistant(
   monaco: typeof Monaco,
   getContext: () => SqlAssistantContext,
-  provider: SqlAssistantProvider = localSqlAssistant
+  provider: SqlAssistantProvider = localSqlAssistant,
+  t: Translate = en
 ): Monaco.IDisposable {
   const completion = monaco.languages.registerCompletionItemProvider('sql', {
     triggerCharacters: ['.', ' '],
@@ -247,7 +257,7 @@ export function registerSqlAssistant(
             suggestions.push({
               label: column.name,
               kind: monaco.languages.CompletionItemKind.Field,
-              detail: `${object.name} · ${column.type}${column.nullable ? ' · nullable' : ' · required'}`,
+              detail: `${object.name} · ${column.type} · ${column.nullable ? t('nullable') : t('required')}`,
               insertText: `[${column.name}]`,
               sortText: `0_${column.name.toLocaleLowerCase()}`,
               range
@@ -259,7 +269,7 @@ export function registerSqlAssistant(
         if (schemaObjects.length > 0) {
           for (const candidate of schemaObjects) suggestions.push({
             label: candidate.name.split('.').pop() || candidate.name,
-            detail: `${candidate.kind} · ${candidate.columns.length} columns`,
+            detail: objectDetail(candidate, t),
             kind: candidate.kind === 'view' ? monaco.languages.CompletionItemKind.Interface : monaco.languages.CompletionItemKind.Class,
             insertText: `[${(candidate.name.split('.').pop() || candidate.name).replace(/]/g, ']]')}]`,
             sortText: `0_${candidate.name.toLocaleLowerCase()}`,
@@ -285,10 +295,10 @@ export function registerSqlAssistant(
           suggestions.push({
             label: `${item.alias}.${item.column.name}`,
             filterText: `${item.alias}.${item.column.name} ${item.column.name}`,
-            detail: `${item.object.name} · ${item.column.type}${item.column.nullable ? ' · nullable' : ''}`,
+            detail: `${item.object.name} · ${item.column.type}${item.column.nullable ? ` · ${t('nullable')}` : ''}`,
             documentation: occurrences.get(item.column.name.toLocaleLowerCase())! > 1
-              ? `Qualified because **${item.column.name}** exists in more than one visible object.`
-              : `Column from **${item.object.name}**.`,
+              ? t('Qualified because **{name}** exists in more than one visible object.', { name: item.column.name })
+              : t('Column from **{name}**.', { name: item.object.name }),
             kind: monaco.languages.CompletionItemKind.Field,
             insertText: qualified,
             sortText: `0_${item.alias.toLocaleLowerCase()}_${item.column.name.toLocaleLowerCase()}`,
@@ -305,7 +315,7 @@ export function registerSqlAssistant(
         }
         for (const [alias, table] of aliases) suggestions.push({
           label: alias,
-          detail: `alias for ${table}`,
+          detail: t('alias for {table}', { table }),
           kind: monaco.languages.CompletionItemKind.Variable,
           insertText: `[${alias.replace(/]/g, ']]')}]`,
           sortText: `0_${alias.toLocaleLowerCase()}`,
@@ -322,7 +332,7 @@ export function registerSqlAssistant(
       })
 
       if (analysis.clause === 'statement' || analysis.clause === 'select' || analysis.clause === 'exec') {
-        for (const snippet of SQL_SNIPPETS) suggestions.push({
+        for (const snippet of sqlSnippets(t)) suggestions.push({
           label: snippet.label,
           detail: snippet.detail,
           kind: monaco.languages.CompletionItemKind.Snippet,
@@ -336,7 +346,7 @@ export function registerSqlAssistant(
         if (analysis.clause === 'from' || analysis.clause === 'join' || analysis.clause === 'statement') {
           for (const object of snapshot.objects) suggestions.push({
             label: object.name,
-            detail: `${object.kind} · ${object.columns.length} columns`,
+            detail: objectDetail(object, t),
             kind: object.kind === 'view' ? monaco.languages.CompletionItemKind.Interface : monaco.languages.CompletionItemKind.Class,
             insertText: quoteName(object.name),
             sortText: `1_${object.name.toLocaleLowerCase()}`,
@@ -366,7 +376,7 @@ export function registerSqlAssistant(
               suggestions.push({
                 label: `join ${edge.constraintName}`,
                 detail: `${baseAlias} · ${edge.table}.${edge.column} → ${edge.referencedTable}.${edge.referencedColumn}`,
-                documentation: `Adds a LEFT JOIN derived from foreign key **${edge.constraintName}**.`,
+                documentation: t('Adds a LEFT JOIN derived from foreign key **{name}**.', { name: edge.constraintName }),
                 kind: monaco.languages.CompletionItemKind.Snippet,
                 insertText: snippet,
                 sortText: `0_${edge.constraintName.toLocaleLowerCase()}`,

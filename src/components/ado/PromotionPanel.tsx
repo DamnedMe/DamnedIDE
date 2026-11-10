@@ -21,10 +21,11 @@ import {
   type ReleaseStage,
   type PromotionScope
 } from '../../shared/adoPromotion'
-import { ADO_MISSING_PAT, releaseRepos, sameName, siblingRepos, withBeRepo } from '../../shared/adoSettings'
+import { releaseRepos, sameName, siblingRepos, withBeRepo } from '../../shared/adoSettings'
 import { activeChainItem, chainProjectKey, isChainActive } from '../../shared/adoChain'
 import type { ChainItem, ChainStartItem, ChainStatus, ReleaseChain } from '../../shared/adoChain'
 import { ipcMessage } from '../settings/ui'
+import { tr, useI18n } from '../../i18n'
 
 type Side = 'BE' | 'FE'
 
@@ -67,6 +68,10 @@ type ChainPreview = ReadyPreview & { prod: string }
  * chains of the project are listed below.
  */
 export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
+  const t = useI18n()
+  const commitCount = (n: number) => (n === 1 ? t('1 commit') : t('{n} commits', { n }))
+  const itemCount = (n: number) => (n === 1 ? t('1 work item') : t('{n} work items', { n }))
+  const createLabel = (n: number) => (n === 1 ? t('create 1 PR') : t('create {n} PRs', { n }))
   const setPullRequests = useAdoStore(s => s.setPullRequests)
   const settings = useAdoSettingsStore(s => s.settings)
   const showToast = useToastStore(s => s.showToast)
@@ -136,7 +141,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     const base: RepoPreview = { side, repo, branches: [], source: null, target: null, commits: [], workItems: [], existing: null }
     try {
       const branches = await api.branches(project, repo)
-      if (branches.length === 0) return { ...base, error: `nessun branch letto da ${repo}: controlla repository e PAT` }
+      if (branches.length === 0) return { ...base, error: tr('no branch read from {repo}: check repository and PAT', { repo }) }
       const overrides = config.branches?.[repo] ?? {}
       const source = resolveEnvBranch(roles.from, branches, overrides[roles.from])
       const target = resolveEnvBranch(roles.to, branches, overrides[roles.to])
@@ -152,7 +157,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
         try {
           workItems = await api.workItemsBatch(project, ids)
         } catch {
-          warning = 'work item non letti: la PR verrebbe creata senza link ai work item'
+          warning = tr('work items not read: the PR would be created without work item links')
         }
       }
       const prs = await api.pullRequests(project, repo)
@@ -168,7 +173,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
         : undefined
       return { ...base, branches, source, target, prod, commits, workItems, existing, warning, prodCommits, prodExisting }
     } catch (e) {
-      return { ...base, error: ipcMessage(e, 'lettura da Azure DevOps fallita') }
+      return { ...base, error: ipcMessage(e, tr('reading from Azure DevOps failed')) }
     }
   }
 
@@ -183,7 +188,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     ;(async () => {
       const out: RepoPreview[] = []
       try {
-        if (!(await window.electronAPI.ado.use(id))) throw new Error(ADO_MISSING_PAT)
+        if (!(await window.electronAPI.ado.use(id))) throw new Error(tr('PAT missing or unreadable: enter it in Settings › Azure DevOps › Connections'))
         // one repository after the other: the ADO service holds a single connection
         for (const { side, repo } of targets) {
           const preview = await loadPreview(side, repo)
@@ -192,7 +197,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
           setPreviews([...out])
         }
       } catch (e) {
-        if (!cancelled) showToast((e as Error).message || 'Azure DevOps non raggiungibile', 'error')
+        if (!cancelled) showToast((e as Error).message || tr('Azure DevOps unreachable'), 'error')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -210,7 +215,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
       await window.electronAPI.adoSettings.setRelease(key, next)
       await useAdoSettingsStore.getState().load()
     } catch (e) {
-      showToast(`scelta di rilascio non salvata: ${ipcMessage(e, 'salvataggio fallito')}`, 'error')
+      showToast(tr('release choice not saved: {error}', { error: ipcMessage(e, tr('save failed')) }), 'error')
     } finally {
       setDraft(d => (d && d.config === next ? null : d))
     }
@@ -307,7 +312,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     const done: string[] = []
     const failed: string[] = []
     try {
-      if (!connectionId || !(await api.use(connectionId))) throw new Error(ADO_MISSING_PAT)
+      if (!connectionId || !(await api.use(connectionId))) throw new Error(tr('PAT missing or unreadable: enter it in Settings › Azure DevOps › Connections'))
       for (const p of creatable) {
         patchPreview(p.side, { status: 'running' })
         const res = await createPromotionPr(p)
@@ -321,12 +326,16 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
       }
       refreshFolderPrs(creatable.map(p => p.repo))
     } catch (e) {
-      showToast((e as Error).message || 'Azure DevOps non raggiungibile', 'error')
+      showToast((e as Error).message || tr('Azure DevOps unreachable'), 'error')
     } finally {
       setCreating(false)
     }
-    if (failed.length === 0 && done.length > 0) showToast(`PR di rilascio create: ${done.join(', ')}`)
-    else if (failed.length > 0) showToast(`PR create: ${done.join(', ') || 'nessuna'} · fallite: ${failed.join(', ')}`, 'error')
+    if (failed.length === 0 && done.length > 0) showToast(tr('release PRs created: {prs}', { prs: done.join(', ') }))
+    else if (failed.length > 0) {
+      showToast(done.length > 0
+        ? tr('PRs created: {done} · failed: {failed}', { done: done.join(', '), failed: failed.join(', ') })
+        : tr('no PR created · failed: {failed}', { failed: failed.join(', ') }), 'error')
+    }
   }
 
   /**
@@ -342,7 +351,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     const failed: string[] = []
     let started = false
     try {
-      if (!(await window.electronAPI.ado.use(connectionId))) throw new Error(ADO_MISSING_PAT)
+      if (!(await window.electronAPI.ado.use(connectionId))) throw new Error(tr('PAT missing or unreadable: enter it in Settings › Azure DevOps › Connections'))
       for (const p of chainable) {
         const branches = { dev: p.source, qa: p.target, prod: p.prod }
         if (p.existing) {
@@ -374,19 +383,22 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
           started = true
         } catch (e) {
           const kept = items.filter(i => i.qaPr).map(i => `${i.side} #${i.qaPr!.id}`)
-          throw new Error(`catena non avviata: ${ipcMessage(e, 'errore')}${kept.length > 0 ? ` (le PR ${kept.join(', ')} restano aperte)` : ''}`)
+          const error = ipcMessage(e, tr('error'))
+          throw new Error(kept.length > 0
+            ? tr('chain not started: {error} (the PRs {prs} stay open)', { error, prs: kept.join(', ') })
+            : tr('chain not started: {error}', { error }))
         }
         window.electronAPI.adoChain.list().then(setChains).catch(() => {})
       }
     } catch (e) {
-      showToast((e as Error).message || 'Azure DevOps non raggiungibile', 'error')
+      showToast((e as Error).message || tr('Azure DevOps unreachable'), 'error')
     } finally {
       setCreating(false)
     }
     const names = items.map(i => `${i.side} ${i.repo}`).join(', ')
-    if (started && failed.length === 0) showToast(`catena di rilascio avviata: ${names}`)
-    else if (started) showToast(`catena avviata per ${names} · PR develop → qa fallite: ${failed.join(', ')}`, 'error')
-    else if (failed.length > 0 && items.length === 0) showToast(`catena non avviata: PR develop → qa fallite (${failed.join(', ')})`, 'error')
+    if (started && failed.length === 0) showToast(tr('release chain started: {names}', { names }))
+    else if (started) showToast(tr('chain started for {names} · develop → qa PRs failed: {failed}', { names, failed: failed.join(', ') }), 'error')
+    else if (failed.length > 0 && items.length === 0) showToast(tr('chain not started: develop → qa PRs failed ({failed})', { failed: failed.join(', ') }), 'error')
   }
 
   const chainAction = async (run: () => Promise<void>, fallback: string) => {
@@ -417,7 +429,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
               gap: '12px', color: 'var(--text-secondary)', fontSize: 'calc(13px * var(--ui-text-scale, 1))', textAlign: 'center'
             }}>
               <Rocket size={32} strokeWidth={1} />
-              apri un repository: il rilascio usa la sua connessione Azure DevOps
+              {t('open a repository: the release uses its Azure DevOps connection')}
             </div>
           )}
           <TerminalDock repoPath={null} />
@@ -432,7 +444,8 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     ) : (
       <select value={value ?? ''} disabled={creating}
         onChange={(e) => setBranchOverride(p.repo, role, e.target.value)}
-        title={value ? `${role} branch: ${value}` : `${role} branch`} data-tip-desc={`branch used as ${role} in ${p.repo} (saved for this repository)`}
+        title={value ? t('{role} branch: {branch}', { role, branch: value }) : t('{role} branch', { role })}
+        data-tip-desc={t('branch used as {role} in {repo} (saved for this repository)', { role, repo: p.repo })}
         style={{
           ...compactInputStyle,
           // a native select is as wide as its longest option (long feature branches pushed the three
@@ -474,25 +487,27 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
           )}
           {ready && (
             <span style={{ color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
-              · {p.commits.length} commit · {p.workItems.length} work item
+              · {commitCount(p.commits.length)} · {itemCount(p.workItems.length)}
             </span>
           )}
           <span style={{ flex: 1 }} />
           {p.status === 'running' && <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-color)' }} />}
           {p.existing && (
-            <button onClick={() => openUrl(prWebUrl(p.repo, p.existing!))} title="open in Azure DevOps" data-tip-desc="an active pull request with the same source and target already exists: no new one is created"
+            <button onClick={() => openUrl(prWebUrl(p.repo, p.existing!))} title={t('open in Azure DevOps')} data-tip-desc={t('an active pull request with the same source and target already exists: no new one is created')}
               style={{ ...badgeBtnStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
-              PR #{p.existing.id} già attiva ↗
+              {t('PR #{id} already active ↗', { id: p.existing.id })}
             </button>
           )}
           {p.created && (() => {
             // auto-complete asked for but not taken by Azure DevOps: say so, the PR stays open
             const { notArmed } = p.created
             return (
-              <button onClick={() => openUrl(p.created!.url)} title="open in Azure DevOps"
-                data-tip-desc={notArmed ? 'Azure DevOps did not take the auto-complete: set it on the pull request' : 'the pull request just created'}
+              <button onClick={() => openUrl(p.created!.url)} title={t('open in Azure DevOps')}
+                data-tip-desc={notArmed ? t('Azure DevOps did not take the auto-complete: set it on the pull request') : t('the pull request just created')}
                 style={{ ...badgeBtnStyle, background: notArmed ? 'var(--warning-bg)' : 'var(--success-bg)', color: notArmed ? 'var(--warning-color)' : 'var(--success-color)' }}>
-                {notArmed ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />} PR #{p.created.id} {p.created.mode === 'autocomplete' ? 'creata (auto-complete)' : notArmed ? 'creata, auto-complete non armato' : 'creata'} ↗
+                {notArmed ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />} {p.created.mode === 'autocomplete'
+                  ? t('PR #{id} created (auto-complete) ↗', { id: p.created.id })
+                  : notArmed ? t('PR #{id} created, auto-complete not armed ↗', { id: p.created.id }) : t('PR #{id} created ↗', { id: p.created.id })}
               </button>
             )
           })()}
@@ -502,31 +517,31 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
         {!p.error && !branchesFound && (
           <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
             <AlertTriangle size={11} style={noteIconStyle} />
-            branch {missingRole} non trovato in {p.repo}: sceglilo dall'elenco (resta salvato per questa repository)
+            {t('{role} branch not found in {repo}: pick it from the list (it stays saved for this repository)', { role: missingRole, repo: p.repo })}
           </div>
         )}
         {running && (
           <div style={{ ...noteStyle, background: 'var(--accent-bg)', color: 'var(--accent-color)' }}>
             <Link2 size={11} style={noteIconStyle} />
-            catena di rilascio già in corso per {p.repo}: l'avanzamento è in «catene in corso», qui sotto
+            {t('release chain already running for {repo}: the progress is in «running chains», below', { repo: p.repo })}
           </div>
         )}
         {p.warning && <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}><AlertTriangle size={11} style={noteIconStyle} />{p.warning}</div>}
         {p.status === 'error' && (
           <div style={{ ...noteStyle, background: 'var(--error-bg)', color: 'var(--error-color)' }}>
             <XCircle size={11} style={noteIconStyle} />
-            creazione PR fallita: controlla branch policies e permessi del PAT (dettaglio nel log dell'app)
+            {t('PR creation failed: check the branch policies and the PAT permissions (details in the app log)')}
           </div>
         )}
         {ready && p.commits.length === 0 && !p.existing && (
           <div style={{ color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
             {!chainMode
-              ? `nulla da promuovere: ${p.target} contiene già tutti i commit di ${p.source}`
+              ? t('nothing to promote: {target} already has every commit of {source}', { target: p.target ?? '', source: p.source ?? '' })
               : p.prodExisting
-                ? `${p.source} → ${p.target}: nulla da promuovere; PR #${p.prodExisting.id} ${p.target} → ${p.prod} già aperta`
+                ? t('{source} → {target}: nothing to promote; PR #{id} {target} → {prod} already open', { source: p.source ?? '', target: p.target ?? '', id: p.prodExisting.id, prod: p.prod ?? '' })
                 : (p.prodCommits ?? 0) > 0
-                  ? `${p.source} → ${p.target}: nulla da promuovere, la catena parte da ${p.target} → ${p.prod} (${p.prodCommits} commit)`
-                  : `nulla da promuovere: ${p.target} e ${p.prod} contengono già tutti i commit`}
+                  ? t('{source} → {target}: nothing to promote, the chain starts at {target} → {prod} ({commits})', { source: p.source ?? '', target: p.target ?? '', prod: p.prod ?? '', commits: commitCount(p.prodCommits ?? 0) })
+                  : t('nothing to promote: {target} and {prod} already have every commit', { target: p.target ?? '', prod: p.prod ?? '' })}
           </div>
         )}
 
@@ -554,13 +569,13 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
 
         {p.commits.length > 0 && (
           <div>
-            <button onClick={() => toggleCommits(p.side)} title={commitsOpen ? 'hide commits' : 'show commits'} data-tip-desc="commits that the pull request brings into the target branch"
+            <button onClick={() => toggleCommits(p.side)} title={commitsOpen ? t('hide commits') : t('show commits')} data-tip-desc={t('commits that the pull request brings into the target branch')}
               style={{
                 display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', padding: 0,
                 color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
               }}>
               {commitsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-              {p.commits.length} commit
+              {commitCount(p.commits.length)}
             </button>
             {commitsOpen && (
               <div style={{
@@ -587,7 +602,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     const prLink = (pr: { id: number; url: string }, what: string) => (
       <button
         onClick={() => openUrl(pr.url || `https://dev.azure.com/${encodeURIComponent(chain.organization)}/${encodeURIComponent(chain.project)}/_git/${encodeURIComponent(item.repo)}/pullrequest/${pr.id}`)}
-        title="open in Azure DevOps" data-tip-desc={what}
+        title={t('open in Azure DevOps')} data-tip-desc={what}
         style={{ ...badgeBtnStyle, background: 'var(--bg-tag)', color: 'var(--accent-color)' }}>
         PR #{pr.id} ↗
       </button>
@@ -595,42 +610,43 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
     const qaWaiting = item.status === 'waiting-qa'
     const prodWaiting = item.status === 'waiting-prod'
     // auto-complete asked for and not taken by Azure DevOps: the PR waits for someone to set it
-    const notArmed = 'auto-complete non armato: impostalo da Azure DevOps'
+    const notArmed = t('auto-complete not armed: set it in Azure DevOps')
     const warn1 = qaWaiting && !!item.qaNoAutoComplete
     const warn2 = prodWaiting && !item.prodReused && !!item.prodNoAutoComplete
     const step1 = !item.qaPr
-      ? 'nulla da promuovere'
-      : qaWaiting ? `in attesa del completamento${warn1 ? ` · ${notArmed}` : ''}`
+      ? t('nothing to promote')
+      : qaWaiting ? `${t('waiting for completion')}${warn1 ? ` · ${notArmed}` : ''}`
         // a qa → prod PR only exists once develop → qa is completed
-        : item.status === 'creating-prod' || prodWaiting || item.status === 'done' || item.prodPr ? 'completata' : ''
+        : item.status === 'creating-prod' || prodWaiting || item.status === 'done' || item.prodPr ? t('completed') : ''
     const step2 = item.prodPr
       ? prodWaiting
-        ? item.prodReused ? 'già attiva: seguita dalla catena, in attesa del completamento'
-          : `in attesa del completamento${warn2 ? ` · ${notArmed}` : ''}`
-        : item.prodDone ? 'completata'
+        ? item.prodReused ? t('already active: followed by the chain, waiting for completion')
+          : `${t('waiting for completion')}${warn2 ? ` · ${notArmed}` : ''}`
+        : item.prodDone ? t('completed')
           // no longer followed: failed = the qa → prod PR was abandoned; cancelled = it stays as it is in Azure DevOps
-          : item.status === 'failed' ? 'abbandonata' : item.prodReused ? 'già attiva' : 'creata'
-      : qaWaiting ? `partirà quando la PR ${dev} → ${qa} è completata`
-        : item.status === 'creating-prod' ? 'creazione in corso…'
-          : item.status === 'cancelled' ? 'non creata: catena annullata'
-            : item.status === 'failed' ? 'non creata' : item.note ?? ''
+          : item.status === 'failed' ? t('abandoned') : item.prodReused ? t('already active') : t('created')
+      : qaWaiting ? t('starts when the {from} → {to} PR is completed', { from: dev, to: qa })
+        : item.status === 'creating-prod' ? t('creating…')
+          : item.status === 'cancelled' ? t('not created: chain cancelled')
+            // the note comes from the main process (ado-chains.json): a finished text
+            : item.status === 'failed' ? t('not created') : item.note ?? ''
     const waiting = <Clock size={10} style={{ flexShrink: 0 }} />
     return (
       <div key={item.side} style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '6px', borderTop: '1px solid var(--border-subtle)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
           <span style={tagStyle}>{item.side}</span>
           <b style={{ color: 'var(--text-primary)' }}>{item.repo}</b>
-          <span style={{ ...badgeBtnStyle, cursor: 'default', background: chip.bg, color: chip.color }}>{chip.label}</span>
+          <span style={{ ...badgeBtnStyle, cursor: 'default', background: chip.bg, color: chip.color }}>{t(chip.label)}</span>
         </div>
         <div style={stepRowStyle}>
           <span style={{ color: 'var(--text-muted)' }}>1. {dev} → {qa}</span>
-          {item.qaPr && prLink(item.qaPr, `the ${dev} → ${qa} pull request followed by the chain`)}
+          {item.qaPr && prLink(item.qaPr, t('the {from} → {to} pull request followed by the chain', { from: dev, to: qa }))}
           {qaWaiting && waiting}
           <span style={warn1 ? { color: 'var(--warning-color)' } : undefined}>{step1}</span>
         </div>
         <div style={stepRowStyle}>
           <span style={{ color: 'var(--text-muted)' }}>2. {qa} → {prod}</span>
-          {item.prodPr && prLink(item.prodPr, `the ${qa} → ${prod} pull request followed by the chain`)}
+          {item.prodPr && prLink(item.prodPr, t('the {from} → {to} pull request followed by the chain', { from: qa, to: prod }))}
           {(qaWaiting || prodWaiting) && waiting}
           {item.status === 'creating-prod' && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
           <span style={warn2 ? { color: 'var(--warning-color)' } : undefined}>{step2}</span>
@@ -643,7 +659,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
         {item.lastError && (
           <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
             <AlertTriangle size={11} style={noteIconStyle} />
-            ultimo controllo non riuscito: {item.lastError} · nuovo tentativo ogni 30 s
+            {t('last check failed: {error} · retrying every 30 s', { error: item.lastError })}
           </div>
         )}
       </div>
@@ -653,25 +669,25 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
   const renderChain = (chain: ReleaseChain) => {
     const active = isChainActive(chain)
     return (
-      <div key={chain.id} role="group" aria-label={`catena ${chain.items.map(i => i.repo).join(', ')}`} style={{
+      <div key={chain.id} role="group" aria-label={t('chain {repos}', { repos: chain.items.map(i => i.repo).join(', ') })} style={{
         background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
         padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: '6px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-          <span>avviata {new Date(chain.createdAt).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })}</span>
-          <span>· {chain.autoComplete ? 'auto-complete sulle PR nuove' : 'PR lasciate aperte'}</span>
+          <span>{t('started {date}', { date: new Date(chain.createdAt).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' }) })}</span>
+          <span>· {chain.autoComplete ? t('auto-complete on the new PRs') : t('PRs left open')}</span>
           <span style={{ flex: 1 }} />
           {active ? (
-            <button onClick={() => void chainAction(() => window.electronAPI.adoChain.cancel(chain.id), 'annullamento fallito')}
-              title="annulla catena" data-tip-desc="stop the chain: no qa → prod pull request is created or followed any more (the pull requests already created stay in Azure DevOps)"
+            <button onClick={() => void chainAction(() => window.electronAPI.adoChain.cancel(chain.id), t('cancellation failed'))}
+              title={t('cancel chain')} data-tip-desc={t('stop the chain: no qa → prod pull request is created or followed any more (the pull requests already created stay in Azure DevOps)')}
               style={smallBtnStyle}>
-              <Ban size={10} /> annulla catena
+              <Ban size={10} /> {t('cancel chain')}
             </button>
           ) : (
-            <button onClick={() => void chainAction(() => window.electronAPI.adoChain.remove(chain.id), 'rimozione fallita')}
-              title="rimuovi" data-tip-desc="remove this finished chain from the list (nothing changes in Azure DevOps)"
+            <button onClick={() => void chainAction(() => window.electronAPI.adoChain.remove(chain.id), t('removal failed'))}
+              title={t('remove')} data-tip-desc={t('remove this finished chain from the list (nothing changes in Azure DevOps)')}
               style={smallBtnStyle}>
-              <Trash2 size={10} /> rimuovi
+              <Trash2 size={10} /> {t('remove')}
             </button>
           )}
         </div>
@@ -692,7 +708,7 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
               <Segmented value={scope} onChange={setScope} disabled={creating}
                 options={[['be', 'BE'], ['fe', 'FE'], ['both', 'BE+FE']]} />
               <span style={{ flex: 1 }} />
-              <button onClick={() => setReloadTick(n => n + 1)} disabled={busy} title="reload" data-tip-desc="read branches, commits, work items and active pull requests again"
+              <button onClick={() => setReloadTick(n => n + 1)} disabled={busy} title={t('reload')} data-tip-desc={t('read branches, commits, work items and active pull requests again')}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px',
                   background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -704,18 +720,18 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                title="repository BE" data-tip-desc={`repository Azure DevOps del backend in ${project} (di default quella della cartella aperta; resta salvata per questo project)`}>
+                title={t('BE repository')} data-tip-desc={t("Azure DevOps repository of the backend in {project} (by default the open folder's; it stays saved for this project)", { project })}>
                 BE
-                <select aria-label="repository BE" value={beRepo} onChange={(e) => setBeRepo(e.target.value)} disabled={creating} style={compactInputStyle}>
+                <select aria-label={t('BE repository')} value={beRepo} onChange={(e) => setBeRepo(e.target.value)} disabled={creating} style={compactInputStyle}>
                   {!beRepo && <option value="">—</option>}
                   {beRepo && !repos.includes(beRepo) && <option value={beRepo}>{beRepo}</option>}
-                  {repos.map(r => <option key={r} value={r}>{r}{folderRepo && sameName(r, folderRepo) ? ' (questa cartella)' : ''}</option>)}
+                  {repos.map(r => <option key={r} value={r}>{r}{folderRepo && sameName(r, folderRepo) ? ` (${t('this folder')})` : ''}</option>)}
                 </select>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                title="repository FE" data-tip-desc={`repository Azure DevOps del frontend in ${project} (resta salvata per questo project)`}>
+                title={t('FE repository')} data-tip-desc={t('Azure DevOps repository of the frontend in {project} (it stays saved for this project)', { project })}>
                 FE
-                <select aria-label="repository FE" value={feRepo} onChange={(e) => setFeRepo(e.target.value)} disabled={creating} style={compactInputStyle}>
+                <select aria-label={t('FE repository')} value={feRepo} onChange={(e) => setFeRepo(e.target.value)} disabled={creating} style={compactInputStyle}>
                   <option value="">—</option>
                   {feRepo && !repos.includes(feRepo) && <option value={feRepo}>{feRepo}</option>}
                   {repos.filter(r => !sameName(r, beRepo)).map(r => <option key={r} value={r}>{r}</option>)}
@@ -724,11 +740,11 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
               <span style={{ color: 'var(--text-muted)' }}>{org} / {project}</span>
               <span style={{ flex: 1 }} />
               <span style={{ color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
-                salvato nelle{' '}
+                {t('saved in')}{' '}
                 <button onClick={() => useSettingsNavStore.getState().openSettings('ado-release')}
-                  title="Impostazioni › Azure DevOps › Rilascio" data-tip-desc="apri le impostazioni di rilascio: repository BE e FE per ogni connessione"
+                  title={t('Settings › Azure DevOps › Release')} data-tip-desc={t('open the release settings: BE and FE repositories for each connection')}
                   style={linkBtnStyle}>
-                  Impostazioni › Azure DevOps › Rilascio
+                  {t('Settings › Azure DevOps › Release')}
                 </button>
               </span>
             </div>
@@ -736,21 +752,21 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
             {repoList && !repoList.ok && (
               <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
                 <AlertTriangle size={11} style={noteIconStyle} />
-                repository di {org}/{project} non lette ({repoList.error}): BE e FE restano quelle salvate
+                {t('repositories of {org}/{project} not read ({error}): BE and FE stay the saved ones', { org, project, error: repoList.error })}
               </div>
             )}
 
             {scope !== 'fe' && !beRepo && (
               <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
                 <AlertTriangle size={11} style={noteIconStyle} />
-                scegli la repository BE del project {project}: resta salvata per i prossimi rilasci
+                {t('choose the BE repository of the project {project}: it stays saved for the next releases', { project })}
               </div>
             )}
 
             {scope !== 'be' && !feRepo && (
               <div style={{ ...noteStyle, background: 'var(--warning-bg)', color: 'var(--warning-color)' }}>
                 <AlertTriangle size={11} style={noteIconStyle} />
-                scegli la repository FE del project {project}: resta salvata per i prossimi rilasci
+                {t('choose the FE repository of the project {project}: it stays saved for the next releases', { project })}
               </div>
             )}
 
@@ -758,23 +774,23 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
 
             {loading && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
-                <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> lettura da Azure DevOps...
+                <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> {t('reading from Azure DevOps...')}
               </div>
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                title="auto-complete" data-tip-desc="arm auto-complete: the merge happens when branch policies pass (never bypassed, source branch kept)">
+                title="auto-complete" data-tip-desc={t('arm auto-complete: the merge happens when branch policies pass (never bypassed, source branch kept)')}>
                 <input type="checkbox" checked={autoComplete} onChange={(e) => setAutoComplete(e.target.checked)} disabled={creating}
                   style={{ accentColor: 'var(--accent-color)', margin: 0 }} />
-                <span style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>auto-complete when policies pass</span>
+                <span style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('auto-complete when policies pass')}</span>
               </label>
               <span style={{ flex: 1 }} />
               <button onClick={handleCreate} disabled={actionable === 0 || busy}
-                title={chainMode ? 'start the release chain' : 'create pull requests'}
+                title={chainMode ? t('start the release chain') : t('create pull requests')}
                 data-tip-desc={chainMode
-                  ? 'create the develop → qa pull requests now; each qa → prod one is created as soon as its develop → qa PR is completed'
-                  : 'create one pull request per repository with new commits and no active promotion PR'}
+                  ? t('create the develop → qa pull requests now; each qa → prod one is created as soon as its develop → qa PR is completed')
+                  : t('create one pull request per repository with new commits and no active promotion PR')}
                 style={{
                   ...primaryBtnStyle,
                   background: actionable > 0 && !busy ? 'var(--accent-color)' : 'var(--bg-disabled)',
@@ -782,16 +798,16 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
                   cursor: actionable > 0 && !busy ? 'pointer' : 'not-allowed'
                 }}>
                 {creating ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : chainMode ? <Link2 size={11} /> : <GitPullRequest size={11} />}
-                {chainMode ? `avvia catena (${chainable.length})` : `crea ${creatable.length} PR`}
+                {chainMode ? t('start chain ({n})', { n: chainable.length }) : createLabel(creatable.length)}
               </button>
             </div>
 
             {projectChains.length > 0 && (
-              <section aria-label="catene in corso" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+              <section aria-label={t('running chains')} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
                 <div style={sectionTitleStyle}>
-                  <Link2 size={11} /> catene in corso
+                  <Link2 size={11} /> {t('running chains')}
                   <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
-                    · seguite da DamnedIDE ogni 30 s, anche dopo un riavvio
+                    · {t('followed by DamnedIDE every 30 s, even after a restart')}
                   </span>
                 </div>
                 {projectChains.map(renderChain)}
@@ -803,14 +819,13 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
       </div>
 
       {confirming && chainMode && (
-        <Modal onClose={() => setConfirming(false)} width={560} label="conferma catena di rilascio develop → qa → prod">
+        <Modal onClose={() => setConfirming(false)} width={560} label={t('confirm release chain develop → qa → prod')}>
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: 'var(--warning-color)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>
-              <AlertTriangle size={14} /> rilascio develop → qa → prod
+              <AlertTriangle size={14} /> {t('release develop → qa → prod')}
             </div>
             <div style={{ lineHeight: 1.5 }}>
-              Questa conferma vale anche per la produzione: ogni PR qa → prod viene creata da sola appena
-              la PR develop → qa della stessa repository è completata.
+              {t('This confirmation covers production too: each qa → prod PR is created by itself as soon as the develop → qa PR of the same repository is completed.')}
             </div>
             {chainable.map(p => (
               <div key={p.side} style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
@@ -818,31 +833,31 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
                 <div>
                   1. {p.source} → {p.target}:{' '}
                   {p.existing
-                    ? `PR #${p.existing.id} già attiva, la catena la segue (auto-complete non modificato)`
+                    ? t('PR #{id} already active, the chain follows it (auto-complete unchanged)', { id: p.existing.id })
                     : p.commits.length > 0
-                      ? `nuova PR · ${p.commits.length} commit · ${selectedItems(p).length} work item`
-                      : 'nulla da promuovere, si parte dal passo 2'}
+                      ? t('new PR · {commits} · {items}', { commits: commitCount(p.commits.length), items: itemCount(selectedItems(p).length) })
+                      : t('nothing to promote, it starts at step 2')}
                 </div>
                 <div>
                   2. {p.target} → {p.prod}:{' '}
                   {!p.existing && p.commits.length === 0
-                    ? `PR creata subito · ${p.prodCommits ?? 0} commit`
-                    : `PR creata appena la PR ${p.source} → ${p.target} è completata`}
-                  {' · con tutti i work item dei suoi commit'}
+                    ? t('PR created at once · {commits}', { commits: commitCount(p.prodCommits ?? 0) })
+                    : t('PR created as soon as the {source} → {target} PR is completed', { source: p.source, target: p.target })}
+                  {` · ${t('with every work item of its commits')}`}
                 </div>
               </div>
             ))}
             <div style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
               {autoComplete
-                ? "Auto-complete armato sulle PR create dalla catena (una PR già attiva viene seguita o riusata così com'è): ogni merge parte quando le branch policy sono soddisfatte."
-                : 'Le PR restano aperte: approvazione e completamento seguono le branch policy (la catena aspetta il completamento).'}
-              {' '}Nessuna policy viene bypassata e i branch develop e qa non vengono cancellati.
+                ? t('Auto-complete armed on the PRs the chain creates (an already active PR is followed or reused as it is): each merge starts when the branch policies pass.')
+                : t('The PRs stay open: approval and completion follow the branch policies (the chain waits for completion).')}
+              {' '}{t('No policy is bypassed and the develop and qa branches are not deleted.')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
-              <button onClick={() => setConfirming(false)} style={secondaryBtnStyle}>annulla</button>
+              <button onClick={() => setConfirming(false)} style={secondaryBtnStyle}>{t('cancel')}</button>
               <button onClick={() => void startChain()}
                 style={{ ...primaryBtnStyle, background: 'var(--warning-color)', color: 'var(--text-inverse)', cursor: 'pointer' }}>
-                avvia catena
+                {t('start chain')}
               </button>
             </div>
           </div>
@@ -850,28 +865,28 @@ export function PromotionPanel({ repoPath }: { repoPath: string | null }) {
       )}
 
       {confirming && !chainMode && (
-        <Modal onClose={() => setConfirming(false)} width={480} label="conferma rilascio in produzione">
+        <Modal onClose={() => setConfirming(false)} width={480} label={t('confirm production release')}>
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: 'var(--warning-color)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>
-              <AlertTriangle size={14} /> rilascio in produzione
+              <AlertTriangle size={14} /> {t('production release')}
             </div>
-            <div>Verranno create queste pull request:</div>
+            <div>{t('These pull requests will be created:')}</div>
             {creatable.map(p => (
               <div key={p.side} style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                {p.side} · {p.repo}: {p.source} → {p.target} · {p.commits.length} commit · {selectedItems(p).length} work item
+                {p.side} · {p.repo}: {p.source} → {p.target} · {commitCount(p.commits.length)} · {itemCount(selectedItems(p).length)}
               </div>
             ))}
             <div style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
               {autoComplete
-                ? 'Auto-complete armato: il merge parte quando le branch policy sono soddisfatte.'
-                : 'Le PR restano aperte: approvazione e completamento seguono le branch policy.'}
-              {' '}Nessuna policy viene bypassata e {roles.from} non viene cancellato.
+                ? t('Auto-complete armed: the merge starts when the branch policies pass.')
+                : t('The PRs stay open: approval and completion follow the branch policies.')}
+              {' '}{t('No policy is bypassed and {branch} is not deleted.', { branch: roles.from })}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
-              <button onClick={() => setConfirming(false)} style={secondaryBtnStyle}>annulla</button>
+              <button onClick={() => setConfirming(false)} style={secondaryBtnStyle}>{t('cancel')}</button>
               <button onClick={() => void create()}
                 style={{ ...primaryBtnStyle, background: 'var(--warning-color)', color: 'var(--text-inverse)', cursor: 'pointer' }}>
-                crea {creatable.length} PR
+                {createLabel(creatable.length)}
               </button>
             </div>
           </div>
@@ -955,13 +970,14 @@ const smallBtnStyle: React.CSSProperties = {
   cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
 }
 
+// labels in English, translated where the chip is drawn
 const CHAIN_STATUS: Record<ChainStatus, { label: string; bg: string; color: string }> = {
-  'waiting-qa': { label: 'in attesa di qa', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
-  'creating-prod': { label: 'creazione PR prod', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
-  'waiting-prod': { label: 'in attesa di prod', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
-  done: { label: 'completata', bg: 'var(--success-bg)', color: 'var(--success-color)' },
-  failed: { label: 'interrotta', bg: 'var(--error-bg)', color: 'var(--error-color)' },
-  cancelled: { label: 'annullata', bg: 'var(--bg-tag)', color: 'var(--text-muted)' }
+  'waiting-qa': { label: 'waiting for qa', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
+  'creating-prod': { label: 'creating prod PR', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
+  'waiting-prod': { label: 'waiting for prod', bg: 'var(--accent-bg)', color: 'var(--accent-color)' },
+  done: { label: 'completed', bg: 'var(--success-bg)', color: 'var(--success-color)' },
+  failed: { label: 'stopped', bg: 'var(--error-bg)', color: 'var(--error-color)' },
+  cancelled: { label: 'cancelled', bg: 'var(--bg-tag)', color: 'var(--text-muted)' }
 }
 
 const secondaryBtnStyle: React.CSSProperties = {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Sparkles, RefreshCw, Check, X, Loader2, Plug, Trash2, TerminalSquare } from '@/components/icons'
 import { useClaudeStore, useTerminalStore, CLAUDE_MODELS, CLAUDE_EFFORTS, CLAUDE_PERMISSION_MODES } from '../../store'
+import { useI18n, tr } from '../../i18n'
 
 const label: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: '4px',
@@ -22,6 +23,7 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
   refreshSignal?: number
   onLoginStarted?: () => void
 } = {}) {
+  const t = useI18n()
   const claude = useClaudeStore()
   const [auth, setAuth] = useState<ClaudeAuthStatus | null>(null)
   const [checking, setChecking] = useState(false)
@@ -47,8 +49,8 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
     try {
       const res = await window.electronAPI.ai.test(claude.backend)
       setVerdict(res.ok
-        ? { ok: true, msg: `connessione verificata — risposta ricevuta${res.costUsd ? ` ($${res.costUsd.toFixed(4)})` : ''}` }
-        : { ok: false, msg: res.error || 'fallita senza messaggio' })
+        ? { ok: true, msg: `${tr('connection verified — reply received')}${res.costUsd ? ` ($${res.costUsd.toFixed(4)})` : ''}` }
+        : { ok: false, msg: res.error || tr('failed without a message') })
     } catch (e) {
       setVerdict({ ok: false, msg: (e as Error).message })
     } finally {
@@ -60,10 +62,10 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
     try {
       await window.electronAPI.ai.setApiKey(key.trim() || null)
       setKey('')
-      setSaved(key.trim() ? 'API key salvata (cifrata dal sistema)' : 'API key rimossa')
+      setSaved(key.trim() ? tr('API key saved (encrypted by the system)') : tr('API key removed'))
       refresh()
     } catch (e) {
-      setSaved(`Errore: ${(e as Error).message}`)
+      setSaved(tr('Error: {message}', { message: (e as Error).message }))
     }
   }
 
@@ -72,10 +74,10 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
   const ok = verdict ? verdict.ok : present
   const statusText = verdict ? verdict.msg
     : claude.backend === 'api'
-      ? (auth?.hasApiKey ? 'API key configurata — non ancora verificata' : 'nessuna API key')
-      : !auth?.cli ? "CLI 'claude' non trovata nel PATH"
-        : auth.loggedIn ? `${auth.subscriptionType || 'account'} · ${auth.email || auth.authMethod || ''} — non ancora verificato`.trim()
-          : "non autenticato — esegui 'claude auth login' in un terminale"
+      ? (auth?.hasApiKey ? t('API key configured — not verified yet') : t('no API key'))
+      : !auth?.cli ? t("'claude' CLI not found in PATH")
+        : auth.loggedIn ? t('{account} · {who} — not verified yet', { account: auth.subscriptionType || 'account', who: auth.email || auth.authMethod || '' }).trim()
+          : t("not signed in — run 'claude auth login' in a terminal")
 
   return (
     <div style={{
@@ -87,7 +89,7 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
         <Sparkles size={13} style={{ color: 'var(--accent-color)' }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Claude <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· anche Claude Code</span>
+            Claude <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· {t('also Claude Code')}</span>
           </div>
           <div style={{
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
@@ -97,7 +99,7 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
           </div>
         </div>
         <button onClick={() => { useTerminalStore.getState().runCommand('claude auth login'); onLoginStarted?.() }}
-          title="accedi con la CLI claude" data-tip-desc="apre il terminale su 'claude auth login' (subscription) e apre il browser"
+          title={t('sign in with the claude CLI')} data-tip-desc={t("open the terminal on 'claude auth login' (subscription) and open the browser")}
           style={{
             display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', height: '22px',
             background: 'var(--accent-color)', border: 'none', borderRadius: 'var(--radius-sm)',
@@ -105,10 +107,10 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
           }}>
           <TerminalSquare size={10} />
-          accedi
+          {t('sign in')}
         </button>
-        <button onClick={runTest} disabled={testing} title="prova la connessione con un turno reale"
-          data-tip-desc="credenziali presenti non vuol dire funzionanti: manda un prompt minimo su haiku e riporta l'esito"
+        <button onClick={runTest} disabled={testing} title={t('test the connection with a real turn')}
+          data-tip-desc={t('credentials present does not mean working: send a minimal prompt on haiku and report the result')}
           style={{
             display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', height: '22px',
             background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -116,15 +118,15 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
           }}>
           {testing ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : <Plug size={10} />}
-          verifica
+          {t('verify')}
         </button>
-        <button onClick={refresh} disabled={checking} title="ricontrolla le credenziali presenti"
-          data-tip-desc="rilegge lo stato di login della CLI e la presenza della API key (non prova la connessione)"
+        <button onClick={refresh} disabled={checking} title={t('recheck the stored credentials')}
+          data-tip-desc={t('re-read the CLI login state and whether the API key is present (does not test the connection)')}
           style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}>
           <RefreshCw size={12} style={checking ? { animation: 'spin 1s linear infinite' } : undefined} />
         </button>
         {onRemove && (
-          <button onClick={onRemove} title="rimuovi agente" data-tip-desc="remove this agent from the IDE configuration"
+          <button onClick={onRemove} title={t('remove agent')} data-tip-desc={t('remove this agent from the IDE configuration')}
             style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -136,10 +138,10 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
       <div style={{ display: 'flex', gap: '6px' }}>
         {(['subscription', 'api'] as ClaudeBackend[]).map(b => (
           <button key={b} onClick={() => claude.setConfig({ backend: b })}
-            title={b === 'subscription' ? 'usa la CLI claude e il tuo abbonamento' : 'usa le API Anthropic con una key'}
+            title={b === 'subscription' ? t('use the claude CLI and your subscription') : t('use the Anthropic API with a key')}
             data-tip-desc={b === 'subscription'
-              ? 'nessuna key da gestire, accesso agli strumenti di Claude Code sul worktree'
-              : 'chat diretta con le API, fatturata a consumo sulla tua key'}
+              ? t('no key to manage, access to the Claude Code tools on the worktree')
+              : t('direct chat with the API, billed per use on your key')}
             style={{
               flex: 1, padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
               fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600,
@@ -147,14 +149,14 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
               border: `1px solid ${claude.backend === b ? 'var(--accent-color)' : 'var(--border-color)'}`,
               color: claude.backend === b ? 'var(--text-inverse)' : 'var(--text-secondary)'
             }}>
-            {b === 'subscription' ? 'subscription' : 'API key'}
+            {b === 'subscription' ? t('subscription') : 'API key'}
           </button>
         ))}
       </div>
 
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
         <label style={label}>
-          modello
+          {t('model')}
           <select value={claude.model} onChange={(e) => claude.setConfig({ model: e.target.value })} style={{ ...control, cursor: 'pointer' }}>
             {CLAUDE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
@@ -166,9 +168,9 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
           </select>
         </label>
         {claude.backend === 'subscription' && (
-          <label style={label} title="in modalità headless nessun prompt è interattivo: con 'default' Claude non può modificare file"
-            data-tip-desc="usa acceptEdits se vuoi che Claude applichi davvero le modifiche sul worktree">
-            permessi
+          <label style={label} title={t("in headless mode no prompt is interactive: with 'default' Claude cannot edit files")}
+            data-tip-desc={t('use acceptEdits if you want Claude to really apply the changes on the worktree')}>
+            {t('permissions')}
             <select value={claude.permissionMode} onChange={(e) => claude.setConfig({ permissionMode: e.target.value })} style={{ ...control, cursor: 'pointer' }}>
               {CLAUDE_PERMISSION_MODES.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -179,7 +181,7 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
       {claude.backend === 'api' && (
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           <input type="password" value={key} onChange={(e) => setKey(e.target.value)} spellCheck={false}
-            placeholder={auth?.hasApiKey ? 'key salvata — incolla per sostituirla, vuoto per rimuoverla' : 'sk-ant-…'}
+            placeholder={auth?.hasApiKey ? t('key saved — paste to replace it, empty to remove it') : 'sk-ant-…'}
             style={{ ...control, flex: 1 }} />
           <button onClick={saveKey} style={{
             display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', height: '24px',
@@ -188,15 +190,15 @@ export function ClaudeSettings({ onRemove, refreshSignal = 0, onLoginStarted }: 
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
           }}>
             {auth?.hasApiKey ? <Check size={10} /> : <X size={10} />}
-            salva
+            {t('save')}
           </button>
         </div>
       )}
 
       <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
         {saved || (claude.backend === 'subscription'
-          ? 'usa la sessione di `claude auth login`: nessuna key da gestire e la conversazione resta lato CLI, così ogni turno invia solo il nuovo messaggio.'
-          : 'la key è cifrata dal keystore di sistema e non lascia mai il processo principale. Il prefisso della conversazione viaggia in cache: i turni successivi costano ~90% in meno.')}
+          ? t('uses the `claude auth login` session: no key to manage and the conversation stays on the CLI side, so each turn sends only the new message.')
+          : t('the key is encrypted by the system keystore and never leaves the main process. The conversation prefix travels in the cache: later turns cost ~90% less.'))}
       </div>
     </div>
   )

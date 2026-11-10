@@ -3,8 +3,12 @@
 import assert from 'node:assert/strict'
 import {
   buildCellUpdate, buildResultSource, buildRowDelete, canInsertInto, isReadOnlyBatch, mapResultSets,
-  resolveColumnEdit, resolveRowTarget, splitSqlBatch, sqlValueLiteral, type SqlDescribedColumn
+  resolveColumnEdit, resolveRowTarget, splitSqlBatch, sqlValueLiteral, type SqlDescribedColumn, type Translate
 } from '../src/shared/sqlResultSource.ts'
+import { IT } from '../src/locales/it/sql-grid.ts'
+
+// the grid passes its i18n `t`: the Italian entries must give back the reasons as they always read
+const it: Translate = (key, vars) => (IT[key] ?? key).replace(/\{(\w+)\}/g, (m, k: string) => (vars && k in vars ? String(vars[k]) : m))
 
 const kinds = (sql: string) => splitSqlBatch(sql).statements.map(s => s.kind)
 
@@ -85,7 +89,9 @@ const code = resolveColumnEdit(joinStar, 'Code')
 assert.ok(code.ok)
 if (code.ok) assert.equal(buildCellUpdate(code.target, row, "N'X'"), "UPDATE [dbo].[Customers]\nSET [Code] = N'X'\nWHERE [Id] = 1", 'a joined column writes to its own table and key')
 const shared = resolveColumnEdit(joinStar, 'Name')
-assert.ok(!shared.ok && /più colonne si chiamano «Name»/.test(shared.reason), 'two tables share the column name')
+assert.ok(!shared.ok && /several columns are named «Name» \(dbo\.Orders and dbo\.Customers\)/.test(shared.reason), 'two tables share the column name')
+const sharedIt = resolveColumnEdit(joinStar, 'Name', it)
+assert.equal(!sharedIt.ok && sharedIt.reason, 'Modifica rifiutata: più colonne si chiamano «Name» (dbo.Orders e dbo.Customers). Usa un alias (AS) per modificarla.', 'the Italian translator gives the Italian reason')
 
 const del = resolveRowTarget(joinStar)
 assert.ok(del.ok)
@@ -97,7 +103,7 @@ const hiddenKeys = buildResultSource([
   col('Name', 'Orders', 'Name'), col('CName', 'Customers', 'Name'), col('Id', 'Orders', 'Id', true, true), col('Id', 'Customers', 'Id', true, true)
 ], ['Name', 'CName'])
 const cname = resolveColumnEdit(hiddenKeys, 'CName')
-assert.ok(!cname.ok && /aggiungi alla SELECT la chiave di dbo.Customers \(Id\)/.test(cname.reason))
+assert.ok(!cname.ok && /add the key of dbo\.Customers \(Id\) to the SELECT/.test(cname.reason))
 
 // aliased key + expression + table without key + self join
 const aliased = buildResultSource([col('OrderId', 'Orders', 'Id', true), col('Label', 'Orders', 'Name'), col('X', null, null)], ['OrderId', 'Label', 'X'], { baseTable: 'dbo.Orders' })
@@ -105,13 +111,13 @@ const label = resolveColumnEdit(aliased, 'Label')
 assert.ok(label.ok)
 if (label.ok) assert.equal(buildCellUpdate(label.target, { OrderId: 7, Label: 'a', X: 1 }, "N'b'"), "UPDATE [dbo].[Orders]\nSET [Name] = N'b'\nWHERE [Id] = 7")
 const expr = resolveColumnEdit(aliased, 'X')
-assert.ok(!expr.ok && /valore calcolato/.test(expr.reason))
+assert.ok(!expr.ok && /is a computed value/.test(expr.reason))
 assert.equal(canInsertInto(aliased), false, 'aliases and expressions block insert')
 const noKey = resolveColumnEdit(buildResultSource([col('A', 'NoKey', 'A')], ['A']), 'A')
-assert.ok(!noKey.ok && /non ha una chiave primaria o univoca/.test(noKey.reason))
+assert.ok(!noKey.ok && /has no primary or unique key/.test(noKey.reason))
 const selfJoin = buildResultSource([col('Id', 'Emp', 'Id', true), col('Boss', 'Emp', 'Name'), col('Id', 'Emp', 'Id', true, true)], ['Id', 'Boss'])
 const boss = resolveColumnEdit(selfJoin, 'Boss')
-assert.ok(!boss.ok && /compare più volte/.test(boss.reason))
+assert.ok(!boss.ok && /appears more than once/.test(boss.reason))
 
 // another database is kept in the target name; the base table must be a real source
 const cross = buildResultSource([col('Id', 'T', 'Id', true, false, 'other')], ['Id'], { baseTable: 'dbo.Missing', database: 'shop' })

@@ -3,16 +3,18 @@
 // commits), removeSafe() refusals, and the pure classify/pbi rules.
 // Run: node --experimental-strip-types scripts/worktree-cleanup.check.ts
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { WorktreeService, parseTrack, revParseCommit } from '../electron/services/git/worktree.service.ts'
+import { WorktreeService, parseTrack, revParseCommit, scheduleDelete, cancelScheduledDeletes } from '../electron/services/git/worktree.service.ts'
 import type { WorktreeOverview } from '../electron/services/git/worktree.service.ts'
 import {
-  classifyCleanup, pbiIdFromBranch, worktreeTone, overviewSummary, stripLabel, stripBadge, STACK_LABELS
+  classifyCleanup, pbiIdFromBranch, worktreeTone, overviewSummary, stripLabel, stripBadge, STACK_LABELS,
+  folderKind, mainWorktreePath, DEFAULT_WORKTREE_LAYOUT, isAbsolutePath, withChildren
 } from '../src/components/worktree/worktree-cleanup.ts'
 import type { CleanupInput } from '../src/components/worktree/worktree-cleanup.ts'
+import { IT } from '../src/locales/it/shell-worktree.ts'
 import simpleGit from 'simple-git'
 
 // ─── pure rules ──────────────────────────────────────────────────────────────
@@ -59,6 +61,37 @@ assert.equal(stripBadge('feature/1', false, { ...ovClean, ahead: 2 }, 'Done').do
 assert.equal(stripBadge('feature/1', false, ovClean).done, false, 'no ADO -> not done')
 assert.equal(stripBadge('develop', true, ovClean, 'Done').done, false, 'the main checkout is never done')
 assert.deepEqual([stripBadge('main', true, { ...ovClean, ahead: 2, behind: 4 }).ahead, stripBadge('main', true, { ...ovClean, ahead: 2, behind: 4 }).behind], [2, 4])
+
+// worktree layout (Settings › Git): the folder tells PBI from bug, main is git's first entry
+const L = DEFAULT_WORKTREE_LAYOUT
+const repoW = 'C:\\Repos\\Heimdal'
+assert.deepEqual(folderKind('C:/Repos/Heimdal/.worktrees/feature/6077', repoW, L), { kind: 'pbi', id: 6077 }, 'git paths use /, the repo \\')
+assert.deepEqual(folderKind('c:\\repos\\heimdal\\.worktrees\\bugfix\\6153', repoW, L), { kind: 'bug', id: 6153 }, 'case and separators ignored')
+assert.equal(folderKind('C:/Repos/Heimdal', repoW, L), null, 'the main checkout is not in a type folder')
+assert.equal(folderKind('C:/Repos/Heimdal/.worktrees/hotfix/1', repoW, L), null, 'another subfolder: the branch decides')
+assert.equal(folderKind('C:/Repos/Heimdal/.worktrees/feature/a/b', repoW, L), null, 'one level below the type folder only')
+const beside = { root: '.', pbiFolder: 'pbi', bugFolder: 'bug' }
+assert.deepEqual(folderKind('C:/Repos/Heimdal/pbi/5444', repoW, beside), { kind: 'pbi', id: 5444 }, 'root "." = next to the sources')
+assert.deepEqual(folderKind('C:/Repos/Heimdal/bug/login-fix', repoW, beside), { kind: 'bug', id: null }, 'non-numeric folder: kind without id')
+const outside = { root: 'D:\\wt', pbiFolder: '', bugFolder: 'bugs' }
+assert.deepEqual(folderKind('D:/wt/5444', repoW, outside), { kind: 'pbi', id: 5444 }, 'absolute root, PBIs straight in it')
+assert.deepEqual(folderKind('D:/wt/bugs/9', repoW, outside), { kind: 'bug', id: 9 })
+assert.deepEqual(folderKind('C:/Repos/wt/feature/1', repoW, { ...L, root: '../wt' }), { kind: 'pbi', id: 1 }, '.. resolved against the repo')
+assert.equal(folderKind('D:/wt/5444', repoW, { root: 'D:\\wt', pbiFolder: '', bugFolder: '' }), null, 'no type folders: the branch decides')
+assert.equal(folderKind('C:/Repos/Heimdal/.worktrees/wt/1', repoW, { ...L, pbiFolder: 'wt', bugFolder: 'WT/' }), null, 'the same subfolder for both: the branch decides')
+// a drive root: browse returns 'D:\', older versions saved it trimmed to 'D:'
+assert.ok(isAbsolutePath('D:') && isAbsolutePath('D:\\') && isAbsolutePath('d:/wt'), 'drive roots are absolute')
+assert.ok(isAbsolutePath('/home/u/wt') && isAbsolutePath('\\\\srv\\share\\wt'))
+assert.ok(!isAbsolutePath('.worktrees') && !isAbsolutePath('../wt') && !isAbsolutePath('D:wt'), "relative, 'D:wt' included")
+assert.deepEqual(folderKind('D:/feature/1234', repoW, { ...L, root: 'D:\\' }), { kind: 'pbi', id: 1234 }, 'drive root, not <repo>\\D:')
+assert.deepEqual(folderKind('D:/bugfix/9', repoW, { ...L, root: 'D:' }), { kind: 'bug', id: 9 }, 'bare drive')
+assert.equal(folderKind('C:/Repos/Heimdal/D:/feature/1234', repoW, { ...L, root: 'D:' }), null, "'D:' is never resolved under the repository")
+assert.equal(stripBadge('develop', false, ovClean, null, 'bug').kind, 'bug', 'the folder wins over the branch')
+assert.equal(stripBadge('', false, ovClean, null, 'pbi').kind, 'pbi', 'a detached worktree in a PBI folder is still PBI')
+assert.equal(stripLabel('', false, 5444), '5444', 'id from the folder when the branch has none')
+assert.equal(mainWorktreePath([{ path: 'C:/Repos/Heimdal', bare: false }, { path: 'C:/Repos/Heimdal/6077', bare: false }]), 'C:/Repos/Heimdal')
+assert.equal(mainWorktreePath([{ path: 'C:/Repos/x.git', bare: true }, { path: 'C:/wt/1', bare: false }]), null, 'a bare repository has no main checkout')
+assert.equal(mainWorktreePath([]), null)
 assert.deepEqual([stripBadge('main', true, undefined).ahead, stripBadge('main', true, undefined).behind], [0, 0])
 assert.deepEqual(Object.keys(STACK_LABELS).sort(), ['abandoned', 'absorbed', 'merged', 'open', 'rewritten', 'unknown'])
 
@@ -69,15 +102,27 @@ assert.equal(worktreeTone({ dirty: null, unmerged: false }), null)
 assert.equal(worktreeTone(undefined), null)
 assert.equal(
   overviewSummary({ dirty: true, changes: 3, unmerged: true, upstreamGone: false, ahead: 1, behind: 2 }),
-  "3 modifiche non committate · commit non in develop · ↑1 ↓2 (rispetto all'ultimo fetch)"
+  '3 uncommitted changes · commits not in develop · ↑1 ↓2 (as of the last fetch)'
 )
+// the components pass their translator (useI18n)
+const itT = (key: string, vars?: Record<string, string | number>) =>
+  (IT[key] ?? key).replace(/\{(\w+)\}/g, (m, k: string) => (vars && k in vars ? String(vars[k]) : m))
+assert.equal(
+  overviewSummary({ dirty: true, changes: 1, unmerged: false, upstreamGone: true, ahead: 0, behind: 2 }, itT),
+  "1 modifica non committata · nessun branch remoto · ↓2 (rispetto all'ultimo fetch)"
+)
+assert.deepEqual(classifyCleanup({ isMain: false, branch: 'feature/1', dirty: false, localOnly: 3, upstreamGone: false, unmerged: false }, itT).reasons, ['3 commit non pushati'])
+assert.equal(withChildren('worktree deleted', 0), 'worktree deleted', 'no children: the text alone')
+assert.equal(withChildren('worktree deleted', 1), 'worktree deleted (1 child moved back to develop)', 'singular')
+assert.equal(withChildren('fatto', 3, itT), 'fatto (3 figli riportati su develop)')
+assert.equal(withChildren('fatto', 1, itT), 'fatto (1 figlio riportato su develop)')
 assert.equal(overviewSummary({ dirty: false, changes: 0, unmerged: false, upstreamGone: false, ahead: 0, behind: 0 }), '')
 
 const safe: CleanupInput = { isMain: false, branch: 'feature/1', dirty: false, localOnly: 0, upstreamGone: true, unmerged: false }
 assert.equal(classifyCleanup({ ...safe, pbiState: 'Done' }).verdict, 'remove', 'Done + clean -> remove')
 assert.equal(classifyCleanup({ ...safe, pbiState: 'closed' }).verdict, 'remove', 'state compared case-insensitively')
 assert.equal(classifyCleanup({ ...safe, pbiState: 'Removed', unmerged: true, upstreamGone: false }).verdict, 'remove', 'pushed but unmerged with a Removed PBI')
-assert.ok(classifyCleanup({ ...safe, pbiState: 'Removed', unmerged: true }).reasons.includes('commit non in develop (pushati)'))
+assert.ok(classifyCleanup({ ...safe, pbiState: 'Removed', unmerged: true }).reasons.includes('commits not in develop (pushed)'))
 const doneDirty = classifyCleanup({ ...safe, pbiState: 'Done', dirty: true })
 assert.equal(doneDirty.verdict, 'keep', 'Done + dirty -> keep')
 assert.equal(doneDirty.locked, true, 'Done + dirty -> locked')
@@ -251,6 +296,73 @@ assert.equal(removed.ok, true, removed.error)
 assert.ok(!existsSync(wt('1003')), 'folder deleted')
 assert.ok(!(await service.list(repo)).some(e => e.branch === 'feature/1003'), 'worktree unregistered')
 assert.ok(await revParseCommit(simpleGit(repo), 'refs/heads/feature/1003'), 'local branch kept')
+
+// worktrees outside .worktrees (Settings › Git › worktree): next to the sources and in another folder
+await service.add(repo, 'feature/1005', join(repo, 'pbi', '1005'))
+await service.add(repo, 'feature/1006', join(root, 'ext', '1006'))
+ov = await service.overview(repo)
+assert.equal(byBranch(ov, 'develop').dirty, false, 'a folder holding worktrees next to the sources is not a change of the main checkout')
+writeFileSync(join(repo, 'loose.txt'), 'x\n')
+assert.equal(byBranch(await service.overview(repo), 'develop').changes, 1, 'other untracked files still count')
+rmSync(join(repo, 'loose.txt'))
+// git collapses the folder (`?? pbi/`): a file next to the worktree pbi/1005 is still a change,
+// the leftovers of a locked worktree moved to the trash are not
+writeFileSync(join(repo, 'pbi', 'notes.txt'), 'x\n')
+mkdirSync(join(repo, 'pbi', '.damnedide-trash', '1004-1'), { recursive: true })
+writeFileSync(join(repo, 'pbi', '.damnedide-trash', '1004-1', 'left.txt'), 'x\n')
+assert.equal(byBranch(await service.overview(repo), 'develop').changes, 1, 'pbi/notes.txt counts, the worktree and the trash do not')
+rmSync(join(repo, 'pbi', 'notes.txt'))
+assert.equal(byBranch(await service.overview(repo), 'develop').dirty, false, 'only the worktree and the trash left in pbi/')
+rmSync(join(repo, 'pbi', '.damnedide-trash'), { recursive: true, force: true })
+const ext = await service.removeSafe(repo, byBranch(ov, 'feature/1006').path)
+assert.equal(ext.ok, true, `a clean, pushed worktree outside .worktrees is removed: ${ext.error}`)
+assert.ok(!existsSync(join(root, 'ext', '1006')))
+
+// ─── remove(): a plain rm -rf, only for a registered linked worktree ─────────
+for (const p of [byBranch(ov, 'develop').path, repo]) {
+  const res = await service.remove(repo, p, true)
+  assert.equal(res.ok, false, 'remove() refuses the main checkout')
+  assert.equal(res.skipped, true, 'refused, not locked: nothing to force')
+}
+assert.ok(existsSync(join(repo, 'a.txt')), 'main checkout untouched')
+mkdirSync(join(root, 'stray'))
+writeFileSync(join(root, 'stray', 'keep.txt'), 'x\n')
+const stray = await service.remove(repo, join(root, 'stray'), true)
+assert.equal(stray.skipped, true, 'remove() refuses a folder git does not list')
+assert.match(stray.error || '', /non è un worktree/)
+assert.ok(existsSync(join(root, 'stray', 'keep.txt')))
+// a worktree holding another one: deleting it would take the inner one along
+await service.add(repo, 'feature/1007', join(root, 'nest', '1007'))
+await service.add(repo, 'feature/1008', join(root, 'nest', '1007', 'inner'))
+const outer = (await service.list(repo)).find(e => e.branch === 'feature/1007')!.path
+const nestedPlain = await service.remove(repo, outer)
+assert.equal(nestedPlain.skipped, true, 'remove() refuses a worktree containing another')
+assert.match(nestedPlain.error || '', /contiene il worktree/)
+const nestedSafe = await service.removeSafe(repo, outer)
+assert.equal(nestedSafe.skipped, true, 'removeSafe() refuses a worktree containing another')
+assert.match(nestedSafe.error || '', /contiene il worktree/)
+assert.ok(existsSync(join(root, 'nest', '1007', 'inner', 'a.txt')), 'inner worktree untouched')
+// a bare repository with a linked worktree: git lists the bare repository first
+git(['worktree', 'add', join(root, 'bare-wt'), 'develop'], remote)
+const bareList = await service.list(remote)
+assert.equal(bareList[0].bare, true)
+assert.equal(mainWorktreePath(bareList), null)
+const bare = await service.remove(remote, bareList[0].path, true)
+assert.equal(bare.skipped, true, 'remove() refuses the bare repository')
+assert.match(bare.error || '', /bare/)
+assert.equal((await service.removeSafe(remote, bareList[0].path)).skipped, true, 'removeSafe() too')
+assert.ok(existsSync(join(remote, 'HEAD')), 'bare repository untouched')
+// a locked worktree moved to the trash while its background delete is pending: not a change of the main checkout
+const mainChanges = async () => byBranch(await service.overview(repo), 'develop').changes
+const before = await mainChanges()
+const trashed = join(repo, 'old', '.damnedide-trash', '1009-1')
+mkdirSync(trashed, { recursive: true })
+writeFileSync(join(trashed, 'held.txt'), 'x\n')
+scheduleDelete(trashed, { initialDelayMs: 600_000 })
+assert.equal(await mainChanges(), before, 'a pending trash folder is not counted')
+cancelScheduledDeletes()
+assert.equal(await mainChanges(), before + 1, 'once nothing deletes it, the leftover counts as untracked')
+rmSync(join(repo, 'old'), { recursive: true, force: true })
 
 rmSync(root, { recursive: true, force: true })
 console.log('ok — worktree cleanup')

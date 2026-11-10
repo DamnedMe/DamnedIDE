@@ -43,7 +43,7 @@ test('in a join every column is saved to its own table and key, behind the confi
   expect(await statementIn(page, 'delete')).toBe('DELETE FROM [dbo].[Orders]\nWHERE [Id] = 10')
 })
 
-test('an ambiguous join edit is refused with an Italian message and writes nothing', async ({ page }) => {
+test('an ambiguous join edit is refused with a reason and writes nothing', async ({ page }) => {
   await openMockDatabase(page)
   await runEditorQuery(page, JOIN)
   await expect(page.getByText('2 rows', { exact: true })).toBeVisible()
@@ -51,10 +51,10 @@ test('an ambiguous join edit is refused with an Italian message and writes nothi
 
   // two tables share the column name
   await page.locator('[data-result-row="0"] [data-result-column="Id"]').dblclick()
-  await expect(page.getByText(/Modifica rifiutata: più colonne si chiamano «Id» \(dbo\.Orders e dbo\.Customers\)/)).toBeVisible()
+  await expect(page.getByText(/Edit refused: several columns are named «Id» \(dbo\.Orders and dbo\.Customers\)/)).toBeVisible()
   // the column comes from a table without a usable key
   await page.locator('[data-result-row="0"] [data-result-column="Note"]').dblclick()
-  await expect(page.getByText(/la tabella dbo\.Notes non ha una chiave primaria o univoca/)).toBeVisible()
+  await expect(page.getByText(/table dbo\.Notes has no primary or unique key/)).toBeVisible()
 
   await expect(page.locator('[data-result-column] input')).toHaveCount(0)
   await expect(confirmation(page, 'update')).toHaveCount(0)

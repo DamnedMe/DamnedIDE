@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AdoWorkItem } from '../../types/ado'
 import { Loader2, ExternalLink } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface WorkItemDetailProps {
   workItemId: number
@@ -8,6 +9,7 @@ interface WorkItemDetailProps {
 }
 
 export function WorkItemDetail({ workItemId, project }: WorkItemDetailProps) {
+  const t = useI18n()
   const [workItem, setWorkItem] = useState<AdoWorkItem | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -44,7 +46,7 @@ export function WorkItemDetail({ workItemId, project }: WorkItemDetailProps) {
         background: 'var(--bg-card)', border: '1px solid var(--border-color)',
         borderRadius: '6px', fontSize: 'calc(12px * var(--ui-text-scale, 1))'
       }}>
-        Seleziona un work item
+        {t('Select a work item')}
       </div>
     )
   }
@@ -79,8 +81,8 @@ export function WorkItemDetail({ workItemId, project }: WorkItemDetailProps) {
           {workItem.title}
         </h3>
         <div style={{ display: 'flex', gap: '16px', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-          <span>Stato: <strong>{workItem.state}</strong></span>
-          <span>Assegnato: <strong>{workItem.assignedTo || '—'}</strong></span>
+          <span>{t('State:')} <strong>{workItem.state}</strong></span>
+          <span>{t('Assigned to:')} <strong>{workItem.assignedTo || '—'}</strong></span>
         </div>
       </div>
     </div>

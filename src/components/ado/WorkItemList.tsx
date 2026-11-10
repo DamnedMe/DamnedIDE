@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AdoWorkItem } from '../../types/ado'
 import { Bug, Bookmark, Shield, Wrench, Search, ArrowUpDown, ChevronLeft, ChevronRight } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface WorkItemListProps {
   workItems: AdoWorkItem[]
@@ -25,6 +26,7 @@ const typeColors: Record<string, string> = {
 }
 
 export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListProps) {
+  const t = useI18n()
   const [search, setSearch] = useState('')
   const [sortAsc, setSortAsc] = useState(false)
   const [page, setPage] = useState(0)
@@ -54,7 +56,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0
       }}>
         <span>Work Items ({workItems.length})</span>
-        <button onClick={() => setSortAsc(!sortAsc)} title="sort by id" data-tip-desc="sort the list by work item id"
+        <button onClick={() => setSortAsc(!sortAsc)} title={t('sort by id')} data-tip-desc={t('sort the list by work item id')}
           style={{
             display: 'flex', alignItems: 'center', gap: '3px', background: 'none',
             border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
@@ -75,7 +77,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
         }}>
           <Search size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="search id / title..."
+            placeholder={t('search id / title...')}
             spellCheck={false}
             style={{
               flex: 1, background: 'none', border: 'none', outline: 'none',
@@ -87,7 +89,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {paged.length === 0 ? (
           <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-            no work items
+            {t('no work items')}
           </div>
         ) : paged.map((wi) => (
           <div
@@ -126,7 +128,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '5px 10px', borderTop: '1px solid var(--border-subtle)', flexShrink: 0
         }}>
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0} title="previous page" data-tip-desc="go to the previous page of work items"
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0} title={t('previous page')} data-tip-desc={t('go to the previous page of work items')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '20px', background: 'var(--bg-card)',
@@ -139,7 +141,7 @@ export function WorkItemList({ workItems, onSelect, selectedId }: WorkItemListPr
           <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
             {safePage + 1} / {pageCount}
           </span>
-          <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} title="next page" data-tip-desc="go to the next page of work items"
+          <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} title={t('next page')} data-tip-desc={t('go to the next page of work items')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '20px', background: 'var(--bg-card)',

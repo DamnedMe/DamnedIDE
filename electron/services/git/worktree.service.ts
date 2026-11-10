@@ -1,7 +1,7 @@
 import simpleGit from 'simple-git'
 import type { SimpleGit } from 'simple-git'
 import { rm, mkdir, rename, readdir } from 'fs/promises'
-import { existsSync } from 'fs'
+import { existsSync, realpathSync } from 'fs'
 import { basename, dirname, join } from 'path'
 
 export interface WorktreeEntry {
@@ -21,7 +21,7 @@ export interface RemoveResult {
   // free and the deletion is retried in the background
   trashedPath?: string
   error?: string
-  /** removeSafe only: refused by a safety check, nothing was touched */
+  /** refused by a safety check, nothing was touched (no point in forcing it) */
   skipped?: boolean
 }
 
@@ -65,16 +65,46 @@ async function inPool<T>(items: T[], size: number, fn: (item: T) => Promise<void
   }))
 }
 
-/** Lines of `git status --porcelain` in a worktree; null when it is not a readable worktree. */
-async function changeCount(worktreePath: string, ignoreDeletions = false): Promise<number | null> {
+/** Lines of `git status --porcelain` in a worktree; null when it is not a readable worktree.
+ *  `nested` = the other worktrees: the ones inside this folder are not its changes. */
+async function changeCount(worktreePath: string, ignoreDeletions = false, nested: string[] = []): Promise<number | null> {
   // without its `.git` file, git would walk up and report the main repository instead
   if (!existsSync(join(worktreePath, '.git'))) return null
+  const self = `${normalizeForCompare(worktreePath)}/`
+  const inner = nested.map(p => `${normalizeForCompare(p)}/`).filter(p => p.startsWith(self))
+  // the main checkout sees the worktrees inside it (`.worktrees/`, or folders next to the sources) as untracked
+  // ponytail: quoted names (spaces, accents) are not unquoted and still count
+  const keyOf = (rel: string) => `${normalizeForCompare(join(worktreePath, rel))}/`
+  const isWorktree = (rel: string) => inner.some(p => keyOf(rel).startsWith(p))
+  const holdsWorktree = (rel: string) => rel.endsWith('/') && inner.some(p => p.startsWith(keyOf(rel)))
+  // a locked worktree moved aside by moveToTrash: deleted in the background, not the user's work
+  const inTrash = (rel: string) => rel.split('/').includes(TRASH_DIR)
+  const skipUntracked = (rel: string) => inTrash(rel) || isWorktree(rel)
+  // a collapsed folder still holding a trashed worktree (the last one of `.worktrees/feature/`)
+  // ponytail: only the deletes scheduled by this run; a leftover of an earlier run counts until removed
+  const holdsTrash = (rel: string) => rel.endsWith('/') && [...pendingDeletes.keys()].some(p => `${diskKey(p)}/`.startsWith(keyOf(rel)))
   try {
+    const git = simpleGit(worktreePath)
     // background refresh: never take index.lock away from the user's own git commands
-    const out = await simpleGit(worktreePath).raw(['--no-optional-locks', 'status', '--porcelain'])
-    // the main checkout always sees the IDE's own `.worktrees/` folder as untracked;
-    // deleted tracked files (a half-done rm) are still in git, so they lose nothing
-    return out.split('\n').filter(l => l.trim() && l.trim() !== '?? .worktrees/' && !(ignoreDeletions && /^(?: D|D |DD)/.test(l))).length
+    const status = async (args: string[] = []) => (await git.raw(['--no-optional-locks', 'status', '--porcelain', ...args]))
+      .split('\n').map(l => l.replace(/\r$/, '')).filter(l => l.trim())
+    let count = 0
+    for (const l of await status()) {
+      const rel = l.slice(3)
+      const untracked = l.startsWith('?? ')
+      if (untracked && skipUntracked(rel)) continue
+      if (untracked && (holdsWorktree(rel) || holdsTrash(rel))) {
+        // git collapses the folder (`?? pbi/`): its own files, next to the worktree, still count
+        // (a nested worktree is listed as `?? pbi/1/`, git does not walk into it)
+        const files = await status(['--untracked-files=all', '--', rel])
+        count += files.filter(f => !(f.startsWith('?? ') && skipUntracked(f.slice(3)))).length
+        continue
+      }
+      // deleted tracked files (a half-done rm) are still in git, so they lose nothing
+      if (ignoreDeletions && /^(?: D|D |DD)/.test(l)) continue
+      count++
+    }
+    return count
   } catch {
     return null
   }
@@ -92,6 +122,41 @@ async function localOnlyCount(git: SimpleGit, branch: string): Promise<number | 
 
 function normalizeForCompare(p: string): string {
   return p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+/** Comparable form of a path on disk: an 8.3 short name (Windows tmpdir), a junction or `..`
+ *  spelled differently from git's own path still matches; a missing path compares as written. */
+function diskKey(p: string): string {
+  try {
+    return normalizeForCompare(realpathSync.native(p))
+  } catch {
+    return normalizeForCompare(p)
+  }
+}
+
+/** The listed entry `path` designates, however it is spelled. */
+function entryOf(entries: WorktreeEntry[], path: string): WorktreeEntry | undefined {
+  const key = diskKey(path)
+  return entries.find(e => diskKey(e.path) === key)
+}
+
+/**
+ * Why `worktreePath` must not be deleted (Italian, shown as is); null when it is a linked
+ * worktree that can go. Refused: git's first entry (the main checkout, or the bare repository
+ * itself), any bare entry, the opened folder, a path git does not list, and a folder holding
+ * another worktree (the delete would take it along).
+ */
+function removalRefusal(entries: WorktreeEntry[], repoPath: string, worktreePath: string): string | null {
+  const keys = entries.map(e => diskKey(e.path))
+  const target = diskKey(worktreePath)
+  const index = keys.indexOf(target)
+  if (index >= 0 && entries[index].bare) return 'repository bare: non rimosso'
+  if (index === 0) return 'checkout principale: non rimosso'
+  if (target === diskKey(repoPath)) return 'è la cartella aperta: non rimossa'
+  if (index < 0) return 'non è un worktree di questo repository'
+  const inner = keys.findIndex(k => k.startsWith(`${target}/`))
+  if (inner >= 0) return `contiene il worktree "${entries[inner].path}": non rimosso`
+  return null
 }
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -560,8 +625,9 @@ export class WorktreeService {
   async overview(repoPath: string, opts: { paths?: string[]; localOnly?: boolean } = {}): Promise<WorktreeOverview[]> {
     const git = this.getGit(repoPath)
     const wanted = opts.paths ? new Set(opts.paths.map(normalizeForCompare)) : null
-    const entries = (await this.list(repoPath))
-      .filter(e => !e.bare && (!wanted || wanted.has(normalizeForCompare(e.path))))
+    const listed = await this.list(repoPath)
+    const all = listed.map(e => e.path)
+    const entries = listed.filter(e => !e.bare && (!wanted || wanted.has(normalizeForCompare(e.path))))
     const branchOf = (e: WorktreeEntry) => e.branch.replace(/^refs\/heads\//, '')
     const refs = [...new Set(entries.map(branchOf).filter(Boolean))].map(b => `refs/heads/${b}`)
     const names = (out: string) => out.split('\n').map(l => l.trim())
@@ -596,7 +662,7 @@ export class WorktreeService {
         }
       })(),
       inPool(results, 4, async ov => {
-        const changes = await changeCount(ov.path)
+        const changes = await changeCount(ov.path, false, all.filter(p => p !== ov.path))
         ov.dirty = changes === null ? null : changes > 0
         ov.changes = changes ?? 0
         if (opts.localOnly && ov.branch) ov.localOnly = await localOnlyCount(git, ov.branch)
@@ -633,7 +699,8 @@ export class WorktreeService {
   }
 
   /**
-   * Removes a worktree. Without `force` this is a plain recursive delete: if the
+   * Removes a linked worktree; anything else (removalRefusal) is refused with
+   * `skipped` and nothing touched. Without `force` this is a plain recursive delete: if the
    * folder is locked (a terminal, Explorer, another app) it fails and the caller
    * can ask the user to confirm a forced removal.
    *
@@ -644,13 +711,18 @@ export class WorktreeService {
    * The worktree path is therefore always freed; only the disk space may be
    * reclaimed a moment later.
    */
-  async remove(repoPath: string, worktreePath: string, force = false): Promise<RemoveResult> {
-    // Guard: never delete the main repository itself
-    if (normalizeForCompare(worktreePath) === normalizeForCompare(repoPath)) {
-      await this.getGit(repoPath).raw(['worktree', 'prune'])
-      return { ok: true }
-    }
+  async remove(repoPath: string, worktreePath: string, force = false, beforeDelete?: () => void): Promise<RemoveResult> {
+    // the delete below is a plain rm -rf: only a registered linked worktree may get there
+    const entries = await this.list(repoPath).catch(() => null)
+    const refusal = entries ? removalRefusal(entries, repoPath, worktreePath) : 'elenco dei worktree non leggibile: non rimosso'
+    if (refusal) return { ok: false, skipped: true, error: refusal }
+    // e.g. close the terminals rooted there: only once the removal is accepted
+    beforeDelete?.()
+    return this.removeFolder(repoPath, worktreePath, force)
+  }
 
+  /** remove() without the checks: the callers ran them on a fresh list. */
+  private async removeFolder(repoPath: string, worktreePath: string, force: boolean): Promise<RemoveResult> {
     if (!force) {
       const error = await tryRemove(worktreePath, 1, 0)
       if (error) return { ok: false, error: error.message }
@@ -697,7 +769,7 @@ export class WorktreeService {
   /**
    * Removal for the bulk cleanup: right before deleting it re-checks that
    * nothing would be lost (clean working tree, every commit on a remote) and
-   * refuses the main checkout and detached worktrees. A refusal touches nothing
+   * refuses what remove() refuses plus detached worktrees. A refusal touches nothing
    * and returns `skipped`. Ignored files (bin/obj, local config) are deleted,
    * like in remove(); the local branch is kept.
    * `forceTeardown` = forced retry after a locked folder: the same checks run
@@ -706,14 +778,12 @@ export class WorktreeService {
    */
   async removeSafe(repoPath: string, worktreePath: string, forceTeardown?: () => void): Promise<RemoveResult> {
     const skip = (error: string): RemoveResult => ({ ok: false, skipped: true, error })
-    const target = normalizeForCompare(worktreePath)
     const entries = await this.list(repoPath)
-    if (target === normalizeForCompare(repoPath) || (entries[0] && target === normalizeForCompare(entries[0].path))) {
-      return skip('checkout principale: non rimosso')
-    }
-    const entry = entries.find(e => normalizeForCompare(e.path) === target)
-    if (!entry) return skip('non è un worktree di questo repository')
-    if (!entry.path.includes('.worktrees')) return skip('worktree fuori da .worktrees: non rimosso')
+    // wherever it lives (Settings › Git › worktree): never the main checkout, a bare repository,
+    // a path git does not list or a folder holding other worktrees
+    const refusal = removalRefusal(entries, repoPath, worktreePath)
+    const entry = entryOf(entries, worktreePath)
+    if (refusal || !entry) return skip(refusal || 'non è un worktree di questo repository')
     const branch = entry.branch.replace(/^refs\/heads\//, '')
     if (!branch) return skip('HEAD detached: non rimosso')
     const force = !!forceTeardown
@@ -726,7 +796,7 @@ export class WorktreeService {
     if (localOnly === undefined) return skip('commit locali non verificabili: non rimosso')
     if (localOnly > 0) return skip(`${localOnly} commit non pushati: non rimosso`)
     forceTeardown?.()
-    return this.remove(repoPath, worktreePath, force)
+    return this.removeFolder(repoPath, worktreePath, force)
   }
 
   async prune(repoPath: string): Promise<void> {

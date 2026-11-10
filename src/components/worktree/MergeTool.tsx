@@ -4,6 +4,7 @@ import { X, ChevronUp, ChevronDown, Save, Loader2, GitMerge, Check, ArrowRight, 
 import { useUIStore, useSettingsStore } from '../../store'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from '../editor/monaco-theme'
 import { appFontStack } from '../../utils/fonts'
+import { useI18n } from '../../i18n'
 import {
   detectLangForMerge, parseConflicts, applyChoices, unresolvedCount,
   type ConflictBlock, type MergeSide
@@ -28,6 +29,7 @@ function applyEditorTheme(monaco: typeof import('monaco-editor')) {
 // two sides side by side, and clicking a side takes it (click again to undo). The
 // merged result is built live on the right and stays editable for manual fixes.
 export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeToolProps) {
+  const t = useI18n()
   const theme = useUIStore(s => s.theme)
   const appFont = useSettingsStore(s => s.settings.appFont)
   const appFontSize = useSettingsStore(s => s.settings.fontSize)
@@ -130,8 +132,8 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
     return (
       <div
         onClick={() => choose(block.index, side)}
-        title={`clicca per prendere questa versione (${label})`}
-        data-tip-desc={selected ? 'click again to leave this conflict unresolved' : 'take this side for this conflict'}
+        title={t('click to take this version ({side})', { side: label })}
+        data-tip-desc={selected ? t('click again to leave this conflict unresolved') : t('take this side for this conflict')}
         style={{
           flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
           border: `1px solid ${selected ? color : 'var(--border-color)'}`,
@@ -151,7 +153,7 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
           {selected ? <Check size={10} /> : <ArrowRight size={10} style={{ opacity: 0.5 }} />}
           {label}
           <span style={{ marginLeft: 'auto', fontWeight: 500, color: 'var(--text-disabled)' }}>
-            {lines.length === 0 ? 'vuoto' : `${lines.length} righe`}
+            {lines.length === 0 ? t('empty') : lines.length === 1 ? t('1 line') : t('{n} lines', { n: lines.length })}
           </span>
         </div>
         <div style={{ maxHeight: '190px', overflow: 'auto', padding: '3px 0' }}>
@@ -194,11 +196,11 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
                 color: unresolved > 0 ? 'var(--error-color)' : 'var(--success-color)',
                 fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, flexShrink: 0
               }}>
-                {unresolved > 0 ? `${unresolved} conflitti` : 'risolto'}
+                {unresolved > 1 ? t('{n} conflicts', { n: unresolved }) : unresolved === 1 ? t('1 conflict') : t('resolved')}
               </span>
             )}
           </div>
-          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
+          <button onClick={onClose} title={t('close')} data-tip-desc={t('close this panel or dialog')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '26px', height: '26px', background: 'transparent',
@@ -219,25 +221,25 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
         }}>
           {blocks.length > 0 && (
             <>
-              <button onClick={() => reveal(active - 1)} title="conflitto precedente" data-tip-desc="go to the previous conflict" style={navBtnStyle}>
+              <button onClick={() => reveal(active - 1)} title={t('previous conflict')} data-tip-desc={t('go to the previous conflict')} style={navBtnStyle}>
                 <ChevronUp size={11} />
               </button>
-              <button onClick={() => reveal(active + 1)} title="conflitto successivo" data-tip-desc="go to the next conflict" style={navBtnStyle}>
+              <button onClick={() => reveal(active + 1)} title={t('next conflict')} data-tip-desc={t('go to the next conflict')} style={navBtnStyle}>
                 <ChevronDown size={11} />
               </button>
               <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
                 {blocks.length > 0 ? `${active + 1}/${blocks.length}` : ''}
               </span>
               <span style={{ width: '1px', height: '14px', background: 'var(--border-subtle)' }} />
-              <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>tutti:</span>
-              <ToolBtn label="prendi sx" title="risolvi tutti con la versione di sinistra (HEAD)" data-tip-desc="accept the current (HEAD) version for every conflict" onClick={() => applyToAll('ours')} color="var(--accent-color)" />
-              <ToolBtn label="prendi dx" title="risolvi tutti con la versione di destra (in arrivo)" data-tip-desc="accept the incoming version for every conflict" onClick={() => applyToAll('theirs')} color="var(--warning-color)" />
-              <ToolBtn label="entrambe" title="tieni entrambe le versioni (prima sx, poi dx)" data-tip-desc="keep both versions in order for every conflict" onClick={() => applyToAll('both')} color="var(--success-color)" />
+              <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('all:')}</span>
+              <ToolBtn label={t('take left')} title={t('resolve all with the left version (HEAD)')} data-tip-desc={t('accept the current (HEAD) version for every conflict')} onClick={() => applyToAll('ours')} color="var(--accent-color)" />
+              <ToolBtn label={t('take right')} title={t('resolve all with the right version (incoming)')} data-tip-desc={t('accept the incoming version for every conflict')} onClick={() => applyToAll('theirs')} color="var(--warning-color)" />
+              <ToolBtn label={t('both')} title={t('keep both versions (left first, then right)')} data-tip-desc={t('keep both versions in order for every conflict')} onClick={() => applyToAll('both')} color="var(--success-color)" />
             </>
           )}
           <div style={{ flex: 1 }} />
           <button onClick={handleSave} disabled={saving || loading}
-            title="scrivi il risultato e marca il conflitto come risolto" data-tip-desc="save the resolved file and stage it (Ctrl+S)"
+            title={t('write the result and mark the conflict as resolved')} data-tip-desc={t('save the resolved file and stage it (Ctrl+S)')}
             style={{
               display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 14px', height: '26px',
               background: unresolved > 0 ? 'var(--accent-color)' : 'var(--success-color)',
@@ -247,14 +249,14 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
               opacity: saving || loading ? 0.6 : 1
             }}>
             {saving ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={11} />}
-            {saving ? 'salvo…' : 'salva e risolvi'}
+            {saving ? t('saving…') : t('save and resolve')}
           </button>
         </div>
 
         {/* Conflicts + result */}
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
           <div style={{ flex: '1 1 56%', minWidth: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-color)' }}>
-            <PaneLabel icon={<Columns2 size={11} />} text="conflitti — clicca la modifica da prendere" color="var(--text-secondary)" />
+            <PaneLabel icon={<Columns2 size={11} />} text={t('conflicts — click the change to take')} color="var(--text-secondary)" />
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {loading && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px' }}>
@@ -263,14 +265,14 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
               )}
               {!loading && blocks.length === 0 && (
                 <div style={{ padding: '24px', textAlign: 'center', color: 'var(--success-color)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
-                  nessun conflitto da risolvere — puoi salvare direttamente
+                  {t('no conflicts to resolve — you can save right away')}
                 </div>
               )}
               {blocks.map(block => {
                 const choice = choices[block.index]
                 const isActive = block.index === active
                 const statusColor = choice === 'ours' ? 'var(--accent-color)' : choice === 'theirs' ? 'var(--warning-color)' : choice === 'both' ? 'var(--success-color)' : 'var(--error-color)'
-                const statusLabel = choice === 'ours' ? 'sx' : choice === 'theirs' ? 'dx' : choice === 'both' ? 'entrambe' : 'non risolto'
+                const statusLabel = choice === 'ours' ? t('left') : choice === 'theirs' ? t('right') : choice === 'both' ? t('both') : t('unresolved')
                 return (
                   <div key={block.index}
                     ref={(el) => { cardRefs.current[block.index] = el }}
@@ -288,7 +290,7 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
                         #{block.index + 1}
                       </span>
                       <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-disabled)' }}>
-                        righe {block.startLine}–{block.endLine}
+                        {t('lines {start}–{end}', { start: block.startLine, end: block.endLine })}
                       </span>
                       <span style={{
                         marginLeft: 'auto', padding: '1px 7px', borderRadius: 'var(--radius-sm)',
@@ -298,15 +300,15 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
                         {statusLabel}
                       </span>
                       <button onClick={(e) => { e.stopPropagation(); choose(block.index, 'both') }}
-                        title="tieni entrambe le versioni" data-tip-desc="keep both sides for this conflict"
+                        title={t('keep both versions')} data-tip-desc={t('keep both sides for this conflict')}
                         style={{ ...chipBtn, width: 'auto', padding: '0 6px', color: 'var(--success-color)', border: '1px solid var(--success-color)' }}>
-                        entrambe
+                        {t('both')}
                       </button>
                       {choice && (
                         <button onClick={(e) => { e.stopPropagation(); choose(block.index, choice) }}
-                          title="annulla la scelta" data-tip-desc="leave this conflict unresolved"
+                          title={t('undo the choice')} data-tip-desc={t('leave this conflict unresolved')}
                           style={{ ...chipBtn, width: 'auto', padding: '0 6px', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}>
-                          annulla
+                          {t('undo')}
                         </button>
                       )}
                     </div>
@@ -318,8 +320,8 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
                     )}
 
                     <div style={{ display: 'flex', gap: '8px', padding: '8px' }}>
-                      {sidePane(block, 'ours', 'sinistra · HEAD', 'var(--accent-color)', block.ours, block.oursStart)}
-                      {sidePane(block, 'theirs', 'destra · in arrivo', 'var(--warning-color)', block.theirs, block.theirsStart)}
+                      {sidePane(block, 'ours', t('left · HEAD'), 'var(--accent-color)', block.ours, block.oursStart)}
+                      {sidePane(block, 'theirs', t('right · incoming'), 'var(--warning-color)', block.theirs, block.theirsStart)}
                     </div>
 
                     {block.contextAfter.length > 0 && (
@@ -334,7 +336,7 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
           </div>
 
           <div style={{ flex: '1 1 44%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <PaneLabel icon={<FileDiff size={11} />} text={manual !== null ? 'risultato — modificato a mano' : 'risultato'} color="var(--text-secondary)" />
+            <PaneLabel icon={<FileDiff size={11} />} text={manual !== null ? t('result — edited by hand') : t('result')} color="var(--text-secondary)" />
             <div style={{ flex: 1, minHeight: 0 }}>
               <Editor height="100%" language={lang} theme={editorTheme}
                 value={merged}
@@ -371,8 +373,9 @@ export function MergeTool({ repoPath, filePath, onClose, onResolved }: MergeTool
 }
 
 function CodeLines({ lines, startLine }: { lines: string[]; startLine: number }) {
+  const t = useI18n()
   if (lines.length === 0) {
-    return <div style={{ padding: '4px 10px', color: 'var(--text-disabled)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>(vuoto)</div>
+    return <div style={{ padding: '4px 10px', color: 'var(--text-disabled)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>{t('(empty)')}</div>
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>

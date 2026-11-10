@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Minus, Square, X, Settings, FolderOpen, ChevronDown, ExternalLink, type AppIcon } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 export interface TitleBarTab {
   id: string
@@ -34,6 +35,7 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
   const dragRegion = { WebkitAppRegion: 'drag' } as React.CSSProperties
   const noDragRegion = { WebkitAppRegion: 'no-drag' } as React.CSSProperties
   const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const t = useI18n()
 
   useEffect(() => {
     if (!tabMenu) return
@@ -55,8 +57,8 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
       {onSettings && (
         <button
           onClick={onSettings}
-          title="settings" data-tip-desc="open the IDE settings panel"
-          data-tip="settings"
+          title={t('settings')} data-tip-desc={t('open the IDE settings panel')}
+          data-tip={t('settings')}
           style={{
             ...noDragRegion, alignSelf: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 'calc(13px * var(--icon-zoom, 1) + 10px)', height: 'calc(13px * var(--icon-zoom, 1) + 10px)',
@@ -78,7 +80,7 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
             const r = e.currentTarget.getBoundingClientRect()
             onRepoClick({ x: r.left, y: r.bottom + 4 })
           }}
-          title={repoLabel} data-tip-desc="switch to a recent repository or open another folder"
+          title={repoLabel} data-tip-desc={t('switch to a recent repository or open another folder')}
           style={{
             ...noDragRegion, alignSelf: 'center', display: 'flex', alignItems: 'center', gap: '6px',
             maxWidth: '220px', minWidth: 0, flexShrink: 1, padding: '4px 10px',
@@ -98,7 +100,7 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
       {tabs ? (
         <>
           <div style={{ width: '1px', background: 'var(--border-color)', margin: '8px 6px', flexShrink: 0 }} />
-          <nav aria-label="panels" style={{ ...noDragRegion, display: 'flex', alignItems: 'stretch', gap: '2px', minWidth: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
+          <nav aria-label={t('panels')} style={{ ...noDragRegion, display: 'flex', alignItems: 'stretch', gap: '2px', minWidth: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
             {tabs.map(tab => {
               const active = tab.id === activeTab
               return (
@@ -130,7 +132,7 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
             <>
               {/* no-drag: over the title bar a drag region would swallow the click that closes the menu */}
               <div style={{ position: 'fixed', inset: 0, zIndex: 1, ...noDragRegion }} onClick={() => setTabMenu(null)} onContextMenu={(e) => { e.preventDefault(); setTabMenu(null) }} />
-              <div role="menu" aria-label="panel menu" style={{
+              <div role="menu" aria-label={t('panel menu')} style={{
                 ...noDragRegion, position: 'fixed', zIndex: 2, top: tabMenu.y + 2,
                 left: Math.max(8, Math.min(tabMenu.x, window.innerWidth - 240)),
                 minWidth: '200px', padding: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
@@ -146,7 +148,7 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}>
                   <ExternalLink size={13} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
-                  apri in una nuova finestra
+                  {t('open in a new window')}
                 </button>
               </div>
             </>
@@ -165,13 +167,13 @@ export function TitleBar({ title, onSettings, settingsActive, tabs, activeTab, o
       )}
 
       <div style={{ display: 'flex', marginLeft: 'auto', flexShrink: 0, ...noDragRegion }}>
-        <WinBtn onClick={() => window.electronAPI.window.minimize()} title="minimize" tipDesc="minimize the window to the taskbar">
+        <WinBtn onClick={() => window.electronAPI.window.minimize()} title={t('minimize')} tipDesc={t('minimize the window to the taskbar')}>
           <Minus size={13} strokeWidth={1.5} style={{ zoom: 1 }} />
         </WinBtn>
-        <WinBtn onClick={() => window.electronAPI.window.maximize()} title="maximize" tipDesc="maximize or restore the window size">
+        <WinBtn onClick={() => window.electronAPI.window.maximize()} title={t('maximize')} tipDesc={t('maximize or restore the window size')}>
           <Square size={11} strokeWidth={1.5} style={{ zoom: 1 }} />
         </WinBtn>
-        <WinBtn onClick={() => window.electronAPI.window.close()} isClose title="close" tipDesc="close the window and quit the app">
+        <WinBtn onClick={() => window.electronAPI.window.close()} isClose title={t('close')} tipDesc={t('close the window and quit the app')}>
           <X size={13} strokeWidth={1.5} style={{ zoom: 1 }} />
         </WinBtn>
       </div>

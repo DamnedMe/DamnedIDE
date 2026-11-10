@@ -18,7 +18,8 @@ export function authTypesForPlatform(isWindows: boolean, current?: SqlAuthType):
   if (isWindows) return AUTH_TYPES
   return AUTH_TYPES
     .filter(a => a.value !== 'windows' || a.value === current)
-    .map(a => a.value === 'windows' ? { ...a, label: `${a.label} (solo Windows)` } : a)
+    // a fixed English label: the dialog translates it with t(label)
+    .map(a => a.value === 'windows' ? { ...a, label: 'Windows Authentication (Windows only)' } : a)
 }
 
 export interface ConnectionForm {

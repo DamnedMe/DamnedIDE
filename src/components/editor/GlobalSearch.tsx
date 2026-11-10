@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, FileText, Loader2, X } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 export interface SearchResult {
   file: string
@@ -20,6 +21,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
   const [hasSearched, setHasSearched] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const t = useI18n()
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -90,7 +92,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
             ref={inputRef}
             value={query}
             onChange={(e) => handleChange(e.target.value)}
-            placeholder="search in all files..."
+            placeholder={t('search in all files...')}
             spellCheck={false}
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
@@ -101,7 +103,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
           {query && (
             <button
               onClick={() => handleChange('')}
-              title="clear search" data-tip-desc="clear the search query"
+              title={t('clear search')} data-tip-desc={t('clear the search query')}
               style={{
                 display: 'flex', background: 'none', border: 'none',
                 color: 'var(--text-muted)', cursor: 'pointer', padding: 0
@@ -115,7 +117,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
           marginTop: '5px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)',
           display: 'flex', justifyContent: 'space-between'
         }}>
-          <span>{isSearching ? 'searching...' : hasSearched ? `${results.length} results in ${grouped.size} files` : 'min 2 chars'}</span>
+          <span>{isSearching ? t('searching...') : hasSearched ? t('{n} results in {files} files', { n: results.length, files: grouped.size }) : t('min 2 chars')}</span>
           {isSearching && <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} />}
         </div>
       </div>
@@ -126,7 +128,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
             padding: '24px 12px', textAlign: 'center',
             color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))'
           }}>
-            no results found
+            {t('no results found')}
           </div>
         )}
         {Array.from(grouped.entries()).map(([file, matches]) => (
@@ -141,7 +143,7 @@ export function GlobalSearch({ rootPath, onOpenResult }: GlobalSearchProps) {
               <span style={{
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 direction: 'rtl', textAlign: 'left', flex: 1
-              }} title={file} data-tip-desc="open this file at the matched position">
+              }} title={file} data-tip-desc={t('open this file at the matched position')}>
                 {file.split(/[/\\]/).slice(-3).join('/')}
               </span>
               <span style={{ color: 'var(--text-muted)', fontWeight: 400, flexShrink: 0 }}>

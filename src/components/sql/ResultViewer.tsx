@@ -10,6 +10,7 @@ import { SqlGridFilter, SqlGridFilterOperator, SqlGridQueryState } from '../../t
 import { useSettingsStore, useSqlZoomStore, useToastStore } from '../../store'
 import { appFontStack } from '../../utils/fonts'
 import { clampSqlZoom, sqlZoomBounds, SQL_ZOOM_MAX_FONT, SQL_ZOOM_MIN_FONT, stepSqlZoom } from './sqlZoom'
+import { tr, useI18n } from '../../i18n'
 
 type CellKind = 'guid' | 'date' | 'boolean' | 'number' | 'string'
 
@@ -64,15 +65,19 @@ async function exportSets(format: ExportFormat, sets: ExportSet[], notify: (mess
     const script = sets.map(set => `${many ? `-- ${set.title}\n` : ''}${toSqlScript(set)}`).join('\n\n')
     downloadText('query_results.sql', script, 'text/plain;charset=utf-8')
   } else if (format === 'text') {
-    window.electronAPI.clipboard.write(toTextTables(sets))
-    notify(`tabella di testo copiata negli appunti: ${many ? `${sets.length} result set, ` : ''}${rowCount} righe`)
+    window.electronAPI.clipboard.write(toTextTables(sets, tr))
+    notify(many
+      ? tr('text table copied to the clipboard: {sets} result sets, {n} rows', { sets: sets.length, n: rowCount })
+      : tr('text table copied to the clipboard: {n} rows', { n: rowCount }))
   } else {
     try {
       const sheets = sets.map(set => ({ name: set.table?.split('.').pop() || (many ? set.title : 'Results'), columns: set.columns, rows: xlsxRows(set) }))
       const saved = await window.electronAPI.export.xlsx('query_results.xlsx', sheets)
-      if (saved) notify(`${many ? `${sets.length} result set, ` : ''}${rowCount} righe esportate in .xlsx`)
+      if (saved) notify(many
+        ? tr('{sets} result sets, {n} rows exported to .xlsx', { sets: sets.length, n: rowCount })
+        : tr('{n} rows exported to .xlsx', { n: rowCount }))
     } catch (e) {
-      notify((e as Error).message || 'esportazione xlsx fallita', 'error')
+      notify((e as Error).message || tr('xlsx export failed'), 'error')
     }
   }
 }
@@ -96,10 +101,10 @@ function exportMenuItem(label: string, icon: React.ReactNode, action: () => void
 function exportFormatItems(run: (format: ExportFormat) => void, many = false): React.ReactNode {
   return (
     <>
-      {exportMenuItem(many ? 'CSV (un file per result set)' : 'CSV (.csv)', <Table2 size={11} />, () => run('csv'), 'export-file-csv')}
+      {exportMenuItem(many ? tr('CSV (one file per result set)') : 'CSV (.csv)', <Table2 size={11} />, () => run('csv'), 'export-file-csv')}
       {exportMenuItem('SQL INSERT (.sql)', <FileCode2 size={11} />, () => run('sql'), 'export-file-sql')}
-      {exportMenuItem(many ? 'Excel (.xlsx, un foglio per result set)' : 'Excel (.xlsx)', <FileSpreadsheet size={11} />, () => run('xlsx'), 'export-file-xlsx')}
-      {exportMenuItem('Testo formattato negli appunti', <FileText size={11} />, () => run('text'), 'export-text-clipboard')}
+      {exportMenuItem(many ? tr('Excel (.xlsx, one sheet per result set)') : 'Excel (.xlsx)', <FileSpreadsheet size={11} />, () => run('xlsx'), 'export-file-xlsx')}
+      {exportMenuItem(tr('Formatted text to the clipboard'), <FileText size={11} />, () => run('text'), 'export-text-clipboard')}
     </>
   )
 }
@@ -153,6 +158,7 @@ const ResultGridRow = memo(function ResultGridRow({
   onRowContextMenu, onStartEdit, onEditValueChange, onCommitEdit, onCancelEdit,
   cellKind, onOpenDatePicker
 }: ResultGridRowProps) {
+  const t = useI18n()
   return (
     <div
       data-result-row={index}
@@ -206,11 +212,11 @@ const ResultGridRow = memo(function ResultGridRow({
               if (!savingEdit) onStartEdit(index, col, raw == null ? '' : String(raw))
             }}
             title={isPk && onFilterRequest
-              ? (editable ? 'double-click to edit · ' : '') + `click: filter by ${col} = ${raw === null ? 'NULL' : String(raw)}`
+              ? (editable ? `${t('double-click to edit')} · ` : '') + t('click: filter by {col} = {value}', { col, value: raw === null ? 'NULL' : String(raw) })
               : fk && onJoinRequest
-                ? (editable ? 'double-click to edit · ' : '') + `click: left join ${fk.referencedTable} on ${fk.referencedColumn}`
-                : editable ? 'double-click to edit' : undefined}
-            data-tip-desc="primary key: click to filter · foreign key: click to join · Alt+click: select the column · Ctrl+C copies the selection"
+                ? (editable ? `${t('double-click to edit')} · ` : '') + t('click: left join {table} on {column}', { table: fk.referencedTable, column: fk.referencedColumn })
+                : editable ? t('double-click to edit') : undefined}
+            data-tip-desc={t('primary key: click to filter · foreign key: click to join · Alt+click: select the column · Ctrl+C copies the selection')}
             style={{
               padding: '0 8px', height: rowHeight, display: 'flex', alignItems: 'center',
               borderLeft: ci === joinStartIndex ? JOIN_DIVIDER : undefined,
@@ -265,7 +271,7 @@ const ResultGridRow = memo(function ResultGridRow({
                       event.stopPropagation()
                       onOpenDatePicker(col, event.currentTarget.getBoundingClientRect())
                     }}
-                    title="scegli data e ora" data-tip-desc="open the calendar picker"
+                    title={t('pick date and time')} data-tip-desc={t('open the calendar picker')}
                     style={{
                       position: 'absolute', right: 1, top: 1, height: 'calc(100% - 2px)', width: '20px',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
@@ -315,6 +321,7 @@ function DraftRow({
   draft, primaryKeys, foreignKeys, fkInfoMap, fkChecks, columnTypeLabel, cellKind,
   onValueChange, onOpenDatePicker, onCheckForeignKey
 }: DraftRowProps) {
+  const t = useI18n()
   return (
     <div style={{
       position: 'relative', height: rowHeight, width: totalWidth,
@@ -332,7 +339,7 @@ function DraftRow({
           <div
             key={col}
             title={`${col} · ${typeLabel}`}
-            data-tip-desc="column type and constraints"
+            data-tip-desc={t('column type and constraints')}
             style={{
               position: 'absolute', top: 0,
               left: isPinned ? scrollLeft + (pinnedLeft[col] || 0) : columnLeft,
@@ -348,10 +355,10 @@ function DraftRow({
             <input
               value={draft[col] ?? ''}
               onChange={(e) => onValueChange(col, e.target.value)}
-              placeholder={kind === 'date' ? 'gg/mm/aaaa' : 'default'}
+              placeholder={kind === 'date' ? t('dd/mm/yyyy') : 'default'}
               spellCheck={false}
               title={`${col} · ${typeLabel}`}
-              data-tip-desc="column type and constraints"
+              data-tip-desc={t('column type and constraints')}
               style={{
                 flex: 1, minWidth: 0, height: 'calc(100% - 4px)', padding: '0 5px',
                 background: 'var(--bg-input)', border: '1px solid var(--border-color)',
@@ -363,7 +370,7 @@ function DraftRow({
               <button
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onValueChange(col, newGuid())}
-                title="genera un nuovo GUID (NEWID())" data-tip-desc="generate a new GUID"
+                title={t('generate a new GUID (NEWID())')} data-tip-desc={t('generate a new GUID')}
                 style={draftActionBtn('var(--accent-color)')}>
                 <Sparkles size={10} />
               </button>
@@ -372,7 +379,7 @@ function DraftRow({
               <button
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={(e) => onOpenDatePicker(col, e.currentTarget.getBoundingClientRect())}
-                title="scegli data e ora" data-tip-desc="open the calendar picker"
+                title={t('pick date and time')} data-tip-desc={t('open the calendar picker')}
                 style={draftActionBtn('var(--accent-color)')}>
                 <CalendarDays size={10} />
               </button>
@@ -381,8 +388,8 @@ function DraftRow({
               <button
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onCheckForeignKey(col)}
-                title={check?.message || `verifica che il valore esista in ${fk.referencedTable}.${fk.referencedColumn}`}
-                data-tip-desc="check the value exists in the referenced table before inserting"
+                title={check?.message || t('check that the value exists in {table}.{column}', { table: fk.referencedTable, column: fk.referencedColumn })}
+                data-tip-desc={t('check the value exists in the referenced table before inserting')}
                 style={draftActionBtn(
                   check?.state === 'missing' || check?.state === 'error' ? 'var(--error-color)'
                     : check?.state === 'ok' ? 'var(--success-color)' : FK_COLOR
@@ -441,6 +448,7 @@ function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }:
   onApply: (filter: SqlGridFilter | null) => void
   onClose: () => void
 }) {
+  const t = useI18n()
   const numeric = /^(?:number|bigint|int|decimal|numeric|float|real|money|smallmoney|tinyint|smallint)$/i.test(dataType)
   const boolean = /^(?:boolean|bit)$/i.test(dataType)
   const date = /date|time/i.test(dataType)
@@ -450,12 +458,12 @@ function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }:
   const [secondValue, setSecondValue] = useState(initial?.secondValue || '')
   const noValue = operator === 'isNull' || operator === 'isNotNull'
   const options: Array<[SqlGridFilterOperator, string]> = boolean
-    ? [['eq', 'is'], ['neq', 'is not'], ['isNull', 'is NULL'], ['isNotNull', 'is not NULL']]
+    ? [['eq', t('is')], ['neq', t('is not')], ['isNull', t('is NULL')], ['isNotNull', t('is not NULL')]]
     : numeric || date
-      ? [['eq', 'equals'], ['neq', 'not equal'], ['gt', 'greater than'], ['gte', 'greater or equal'], ['lt', 'less than'], ['lte', 'less or equal'], ['between', 'between'], ['isNull', 'is NULL'], ['isNotNull', 'is not NULL']]
-      : [['eq', 'equals'], ['neq', 'not equal'], ['contains', 'contains'], ['startsWith', 'starts with'], ['isNull', 'is NULL'], ['isNotNull', 'is not NULL']]
+      ? [['eq', t('equals')], ['neq', t('not equal')], ['gt', t('greater than')], ['gte', t('greater or equal')], ['lt', t('less than')], ['lte', t('less or equal')], ['between', t('between')], ['isNull', t('is NULL')], ['isNotNull', t('is not NULL')]]
+      : [['eq', t('equals')], ['neq', t('not equal')], ['contains', t('contains')], ['startsWith', t('starts with')], ['isNull', t('is NULL')], ['isNotNull', t('is not NULL')]]
   return (
-    <div role="dialog" aria-label={`filter ${column}`} style={{
+    <div role="dialog" aria-label={t('filter {column}', { column })} style={{
       position: 'fixed', left: Math.min(x, window.innerWidth - 270), top: Math.min(y, window.innerHeight - 215), zIndex: 180,
       width: 255, padding: 10, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)'
@@ -464,23 +472,23 @@ function GridFilterDialog({ column, dataType, x, y, initial, onApply, onClose }:
         <Filter size={10} color="var(--accent-color)" /><strong style={{ marginLeft: 6, fontSize: 'calc(10px * var(--ui-text-scale, 1))', flex: 1 }}>{column}</strong>
         <span style={{ fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{dataType}</span>
       </div>
-      <select autoFocus aria-label="filter operator" value={operator} onChange={event => setOperator(event.target.value as SqlGridFilterOperator)} style={{ width: '100%', height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
+      <select autoFocus aria-label={t('filter operator')} value={operator} onChange={event => setOperator(event.target.value as SqlGridFilterOperator)} style={{ width: '100%', height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
         {options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
       {!noValue && (
         <div style={{ display: 'flex', gap: 5, marginTop: 7 }}>
           {boolean ? (
-            <select aria-label="filter value" value={value} onChange={event => setValue(event.target.value)} style={{ width: '100%', height: 27, background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}><option value="1">true</option><option value="0">false</option></select>
+            <select aria-label={t('filter value')} value={value} onChange={event => setValue(event.target.value)} style={{ width: '100%', height: 27, background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}><option value="1">true</option><option value="0">false</option></select>
           ) : (
-            <input aria-label="filter value" type={date ? 'datetime-local' : numeric ? 'number' : 'text'} value={value} onChange={event => setValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }} />
+            <input aria-label={t('filter value')} type={date ? 'datetime-local' : numeric ? 'number' : 'text'} value={value} onChange={event => setValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }} />
           )}
-          {operator === 'between' && <input aria-label="second filter value" type={date ? 'datetime-local' : 'number'} value={secondValue} onChange={event => setSecondValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }} />}
+          {operator === 'between' && <input aria-label={t('second filter value')} type={date ? 'datetime-local' : 'number'} value={secondValue} onChange={event => setSecondValue(event.target.value)} style={{ minWidth: 0, flex: 1, height: 27, padding: '0 6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 3, fontSize: 'calc(9px * var(--ui-text-scale, 1))' }} />}
         </div>
       )}
       <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end', marginTop: 10 }}>
-        {initial && <button onClick={() => onApply(null)} style={{ ...tinyGridButton, marginRight: 'auto', color: 'var(--error-color)' }}>remove filter</button>}
-        <button onClick={onClose} style={tinyGridButton}>cancel</button>
-        <button aria-label="apply filter" disabled={!noValue && (value === '' || (operator === 'between' && secondValue === ''))} onClick={() => onApply({ column, dataType, operator, value, secondValue })} style={{ ...tinyGridButton, borderColor: 'var(--accent-color)', color: 'var(--accent-color)' }}>apply</button>
+        {initial && <button onClick={() => onApply(null)} style={{ ...tinyGridButton, marginRight: 'auto', color: 'var(--error-color)' }}>{t('remove filter')}</button>}
+        <button onClick={onClose} style={tinyGridButton}>{t('cancel')}</button>
+        <button aria-label={t('apply filter')} disabled={!noValue && (value === '' || (operator === 'between' && secondValue === ''))} onClick={() => onApply({ column, dataType, operator, value, secondValue })} style={{ ...tinyGridButton, borderColor: 'var(--accent-color)', color: 'var(--accent-color)' }}>{t('apply')}</button>
       </div>
     </div>
   )
@@ -520,6 +528,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
   const [datePicker, setDatePicker] = useState<{ col: string; x: number; y: number; target: 'draft' | 'edit' } | null>(null)
   const [fkChecks, setFkChecks] = useState<Record<string, { state: 'checking' | 'ok' | 'missing' | 'error'; message?: string }>>({})
   const showToast = useToastStore(s => s.showToast)
+  const t = useI18n()
   const settingsFontSize = useSettingsStore(s => s.settings.fontSize)
   const appFont = useSettingsStore(s => s.settings.appFont)
   // The grid text size starts from the IDE setting; the output section zoom
@@ -727,18 +736,22 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
     const count = selectedRows.size
     if (count === 0) return
     window.electronAPI.clipboard.write(selectionToText(withHeader))
-    showToast(`${count} rig${count === 1 ? 'a' : 'he'} copiat${count === 1 ? 'a' : 'e'} ${withHeader ? 'con intestazione' : 'senza intestazione'}`)
+    showToast(withHeader
+      ? (count === 1 ? tr('1 row copied with header') : tr('{n} rows copied with header', { n: count }))
+      : (count === 1 ? tr('1 row copied without header') : tr('{n} rows copied without header', { n: count })))
   }, [selectedRows.size, selectionToText, showToast])
 
   const copyCell = useCallback((row: number, col: string) => {
     if (!rows[row]) return
     window.electronAPI.clipboard.write(formatValue(col, rows[row][col]))
-    showToast(`valore di «${col}» copiato`)
+    showToast(tr('value of «{col}» copied', { col }))
   }, [rows, formatValue, showToast])
 
   const copyColumn = useCallback((col: string) => {
     window.electronAPI.clipboard.write(columnText(rows, col, colTypes))
-    showToast(`colonna «${col}» copiata: ${rows.length} valor${rows.length === 1 ? 'e' : 'i'}`)
+    showToast(rows.length === 1
+      ? tr('column «{col}» copied: 1 value', { col })
+      : tr('column «{col}» copied: {n} values', { col, n: rows.length }))
   }, [rows, colTypes, showToast])
 
   useEffect(() => {
@@ -845,14 +858,14 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
   // result set's own statement, as SQL Server described it) or to the reason
   // the edit is refused: joins and batches never fall back to a guess.
   const editTargets = useMemo(
-    () => new Map<string, SqlEditResolution>(columns.map(col => [col, resolveColumnEdit(result?.source, col)])),
-    [result, columns]
+    () => new Map<string, SqlEditResolution>(columns.map(col => [col, resolveColumnEdit(result?.source, col, t)])),
+    [result, columns, t]
   )
   const editableColumns = useMemo(
     () => new Set(onExecuteSql ? columns.filter(col => editTargets.get(col)?.ok) : []),
     [columns, editTargets, onExecuteSql]
   )
-  const rowTarget = useMemo(() => resolveRowTarget(result?.source), [result])
+  const rowTarget = useMemo(() => resolveRowTarget(result?.source, t), [result, t])
   const editable = editableColumns.size > 0
   // a new row needs plain columns of one table and a way to run the statement
   const insertable = !!onExecuteSql && columns.length > 0 && canInsertInto(result?.source)
@@ -885,7 +898,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
       ].filter(Boolean).join(' · ')
       return `${info.type}${len}${flags ? ` · ${flags}` : ''}`
     }
-    return colTypes[col] || 'tipo non noto'
+    return colTypes[col] || tr('unknown type')
   }, [columnInfo, colTypes])
 
   const startDraft = () => {
@@ -917,8 +930,8 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
       setFkChecks(prev => ({
         ...prev,
         [col]: exists
-          ? { state: 'ok', message: `trovato in ${fk.referencedTable}.${fk.referencedColumn}` }
-          : { state: 'missing', message: `nessun record in ${fk.referencedTable} con ${fk.referencedColumn} = ${value}` }
+          ? { state: 'ok', message: tr('found in {table}.{column}', { table: fk.referencedTable, column: fk.referencedColumn }) }
+          : { state: 'missing', message: tr('no record in {table} with {column} = {value}', { table: fk.referencedTable, column: fk.referencedColumn, value }) }
       }))
     } catch (e) {
       setFkChecks(prev => ({ ...prev, [col]: { state: 'error', message: (e as Error).message } }))
@@ -990,7 +1003,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
     if (!onExecuteSql) return
     const resolution = editTargets.get(col)
     if (!resolution?.ok) {
-      showToast(resolution?.reason || 'Modifica non disponibile.', 'error')
+      showToast(resolution?.reason || tr('Edit not available.'), 'error')
       return
     }
     setRowMenu(null)
@@ -1042,7 +1055,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
         gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
       }}>
         <Table2 size={24} strokeWidth={1} />
-        run a query to see results
+        {t('run a query to see results')}
       </div>
     )
   }
@@ -1063,7 +1076,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
         background: 'var(--bg-secondary)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))' }}>
-          <span>{execution.results.length} result sets · {execution.totalRowCount} rows total</span>
+          <span>{t('{n} result sets · {total} rows total', { n: execution.results.length, total: execution.totalRowCount })}</span>
           <button
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect()
@@ -1071,31 +1084,31 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
             }}
             disabled={exportable.length === 0}
             aria-haspopup="menu" aria-expanded={!!multiExport}
-            title="esporta tutti i result set (o quelli scelti) in un colpo solo"
-            data-tip-desc="export several result sets at once: csv, sql insert, excel or text to the clipboard"
+            title={t('export all the result sets (or the chosen ones) in one go')}
+            data-tip-desc={t('export several result sets at once: csv, sql insert, excel or text to the clipboard')}
             style={{
               display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto', padding: '2px 8px', height: '18px',
               background: multiExport ? 'var(--accent-color)' : 'var(--accent-bg)', border: '1px solid var(--accent-color)',
               borderRadius: 'var(--radius-sm)', color: multiExport ? 'var(--text-inverse)' : 'var(--accent-color)',
               cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
             }}>
-            <Download size={9} /> esporta tutti <ChevronDown size={8} />
+            <Download size={9} /> {t('export all')} <ChevronDown size={8} />
           </button>
-          {onClear && <button style={btnStyle} title="clear results" data-tip-desc="clear the displayed results" onClick={onClear}><X size={10} /></button>}
+          {onClear && <button style={btnStyle} title={t('clear results')} data-tip-desc={t('clear the displayed results')} onClick={onClear}><X size={10} /></button>}
         </div>
         {multiExport && (
           <>
             <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setMultiExport(null)} />
-            <div role="menu" aria-label="esporta più result set" style={{
+            <div role="menu" aria-label={t('export several result sets')} style={{
               position: 'fixed', left: Math.min(multiExport.x, window.innerWidth - 290), top: multiExport.y, zIndex: 999,
               background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
               boxShadow: 'var(--shadow-lg)', padding: '4px 0', minWidth: '270px', maxHeight: '70vh', overflow: 'auto', fontFamily: 'var(--font-mono)'
             }}>
-              <div style={{ padding: '5px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>result set da esportare</div>
+              <div style={{ padding: '5px 12px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('result sets to export')}</div>
               {exportable.map(({ set, index }) => (
                 <label key={index} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 12px', cursor: 'pointer', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-primary)' }}>
                   <input type="checkbox" checked={!unchosenSets.has(index)}
-                    aria-label={`esporta result set ${index + 1}`}
+                    aria-label={t('export result set {n}', { n: index + 1 })}
                     onChange={(e) => {
                       const checked = e.target.checked
                       setUnchosenSets(current => {
@@ -1105,12 +1118,12 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
                         return next
                       })
                     }} />
-                  Result set {index + 1}{set.source?.table ? ` · ${set.source.table}` : ''} · {set.rowCount} rig{set.rowCount === 1 ? 'a' : 'he'}
+                  {t('Result set {n}', { n: index + 1 })}{set.source?.table ? ` · ${set.source.table}` : ''} · {set.rowCount === 1 ? t('1 row') : t('{n} rows', { n: set.rowCount })}
                 </label>
               ))}
               <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
               {chosen.length === 0
-                ? <div style={{ padding: '5px 12px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--warning-color)' }}>scegli almeno un result set</div>
+                ? <div style={{ padding: '5px 12px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--warning-color)' }}>{t('choose at least one result set')}</div>
                 : exportFormatItems(runMultiExport, chosen.length > 1)}
             </div>
           </>
@@ -1124,12 +1137,12 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
             truncated: execution.truncated && set.rowCount >= execution.maxRows
           }
           return (
-            <section key={index} role="region" aria-label={`Result set ${index + 1}`} style={{
+            <section key={index} role="region" aria-label={t('Result set {n}', { n: index + 1 })} style={{
               height, minHeight: 190, flexShrink: 0, display: 'flex', flexDirection: 'column',
               borderRadius: 'var(--radius-md)', boxShadow: '0 1px 0 var(--border-subtle)'
             }}>
               <div style={{ height: 25, flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 9px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderBottom: 0, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 600 }}>
-                Result set {index + 1}{set.source?.table ? ` · ${set.source.table}` : ''} · {set.rowCount} row{set.rowCount === 1 ? '' : 's'}
+                {t('Result set {n}', { n: index + 1 })}{set.source?.table ? ` · ${set.source.table}` : ''} · {set.rowCount === 1 ? t('1 row') : t('{n} rows', { n: set.rowCount })}
               </div>
               {/* each set edits through its own statement's table and key (set.source) */}
               <ResultViewer
@@ -1160,7 +1173,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
   const renderRowMenu = () => {
     if (!rowMenu) return null
     const count = selectedRows.size
-    const menuLabel = count > 1 ? `${count} righe selezionate` : `row ${rowMenu.row + 1}${rowMenu.col ? ` · ${rowMenu.col}` : ''}`
+    const menuLabel = count > 1 ? t('{n} rows selected', { n: count }) : `${t('row {n}', { n: rowMenu.row + 1 })}${rowMenu.col ? ` · ${rowMenu.col}` : ''}`
     return (
       <>
         <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setRowMenu(null)} />
@@ -1181,21 +1194,21 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
           </div>
           {rowMenu.col && (
             <>
-              {rowMenuItem('copia valore cella', <Copy size={12} />, () => { copyCell(rowMenu.row, rowMenu.col!); setRowMenu(null) })}
-              {rowMenuItem(`copia colonna «${rowMenu.col}» (${rows.length} valori)`, <Copy size={12} />, () => { copyColumn(rowMenu.col!); setRowMenu(null) })}
-              {rowMenuItem(`seleziona colonna «${rowMenu.col}» (Ctrl+C)`, <Table2 size={12} />, () => {
+              {rowMenuItem(t('copy cell value'), <Copy size={12} />, () => { copyCell(rowMenu.row, rowMenu.col!); setRowMenu(null) })}
+              {rowMenuItem(t('copy column «{col}» ({n} values)', { col: rowMenu.col, n: rows.length }), <Copy size={12} />, () => { copyColumn(rowMenu.col!); setRowMenu(null) })}
+              {rowMenuItem(t('select column «{col}» (Ctrl+C)', { col: rowMenu.col }), <Table2 size={12} />, () => {
                 setSelectedColumn(rowMenu.col); setSelectedRows(new Set()); setActiveCell(null); setRowMenu(null)
                 scrollRef.current?.focus({ preventScroll: true })
               })}
               <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
             </>
           )}
-          {rowMenuItem(`copia ${count > 1 ? `${count} righe` : 'riga'} con intestazione`, <Copy size={12} />, () => { copySelection(true); setRowMenu(null) })}
-          {rowMenuItem('copia senza intestazione', <Copy size={12} />, () => { copySelection(false); setRowMenu(null) })}
+          {rowMenuItem(count > 1 ? t('copy {n} rows with header', { n: count }) : t('copy row with header'), <Copy size={12} />, () => { copySelection(true); setRowMenu(null) })}
+          {rowMenuItem(t('copy without header'), <Copy size={12} />, () => { copySelection(false); setRowMenu(null) })}
           {onDeleteRequest && rowTarget.ok && (
             <>
               <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
-              {rowMenuItem('delete row', <Trash2 size={12} />, () => requestDelete(rowMenu.row), true)}
+              {rowMenuItem(t('delete row'), <Trash2 size={12} />, () => requestDelete(rowMenu.row), true)}
             </>
           )}
         </div>
@@ -1220,11 +1233,11 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
             so a double-click on the first row hit the column header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
           <span style={{ color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>
-            {result.rowCount} rows{selectedRows.size > 0 ? ` · ${selectedRows.size} selected` : ''}
+            {t('{n} rows', { n: result.rowCount })}{selectedRows.size > 0 ? ` · ${selectedRows.size === 1 ? t('1 selected') : t('{n} selected', { n: selectedRows.size })}` : ''}
           </span>
           {editable && (
             <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <Pencil size={8} /> double-click to edit · right-click row to delete
+              <Pencil size={8} /> {t('double-click to edit · right-click row to delete')}
             </span>
           )}
           {draft && (
@@ -1233,7 +1246,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
               display: 'flex', alignItems: 'center', gap: '3px',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
             }}>
-              <Plus size={8} /> nuova riga: cella vuota = valore di default · “NULL” = nullo
+              <Plus size={8} /> {t('new row: empty cell = default value · “NULL” = null')}
             </span>
           )}
           {results.length > 1 && (
@@ -1263,19 +1276,19 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
           )}
           {isTruncated && (
             <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--warning-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
-              <AlertTriangle size={9} /> truncated at {totalShown}
+              <AlertTriangle size={9} /> {t('truncated at {n}', { n: totalShown })}
             </span>
           )}
         </div>
         <div style={{ display: 'flex', gap: '1px', alignItems: 'center', flexShrink: 0, flexWrap: 'nowrap' }}>
-          <button style={btnStyle} title="zoom out (Ctrl+-)" data-tip-desc="zoom out the results grid (Ctrl+-)" onClick={() => changeZoom(-1)}
+          <button style={btnStyle} title={t('zoom out (Ctrl+-)')} data-tip-desc={t('zoom out the results grid (Ctrl+-)')} onClick={() => changeZoom(-1)}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
             <ZoomOut size={10} />
           </button>
-          <span data-testid="result-grid-zoom-level" aria-label={`result grid zoom ${Math.round(zoomScale * 100)} percent`}
+          <span data-testid="result-grid-zoom-level" aria-label={t('result grid zoom {n} percent', { n: Math.round(zoomScale * 100) })}
             style={{ minWidth: '32px', textAlign: 'center', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{Math.round(zoomScale * 100)}%</span>
-          <button style={btnStyle} title="zoom in (Ctrl++)" data-tip-desc="zoom in the results grid (Ctrl++)" onClick={() => changeZoom(1)}
+          <button style={btnStyle} title={t('zoom in (Ctrl++)')} data-tip-desc={t('zoom in the results grid (Ctrl++)')} onClick={() => changeZoom(1)}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
             <ZoomIn size={10} />
@@ -1283,8 +1296,8 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
           {insertable && (
             <button
               onClick={startDraft}
-              title={draft ? 'annulla la nuova riga' : 'inserisci una nuova riga'}
-              data-tip-desc="add an editable row to insert into the table"
+              title={draft ? t('cancel the new row') : t('insert a new row')}
+              data-tip-desc={t('add an editable row to insert into the table')}
               style={{
                 display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
                 padding: '2px 8px', marginLeft: '6px', height: '18px',
@@ -1295,14 +1308,14 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
               }}
               onMouseEnter={(e) => { if (!draft) { e.currentTarget.style.background = 'var(--success-color)'; e.currentTarget.style.color = 'var(--text-inverse)' } }}
               onMouseLeave={(e) => { if (!draft) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--success-color)' } }}>
-              {draft ? <X size={9} /> : <Plus size={9} />} {draft ? 'annulla' : 'nuova riga'}
+              {draft ? <X size={9} /> : <Plus size={9} />} {draft ? t('cancel') : t('new row')}
             </button>
           )}
           {draft && (
             <button
               onClick={() => draftStatement && setInsertPreview(draftStatement)}
               disabled={!draftStatement}
-              title={`rivedi e conferma l'INSERT (${draftEntries.length} colonne)`} data-tip-desc="review the INSERT statement before running it"
+              title={t('review and confirm the INSERT ({n} columns)', { n: draftEntries.length })} data-tip-desc={t('review the INSERT statement before running it')}
               style={{
                 display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
                 padding: '2px 8px', marginLeft: '4px', height: '18px',
@@ -1313,7 +1326,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
               }}
               onMouseEnter={(e) => { if (draftStatement) { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'var(--text-inverse)' } }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent-bg)'; e.currentTarget.style.color = 'var(--accent-color)' }}>
-              <ClipboardCheck size={9} /> rivedi
+              <ClipboardCheck size={9} /> {t('review')}
             </button>
           )}
           <button
@@ -1322,8 +1335,8 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
               setExportMenu(exportMenu ? null : { x: rect.left, y: rect.bottom + 4 })
             }}
             aria-haspopup="menu" aria-expanded={!!exportMenu}
-            title={selectedRows.size > 0 ? `esporta ${selectedRows.size} righe selezionate` : 'esporta tutte le righe'}
-            data-tip-desc="export the grid: csv, sql insert, excel or formatted text to the clipboard"
+            title={selectedRows.size > 0 ? t('export {n} selected rows', { n: selectedRows.size }) : t('export all rows')}
+            data-tip-desc={t('export the grid: csv, sql insert, excel or formatted text to the clipboard')}
             style={{
               display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, whiteSpace: 'nowrap',
               padding: '2px 8px', marginLeft: '6px', height: '18px',
@@ -1341,12 +1354,12 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
                 e.currentTarget.style.color = 'var(--accent-color)'
               }
             }}>
-            <Download size={9} /> esporta <ChevronDown size={8} />
+            <Download size={9} /> {t('export')} <ChevronDown size={8} />
           </button>
           {exportMenu && (
             <>
               <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setExportMenu(null)} />
-              <div role="menu" aria-label="formato di esportazione" style={{
+              <div role="menu" aria-label={t('export format')} style={{
                 position: 'fixed', left: Math.min(exportMenu.x, window.innerWidth - 200), top: exportMenu.y, zIndex: 999,
                 background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', padding: '4px 0', minWidth: '180px'
@@ -1356,7 +1369,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
             </>
           )}
           {onClear && (
-            <button style={{ ...btnStyle, marginLeft: '4px' }} title="clear results" data-tip-desc="clear the displayed results" onClick={onClear}
+            <button style={{ ...btnStyle, marginLeft: '4px' }} title={t('clear results')} data-tip-desc={t('clear the displayed results')} onClick={onClear}
               onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
               onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
               <X size={10} />
@@ -1367,10 +1380,10 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
 
       {(filters.length > 0 || sorts.length > 0 || gridQuerySupported?.supported === false) && (
         <div style={{ minHeight: 27, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', fontFamily: 'var(--font-mono)', fontSize: 'calc(8.5px * var(--ui-text-scale, 1))' }}>
-          {gridQuerySupported?.supported === false && <span role="status" style={{ color: 'var(--warning-color)' }}>{gridQuerySupported.reason}</span>}
-          {filters.map(filter => <button key={filter.column} aria-label={`active filter ${filter.column}`} title="remove filter" data-tip-desc="remove the filter from this column" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, filters: filters.filter(item => item.column !== filter.column) })} style={{ ...tinyGridButton, height: 19, color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}><Filter size={8} /> {filter.column} · {filter.operator} {filter.value} ×</button>)}
-          {sorts.map((sort, index) => <button key={sort.column} aria-label={`active sort ${sort.column}`} title="remove sorting" data-tip-desc="remove the sorting from this column" onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, sorts: sorts.filter(item => item.column !== sort.column) })} style={{ ...tinyGridButton, height: 19, display: 'inline-flex', alignItems: 'center' }}>{sort.direction === 'asc' ? '↑' : '↓'} {index + 1} · {sort.column} ×</button>)}
-          {(filters.length > 0 || sorts.length > 0) && <button aria-label="clear all grid filters and sorting" onClick={clearGridQuery} style={{ ...tinyGridButton, height: 19, marginLeft: 'auto' }}>clear all</button>}
+          {gridQuerySupported?.supported === false && <span role="status" style={{ color: 'var(--warning-color)' }}>{gridQuerySupported.reason && t(gridQuerySupported.reason)}</span>}
+          {filters.map(filter => <button key={filter.column} aria-label={t('active filter {column}', { column: filter.column })} title={t('remove filter')} data-tip-desc={t('remove the filter from this column')} onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, filters: filters.filter(item => item.column !== filter.column) })} style={{ ...tinyGridButton, height: 19, color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}><Filter size={8} /> {filter.column} · {filter.operator} {filter.value} ×</button>)}
+          {sorts.map((sort, index) => <button key={sort.column} aria-label={t('active sort {column}', { column: sort.column })} title={t('remove sorting')} data-tip-desc={t('remove the sorting from this column')} onClick={() => onGridQueryStateChange?.({ ...gridQueryState!, sorts: sorts.filter(item => item.column !== sort.column) })} style={{ ...tinyGridButton, height: 19, display: 'inline-flex', alignItems: 'center' }}>{sort.direction === 'asc' ? '↑' : '↓'} {index + 1} · {sort.column} ×</button>)}
+          {(filters.length > 0 || sorts.length > 0) && <button aria-label={t('clear all grid filters and sorting')} onClick={clearGridQuery} style={{ ...tinyGridButton, height: 19, marginLeft: 'auto' }}>{t('clear all')}</button>}
         </div>
       )}
 
@@ -1381,17 +1394,17 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
           fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
         }}>
           {execution.canceled
-            ? 'query canceled'
+            ? t('query canceled')
             : (execution.rowsAffected.length > 0 && execution.rowsAffected[0] > 0
-              ? `${execution.rowsAffected[0]} row${execution.rowsAffected[0] === 1 ? '' : 's'} affected`
-              : 'query completed — no rows returned')}
+              ? (execution.rowsAffected[0] === 1 ? t('1 row affected') : t('{n} rows affected', { n: execution.rowsAffected[0] }))
+              : t('query completed — no rows returned'))}
         </div>
       ) : (
         <div
           ref={scrollRef}
           tabIndex={0}
           role="grid"
-          aria-label="query results grid"
+          aria-label={t('query results grid')}
           aria-keyshortcuts="Control++ Control+- Control+0"
           onScroll={(e) => {
             const el = e.currentTarget
@@ -1421,7 +1434,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
                 return (
                   <div key={group.key}
                     role="group"
-                    aria-label={`column group ${group.joined ? 'joined' : 'base'} ${group.label}`}
+                    aria-label={group.joined ? t('column group joined {label}', { label: group.label }) : t('column group base {label}', { label: group.label })}
                     style={{
                       position: 'absolute', top: 0, left: group.left, width: group.width, height: '18px', boxSizing: 'border-box',
                       borderRight: '1px solid var(--border-color)', borderBottom: `1px solid ${group.joined ? FK_COLOR : 'var(--accent-color)'}`,
@@ -1432,7 +1445,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
                       color: group.joined ? FK_COLOR : 'var(--accent-color)', fontSize: 'calc(8px * var(--ui-text-scale, 1))', fontWeight: 700,
                       letterSpacing: '0.35px', textTransform: 'uppercase'
                     }}>
-                      {group.joined ? 'joined' : 'base'} · {group.label}
+                      {group.joined ? t('joined') : 'base'} · {group.label}
                     </span>
                   </div>
                 )
@@ -1471,7 +1484,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
                         ? <KeyRound size={9} style={{ flexShrink: 0, color: PK_COLOR }} />
                         : <Link2 size={9} style={{ flexShrink: 0, color: FK_COLOR }} />)}
                       <button
-                        aria-label={`sort ${col}`}
+                        aria-label={t('sort {column}', { column: col })}
                         disabled={!gridQuerySupported?.supported || !columnQuerySupported}
                         onClick={event => { event.stopPropagation(); changeSort(col, event.shiftKey) }}
                         onKeyDown={event => {
@@ -1483,15 +1496,15 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
                             setFilterEditor({ column: col, x: rect.left, y: rect.bottom + 4 })
                           }
                         }}
-                        title={!columnQuerySupported ? 'Joined output aliases cannot be rewritten safely.' : gridQuerySupported?.supported ? 'sort · Shift-click for multi-sort' : gridQuerySupported?.reason}
-                        data-tip-desc="sort the grid by this column"
+                        title={!columnQuerySupported ? t('Joined output aliases cannot be rewritten safely.') : gridQuerySupported?.supported ? t('sort · Shift-click for multi-sort') : gridQuerySupported?.reason && t(gridQuerySupported.reason)}
+                        data-tip-desc={t('sort the grid by this column')}
                         style={{ border: 0, padding: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: 'transparent', color: 'inherit', font: 'inherit', cursor: gridQuerySupported?.supported ? 'pointer' : 'not-allowed', textAlign: 'left' }}
                       >{col}</button>
-                      {sort && <span aria-label={`sort priority ${col} ${sortIndex + 1} ${sort.direction === 'asc' ? 'ascending' : 'descending'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'var(--accent-color)', flexShrink: 0 }}>{sort.direction === 'asc' ? <ArrowUp size={8} /> : <ArrowDown size={8} />}{sortIndex + 1}</span>}
+                      {sort && <span aria-label={sort.direction === 'asc' ? t('sort priority {column} {n} ascending', { column: col, n: sortIndex + 1 }) : t('sort priority {column} {n} descending', { column: col, n: sortIndex + 1 })} style={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'var(--accent-color)', flexShrink: 0 }}>{sort.direction === 'asc' ? <ArrowUp size={8} /> : <ArrowDown size={8} />}{sortIndex + 1}</span>}
                     </span>
                     {onGridQueryStateChange && (
                       <button
-                        aria-label={`filter ${col}`}
+                        aria-label={t('filter {column}', { column: col })}
                         disabled={!gridQuerySupported?.supported || !columnQuerySupported}
                         onClick={event => {
                           event.stopPropagation()
@@ -1499,16 +1512,16 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
                           const rect = event.currentTarget.getBoundingClientRect()
                           setFilterEditor({ column: col, x: rect.left, y: rect.bottom + 4 })
                         }}
-                        title={!columnQuerySupported ? 'Joined output aliases cannot be rewritten safely.' : gridQuerySupported?.supported ? `filter ${col}` : gridQuerySupported?.reason}
-                        data-tip-desc="filter the grid by this column"
+                        title={!columnQuerySupported ? t('Joined output aliases cannot be rewritten safely.') : gridQuerySupported?.supported ? t('filter {column}', { column: col }) : gridQuerySupported?.reason && t(gridQuerySupported.reason)}
+                        data-tip-desc={t('filter the grid by this column')}
                         style={{ display: 'flex', flexShrink: 0, padding: 2, border: 0, background: filtered ? 'var(--accent-bg)' : 'transparent', color: filtered ? 'var(--accent-color)' : 'var(--text-muted)', cursor: gridQuerySupported?.supported ? 'pointer' : 'not-allowed' }}>
                         <Filter size={9} fill={filtered ? 'currentColor' : 'none'} />
                       </button>
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); togglePin(col) }}
-                      aria-label={isPinned ? `unpin ${col}` : `pin ${col}`}
-                      title={isPinned ? 'unpin column' : 'pin column'} data-tip-desc='pin or unpin this column'
+                      aria-label={isPinned ? t('unpin {column}', { column: col }) : t('pin {column}', { column: col })}
+                      title={isPinned ? t('unpin column') : t('pin column')} data-tip-desc={t('pin or unpin this column')}
                       style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         background: 'none', border: 'none', cursor: 'pointer',
@@ -1525,7 +1538,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
                     <div
                       onMouseDown={(e) => startResize(e, col)}
                       onDoubleClick={(e) => { e.stopPropagation(); autofitColumn(col) }}
-                      title="drag to resize · double-click to fit the content" data-tip-desc="drag to resize the column, double-click to fit the widest value"
+                      title={t('drag to resize · double-click to fit the content')} data-tip-desc={t('drag to resize the column, double-click to fit the widest value')}
                       style={{
                         position: 'absolute', top: 0, right: 0, bottom: 0, width: '7px',
                         cursor: 'col-resize', zIndex: 15,
@@ -1635,7 +1648,7 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
       {insertPreview && (
         <div
           role="dialog"
-          aria-label="review insert"
+          aria-label={t('review insert')}
           onMouseDown={(e) => { if (e.target === e.currentTarget && !inserting) setInsertPreview(null) }}
           style={{
             position: 'fixed', inset: 0, background: 'var(--bg-overlay)', zIndex: 350,
@@ -1650,10 +1663,10 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
               <ClipboardCheck size={14} style={{ color: 'var(--accent-color)' }} />
               <span style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
-                conferma inserimento
+                {t('confirm insert')}
               </span>
               <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
-                {draftEntries.length} colonne · {sourceTable || ''}
+                {t('{n} columns', { n: draftEntries.length })} · {sourceTable || ''}
               </span>
             </div>
             <pre style={{
@@ -1665,15 +1678,15 @@ export function ResultViewer({ execution, onJoinRequest, onFilterRequest, onClea
             </pre>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderTop: '1px solid var(--border-subtle)' }}>
               <button onClick={() => window.electronAPI.clipboard.write(insertPreview)}
-                title="copia l'INSERT" data-tip-desc="copy the statement to the clipboard"
+                title={t('copy the INSERT')} data-tip-desc={t('copy the statement to the clipboard')}
                 style={previewBtn}>
-                copia
+                {t('copy')}
               </button>
               <div style={{ flex: 1 }} />
-              <button onClick={() => setInsertPreview(null)} disabled={inserting} style={previewBtn}>annulla</button>
+              <button onClick={() => setInsertPreview(null)} disabled={inserting} style={previewBtn}>{t('cancel')}</button>
               <button onClick={runInsert} disabled={inserting}
                 style={{ ...previewBtn, display: 'flex', alignItems: 'center', gap: '5px', background: 'var(--accent-color)', borderColor: 'var(--accent-color)', color: 'var(--text-inverse)', fontWeight: 700 }}>
-                {inserting ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={10} />} esegui insert
+                {inserting ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={10} />} {t('run insert')}
               </button>
             </div>
           </div>

@@ -433,9 +433,8 @@ function registerIpcHandlers(
   })
   ipcMain.handle('worktree:remove', (_e, repoPath: string, worktreePath: string, force?: boolean) => {
     // a terminal rooted in the worktree keeps a handle on the folder on Windows:
-    // on a forced removal close those first, otherwise rm/`worktree remove` fail
-    if (force) destroyTerminalsUnderPath(worktreePath)
-    return worktree.remove(repoPath, worktreePath, !!force)
+    // on a forced removal close those first (once the removal is accepted), otherwise rm/`worktree remove` fail
+    return worktree.remove(repoPath, worktreePath, !!force, force ? () => destroyTerminalsUnderPath(worktreePath) : undefined)
   })
   // bulk cleanup: re-checks clean + no local-only commits right before deleting
   // (also on the forced retry, where terminals are closed only once the checks pass)
@@ -645,6 +644,10 @@ function registerIpcHandlers(
       await walkAcquire()
       try {
         const entries = await readdir(dir, { withFileTypes: true })
+        // a subfolder listing `.git` is a nested worktree or repository (worktrees can live inside
+        // the checkout under any name, not only `.worktrees`): a copy of the sources, skip it.
+        // ponytail: no extra syscall, the readdir already lists it; the nested root is read once
+        if (dir !== rootPath && entries.some(e => e.name === '.git')) return
         for (const e of entries) {
           if (e.name.startsWith('.') || skipDirs.has(e.name)) continue
           const full = join(dir, e.name)
@@ -714,6 +717,8 @@ function registerIpcHandlers(
         return
       }
       release()
+      // nested worktree or repository (any folder name): same rule as fs:searchFiles
+      if (dir !== rootPath && entries.some(e => e.name === '.git')) return
       const sub: Promise<void>[] = []
       for (const e of entries) {
         if (e.name.startsWith('.') || skipDirs.has(e.name)) continue

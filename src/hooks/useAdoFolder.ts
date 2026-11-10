@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAdoSettingsStore } from '../store'
+import { tr } from '../i18n'
 import { folderKey as toFolderKey, folderName as toFolderName, mainFolderPath, resolveFolderRepo } from '../shared/adoSettings'
 import type { AdoConnectionConfig, AdoRepoRef } from '../shared/adoSettings'
 
@@ -91,7 +92,7 @@ export function useAdoFolder(repoPath: string | null): AdoFolderState {
   }, [autoSig, catalogComplete])
 
   const choose = useCallback(async (ref: AdoRepoRef) => {
-    if (!key) throw new Error('nessuna cartella aperta')
+    if (!key) throw new Error(tr('no folder open'))
     await window.electronAPI.adoSettings.setFolder(key, ref)
     await useAdoSettingsStore.getState().load()
   }, [key])

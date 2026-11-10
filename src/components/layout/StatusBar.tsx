@@ -58,12 +58,12 @@ export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, o
         <img src={logo} alt="logo" style={{ width: '15px', height: '15px', flexShrink: 0, objectFit: 'contain', marginRight: '2px' }} />
         {onToggleTerminal && (
           <DockToggle open={terminalOpen} onClick={onToggleTerminal}
-            title={terminalOpen ? 'hide terminal' : 'show terminal'} tipDesc="integrated terminal (cmd, powershell, npm)"
+            title={terminalOpen ? t('hide terminal') : t('show terminal')} tipDesc={t('integrated terminal (cmd, powershell, npm)')}
             icon={<TerminalSquare size={11} strokeWidth={1.6} />} label={t('terminal')} />
         )}
         {onToggleAi && canChat && (
           <DockToggle open={aiOpen} onClick={onToggleAi}
-            title={aiOpen ? 'hide AI chat' : 'open AI chat'} tipDesc="chat with the configured agents (and MCP tools)"
+            title={aiOpen ? t('hide AI chat') : t('open AI chat')} tipDesc={t('chat with the configured agents (and MCP tools)')}
             icon={<Bot size={11} strokeWidth={1.6} />} label="AI" />
         )}
         {repoPath ? (
@@ -75,26 +75,26 @@ export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, o
             {modifiedCount > 0 ? (
               <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--warning-color)' }}>
                 <AlertCircle size={10} />
-                {modifiedCount} modified
+                {t('{n} modified', { n: modifiedCount })}
               </span>
             ) : (
               <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--success-color)' }}>
                 <CheckCircle2 size={10} />
-                clean
+                {t('clean')}
               </span>
             )}
           </>
         ) : (
           <span style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
             <AlertCircle size={10} />
-            no repository
+            {t('no repository')}
           </span>
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
         {onToggleTheme && (
           <button onClick={onToggleTheme}
-            title={`switch to ${theme === 'dark' ? 'light' : 'dark'}`} data-tip-desc="toggle between the dark and light theme"
+            title={theme === 'dark' ? t('switch to light') : t('switch to dark')} data-tip-desc={t('toggle between the dark and light theme')}
             style={{
               display: 'flex', alignItems: 'center', background: 'none', flexShrink: 0,
               border: 'none', color: 'var(--text-muted)', cursor: 'pointer',

@@ -1,6 +1,6 @@
 {
   "name": "damned-ide",
-  "version": "0.0.27",
+  "version": "0.1.0-0",
   "description": "IDE leggero per backend .NET con gestione worktree Git, Azure DevOps e SQL Server",
   "main": "./out/main/index.js",
   "author": {
@@ -44,6 +44,7 @@
     "test:gittree": "node --experimental-strip-types scripts/gittree.check.ts",
     "test:shared-storage": "node --experimental-strip-types scripts/shared-storage.check.ts",
     "test:instance-lock": "node --experimental-strip-types scripts/instance-lock.check.ts",
+    "test:i18n": "node --experimental-strip-types scripts/i18n.check.ts",
     "test:sql-ui": "node --experimental-strip-types scripts/sql-ui-regression.mjs",
     "test:sql-guards": "node --experimental-strip-types scripts/sql-linux-guards.check.ts",
     "test:sql-insert": "node --experimental-strip-types scripts/sql-insert.check.ts",

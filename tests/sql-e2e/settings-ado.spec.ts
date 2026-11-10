@@ -9,7 +9,7 @@ import { test, expect, seedAdo, adoCalls } from './sql.fixture'
 const REPO = 'C:/repos/Themis-API'
 const FOLDER_KEY = 'c:/repos/themis-api'
 
-const settingsNav = (page: Page) => page.getByRole('navigation', { name: 'pagine delle impostazioni' })
+const settingsNav = (page: Page) => page.getByRole('navigation', { name: 'settings pages' })
 const navPage = (page: Page, label: string) => settingsNav(page).getByRole('button', { name: label, exact: true })
 
 /** Opens REPO (a main checkout) from the startup dialog, on the given panel. */
@@ -42,29 +42,29 @@ test('settings: grouped navigation, search and the remembered page', async ({ pa
   await page.getByTitle('settings', { exact: true }).click()
 
   // the last page is shown again
-  await expect(navPage(page, 'Terminale')).toHaveAttribute('aria-current', 'page')
+  await expect(navPage(page, 'Terminal')).toHaveAttribute('aria-current', 'page')
   await expect(page.locator('input[type="range"][min="8"][max="32"]')).toHaveCount(1)
 
   // Azure DevOps is a group with its three pages
   await expect(settingsNav(page).getByRole('group', { name: 'Azure DevOps' }).getByRole('button'))
-    .toHaveText(['Connessioni', 'Repository per cartella', 'Rilascio'])
-  await navPage(page, 'Rilascio').click()
-  await expect(navPage(page, 'Rilascio')).toHaveAttribute('aria-current', 'page')
-  await expect(navPage(page, 'Terminale')).not.toHaveAttribute('aria-current', 'page')
-  await expect(page.getByText('nessuna connessione Azure DevOps configurata')).toBeVisible()
+    .toHaveText(['Connections', 'Repositories by folder', 'Release'])
+  await navPage(page, 'Release').click()
+  await expect(navPage(page, 'Release')).toHaveAttribute('aria-current', 'page')
+  await expect(navPage(page, 'Terminal')).not.toHaveAttribute('aria-current', 'page')
+  await expect(page.getByText('no Azure DevOps connection configured')).toBeVisible()
 
-  // search: every word must start a word of the page (pat -> Connessioni, not « mappatura »)
-  const search = page.getByPlaceholder('cerca nelle impostazioni')
+  // search: every word must start a word of the page (pat -> Connections, not « mappatura »)
+  const search = page.getByPlaceholder('search settings')
   await search.fill('pat')
-  await expect(settingsNav(page).getByRole('button')).toHaveText(['Connessioni'])
+  await expect(settingsNav(page).getByRole('button')).toHaveText(['Connections'])
   await search.press('Enter')
-  await expect(navPage(page, 'Connessioni')).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByPlaceholder('incolla il PAT')).toBeVisible()
+  await expect(navPage(page, 'Connections')).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByPlaceholder('paste the PAT')).toBeVisible()
 
   await search.fill('font')
-  await expect(navPage(page, 'Testo e icone')).toBeVisible()
+  await expect(navPage(page, 'Text and icons')).toBeVisible()
   await search.fill('zzzz')
-  await expect(settingsNav(page)).toContainText('nessuna pagina per «zzzz»')
+  await expect(settingsNav(page)).toContainText('no page for «zzzz»')
   await search.press('Escape')
   await expect(search).toHaveValue('')
   await expect(settingsNav(page).getByRole('button')).toHaveCount(14)
@@ -78,15 +78,15 @@ test('settings: adding a connection verifies it, keeps the PAT write-only and cl
   await openRepo(page, 'ado')
 
   // nothing configured: the DevOps panel says so and opens Settings › Azure DevOps › Connessioni
-  await expect(page.getByText('nessuna connessione Azure DevOps configurata')).toBeVisible()
-  await page.getByRole('button', { name: 'configura in Impostazioni' }).click()
-  await expect(navPage(page, 'Connessioni')).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByText('no Azure DevOps connection configured')).toBeVisible()
+  await page.getByRole('button', { name: 'configure in Settings' }).click()
+  await expect(navPage(page, 'Connections')).toHaveAttribute('aria-current', 'page')
 
   // with no connection the add form is the page
   const org = page.getByPlaceholder('contoso', { exact: true })
   const project = page.getByPlaceholder('Themis', { exact: true })
-  const pat = page.getByPlaceholder('incolla il PAT', { exact: true })
-  const save = page.getByRole('button', { name: 'verifica e salva' })
+  const pat = page.getByPlaceholder('paste the PAT', { exact: true })
+  const save = page.getByRole('button', { name: 'verify and save' })
   await expect(pat).toHaveAttribute('type', 'password')
   await expect(save).toBeDisabled()
 
@@ -106,8 +106,8 @@ test('settings: adding a connection verifies it, keeps the PAT write-only and cl
   await pat.fill('secret-pat')
   await save.click()
 
-  await expect(page.getByText('PAT salvato', { exact: true })).toBeVisible()
-  await expect(page.getByText('2 repository').first()).toBeVisible()
+  await expect(page.getByText('PAT saved', { exact: true })).toBeVisible()
+  await expect(page.getByText('2 repositories').first()).toBeVisible()
   expect(await adoCalls(page, 'saveConnection')).toEqual([
     [{ organization: 'bad', project: 'Shop', token: 'wrong-pat' }],
     [{ organization: 'contoso', project: 'Themis', token: 'secret-pat' }]
@@ -116,19 +116,19 @@ test('settings: adding a connection verifies it, keeps the PAT write-only and cl
   // the PAT never comes back: the form is gone, a new one starts empty, an edit only says it is saved
   await expect(page.locator('input[type="password"]')).toHaveCount(0)
   expect(await page.content()).not.toContain('secret-pat')
-  await page.getByRole('button', { name: 'aggiungi connessione' }).click()
+  await page.getByRole('button', { name: 'add connection' }).click()
   await expect(pat).toHaveValue('')
-  await page.getByRole('button', { name: 'annulla' }).click()
-  await page.getByRole('button', { name: 'modifica', exact: true }).click()
-  const edit = page.getByPlaceholder('PAT salvato — incolla per sostituirlo')
+  await page.getByRole('button', { name: 'cancel', exact: true }).click()
+  await page.getByRole('button', { name: 'edit', exact: true }).click()
+  const edit = page.getByPlaceholder('PAT saved — paste to replace it')
   await expect(edit).toHaveAttribute('type', 'password')
   await expect(edit).toHaveValue('')
-  await page.getByRole('button', { name: 'annulla' }).click()
+  await page.getByRole('button', { name: 'cancel', exact: true }).click()
 
   // back to DevOps: the only repository named like the folder is used and remembered
   await page.getByTitle('settings', { exact: true }).click()
   await expect.poll(() => adoCalls(page, 'setFolder')).toEqual([[FOLDER_KEY, { connectionId: 'c1', repository: 'Themis-API' }]])
-  await expect(page.getByTitle('impostazioni Azure DevOps')).toBeVisible()
+  await expect(page.getByTitle('Azure DevOps settings')).toBeVisible()
   await expect.poll(() => adoCalls(page, 'pullRequests')).toContainEqual(['Themis', 'Themis-API'])
 })
 
@@ -143,12 +143,12 @@ test('DevOps panel: two connections with a repository named like the folder ask 
   })
   await openRepo(page, 'ado')
 
-  await expect(page.getByText('più repository Azure DevOps si chiamano «Themis-API»: scegli quale usare per questa cartella')).toBeVisible()
-  const select = page.getByLabel('repository Azure DevOps')
+  await expect(page.getByText('several Azure DevOps repositories are named «Themis-API»: choose the one to use for this folder')).toBeVisible()
+  const select = page.getByLabel('Azure DevOps repository')
   await expect(select.locator('optgroup')).toHaveCount(2)
   await expect(select.locator('optgroup[label="org1 / p1"] option')).toHaveText(['Themis-API'])
   await expect(select.locator('optgroup[label="org2 / p2"] option')).toHaveText(['themis-api'])
-  const remember = page.getByRole('button', { name: 'usa e ricorda' })
+  const remember = page.getByRole('button', { name: 'use and remember' })
   await expect(remember).toBeDisabled()
   // nothing is used or saved before the choice
   expect(await adoCalls(page, 'setFolder')).toEqual([])
@@ -160,17 +160,17 @@ test('DevOps panel: two connections with a repository named like the folder ask 
 
   await expect.poll(() => adoCalls(page, 'setFolder')).toEqual([[FOLDER_KEY, { connectionId: 'c2', repository: 'themis-api' }]])
   // ready: the panel works on the chosen connection and repository
-  await expect(page.getByTitle('impostazioni Azure DevOps')).toBeVisible()
-  await expect(page.getByLabel('repository Azure DevOps')).toHaveCount(0)
+  await expect(page.getByTitle('Azure DevOps settings')).toBeVisible()
+  await expect(page.getByLabel('Azure DevOps repository')).toHaveCount(0)
   await expect.poll(() => adoCalls(page, 'pullRequests')).toContainEqual(['p2', 'themis-api'])
   expect((await adoCalls(page, 'use')).map(([id]) => id)).toContain('c2')
   expect((await adoCalls(page, 'use')).every(([id]) => id === 'c2')).toBe(true)
   expect((await adoCalls(page, 'workItems')).every(([p]) => p === 'p2')).toBe(true)
 
   // the chooser's choice shows in Settings › Azure DevOps › Repository per cartella
-  await page.getByTitle('impostazioni Azure DevOps').click()
-  await expect(navPage(page, 'Connessioni')).toHaveAttribute('aria-current', 'page')
-  await navPage(page, 'Repository per cartella').click()
+  await page.getByTitle('Azure DevOps settings').click()
+  await expect(navPage(page, 'Connections')).toHaveAttribute('aria-current', 'page')
+  await navPage(page, 'Repositories by folder').click()
   await expect(page.getByText(REPO).first()).toBeVisible()
 })
 
@@ -187,15 +187,15 @@ test('Release panel: BE and FE dropdowns save the choice through setRelease', as
   })
   await openRepo(page, 'release')
 
-  const be = page.getByLabel('repository BE')
-  const fe = page.getByLabel('repository FE')
+  const be = page.getByLabel('BE repository')
+  const fe = page.getByLabel('FE repository')
   // defaults: BE = the folder's repository, FE = the repository of another folder of the project
   await expect(be).toHaveValue('Themis-API')
-  await expect(be.locator('option:checked')).toHaveText('Themis-API (questa cartella)')
+  await expect(be.locator('option:checked')).toHaveText('Themis-API (this folder)')
   await expect(fe).toHaveValue('Themis-Frontend')
   // FE never offers the BE
   await expect(fe.locator('option')).toHaveText(['—', 'Other', 'Themis-Frontend'])
-  await expect(page.getByText('salvato nelle')).toBeVisible()
+  await expect(page.getByText('saved in')).toBeVisible()
 
   await be.selectOption('Other')
   await expect.poll(() => adoCalls(page, 'setRelease'))
@@ -213,10 +213,10 @@ test('Release panel: BE and FE dropdowns save the choice through setRelease', as
   await expect.poll(() => adoCalls(page, 'branches')).toContainEqual(['P1', 'Other'])
 
   // the same choice is in Settings › Azure DevOps › Rilascio
-  await page.getByRole('button', { name: 'Impostazioni › Azure DevOps › Rilascio' }).click()
-  await expect(navPage(page, 'Rilascio')).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByTitle('repository del backend')).toHaveValue('Other')
-  await expect(page.getByTitle('repository del frontend')).toHaveValue('Themis-API')
+  await page.getByRole('button', { name: 'Settings › Azure DevOps › Release' }).click()
+  await expect(navPage(page, 'Release')).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTitle('backend repository')).toHaveValue('Other')
+  await expect(page.getByTitle('frontend repository')).toHaveValue('Themis-API')
 })
 
 test('startup: the old localStorage Azure DevOps configuration moves to the main process', async ({ page }) => {

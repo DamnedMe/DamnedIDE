@@ -4,10 +4,11 @@ import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from '../editor/monaco-theme'
 import { useSettingsStore, useSqlStore, useToastStore } from '../../store'
 import { Play, Square, Loader2, Database, Plus, X, History, Pencil, Save, Trash2, Server, ChevronRight } from '@/components/icons'
-import { registerSqlAssistant } from './sqlAssistant'
+import { localSqlAssistant, registerSqlAssistant } from './sqlAssistant'
 import { appFontStack } from '../../utils/fonts'
 import { SqlQuerySource, SqlWorkspaceTab } from '../../types/sql'
 import { useSqlSectionZoom } from './useSqlSectionZoom'
+import { tr, useI18n } from '../../i18n'
 
 export interface QueryExecutionContext {
   connectionId?: string
@@ -70,6 +71,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
   const settings = useSettingsStore(s => s.settings)
   const showToast = useToastStore(s => s.showToast)
   const sectionZoom = useSqlSectionZoom<HTMLElement>('editor')
+  const t = useI18n()
 
   useEffect(() => { tabsRef.current = tabs }, [tabs])
   useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
@@ -142,9 +144,9 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
       const title = fileName.replace(/\.sql$/i, '') || baseTitle
       tabsRef.current = tabsRef.current.map(item => item.id === id ? { ...item, title, filePath, dirty: false } : item)
       setTabs(tabsRef.current)
-      showToast(`query salvata: ${fileName}`)
+      showToast(tr('query saved: {file}', { file: fileName }))
     } catch (error) {
-      showToast(`salvataggio query fallito: ${(error as Error).message}`, 'error')
+      showToast(tr('query save failed: {error}', { error: (error as Error).message }), 'error')
     }
   }, [showToast])
 
@@ -170,7 +172,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
         connectionId: tab?.context?.connectionId ?? connectionIdRef.current,
         database: tab?.context?.database ?? activeDatabaseRef.current
       }
-    })
+    }, localSqlAssistant, tr) // tr, not t: the provider outlives this render and follows a later language change
     const activeTab = tabsRef.current.find(tab => tab.id === activeTabIdRef.current)
     replaceEditorValue(pendingEditorValueRef.current ?? activeTab?.query ?? '')
     editor.onDidChangeModelContent(() => {
@@ -277,7 +279,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
   }
 
   return (
-    <section ref={sectionZoom.ref} className="sql-query-editor sql-surface" aria-label="Query editor" style={{
+    <section ref={sectionZoom.ref} className="sql-query-editor sql-surface" aria-label={t('Query editor')} style={{
       ...sectionZoom.style,
       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', overflow: 'hidden',
@@ -288,9 +290,9 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
         display: 'flex', alignItems: 'stretch', minHeight: '30px',
         borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)'
       }}>
-        <nav className="sql-query-tabs" aria-label="Query tabs" style={{ display: 'flex', flex: 1, overflowX: 'auto', minWidth: 0 }}>
+        <nav className="sql-query-tabs" aria-label={t('Query tabs')} style={{ display: 'flex', flex: 1, overflowX: 'auto', minWidth: 0 }}>
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => activateTab(tab.id)} title={tab.title} data-tip-desc="switch to this query tab"
+            <button key={tab.id} onClick={() => activateTab(tab.id)} title={tab.title} data-tip-desc={t('switch to this query tab')}
               className="sql-query-tab"
               data-active={tab.id === activeTabId}
               onContextMenu={(event) => {
@@ -314,20 +316,20 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' }}>
                 {tab.title}{tab.dirty ? ' •' : ''}
               </span>
-              <span role="button" aria-label={`close ${tab.title}`} onClick={(event) => { event.stopPropagation(); closeTab(tab.id) }}
+              <span role="button" aria-label={t('close {title}', { title: tab.title })} onClick={(event) => { event.stopPropagation(); closeTab(tab.id) }}
                 style={{ display: 'inline-flex', padding: '2px', borderRadius: '3px' }}>
                 <X size={9} />
               </span>
             </button>
           ))}
         </nav>
-        <button onClick={() => addTab()} title="new query tab" data-tip-desc="open a new query editor tab" aria-label="new query tab"
+        <button onClick={() => addTab()} title={t('new query tab')} data-tip-desc={t('open a new query editor tab')} aria-label={t('new query tab')}
           className="sql-query-action"
           style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
           <Plus size={11} />
         </button>
         {onOpenWorkspace && (
-          <button onClick={onOpenWorkspace} title="workspace, history and favorites" data-tip-desc="saved queries, history and favorites" aria-label="open SQL workspace"
+          <button onClick={onOpenWorkspace} title={t('workspace, history and favorites')} data-tip-desc={t('saved queries, history and favorites')} aria-label={t('open SQL workspace')}
             className="sql-query-action"
             style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
             <History size={11} />
@@ -335,7 +337,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
         )}
         <div className="sql-query-editor__actions" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px' }}>
           {shownDatabase && connectionId && (
-            <span className="sql-context-chip" title={`${connectionLabel || connectionId} / ${shownDatabase}`} data-tip-desc="active connection and database" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
+            <span className="sql-context-chip" title={`${connectionLabel || connectionId} / ${shownDatabase}`} data-tip-desc={t('active connection and database')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
               <Server size={10} />
               <span className="sql-context-chip__server">{connectionLabel || connectionId}</span>
               <ChevronRight size={9} aria-hidden="true" />
@@ -345,13 +347,13 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
           )}
           {isRunning && (
             <button onClick={cancel} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', background: 'var(--error-bg)', color: 'var(--error-color)', border: '1px solid var(--error-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
-              <Square size={9} /> cancel
+              <Square size={9} /> {t('cancel')}
             </button>
           )}
           <button className="sql-run-button" onClick={run} disabled={!connectionId || isRunning}
             style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', background: connectionId && !isRunning ? 'var(--accent-color)' : 'var(--bg-disabled)', color: connectionId && !isRunning ? 'var(--text-inverse)' : 'var(--text-muted)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: connectionId && !isRunning ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
             {isRunning ? <Loader2 size={10} style={{ animation: 'spin 0.9s linear infinite' }} /> : <Play size={10} />}
-            {isRunning ? 'Running…' : 'Run'}
+            {isRunning ? t('Running…') : t('Run')}
           </button>
         </div>
       </header>
@@ -382,7 +384,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
       {tabMenu && (
         <>
           <div onMouseDown={() => setTabMenu(null)} onContextMenu={(event) => { event.preventDefault(); setTabMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
-          <div role="menu" aria-label="query tab actions" style={{
+          <div role="menu" aria-label={t('query tab actions')} style={{
             position: 'fixed', left: Math.min(tabMenu.x, window.innerWidth - 190), top: Math.min(tabMenu.y, window.innerHeight - 132), zIndex: 300,
             width: 180, padding: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)'
@@ -391,10 +393,10 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
               const tab = tabsRef.current.find(item => item.id === tabMenu.id)
               if (tab) setRenameTab({ id: tab.id, title: tab.title, x: tabMenu.x, y: tabMenu.y })
               setTabMenu(null)
-            }} style={menuItemStyle}><Pencil size={11} /> Rename</button>
-            <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); void saveTab(id) }} style={menuItemStyle}><Save size={11} /> Save query</button>
+            }} style={menuItemStyle}><Pencil size={11} /> {t('Rename')}</button>
+            <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); void saveTab(id) }} style={menuItemStyle}><Save size={11} /> {t('Save query')}</button>
             <div style={{ height: 1, background: 'var(--border-subtle)', margin: '3px 2px' }} />
-            <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); closeTab(id) }} style={{ ...menuItemStyle, color: 'var(--error-color)' }}><Trash2 size={11} /> Close</button>
+            <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); closeTab(id) }} style={{ ...menuItemStyle, color: 'var(--error-color)' }}><Trash2 size={11} /> {t('Close')}</button>
           </div>
         </>
       )}
@@ -414,11 +416,11 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
             width: 260, padding: 8, display: 'flex', gap: 5, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)'
           }}>
-            <input autoFocus aria-label={`rename ${tabsRef.current.find(tab => tab.id === renameTab.id)?.title || 'query'}`} value={renameTab.title}
+            <input autoFocus aria-label={t('rename {title}', { title: tabsRef.current.find(tab => tab.id === renameTab.id)?.title || 'query' })} value={renameTab.title}
               onChange={(event) => setRenameTab(current => current ? { ...current, title: event.target.value } : current)}
               onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setRenameTab(null) } }}
               style={{ minWidth: 0, flex: 1, height: 27, padding: '0 7px', background: 'var(--bg-input)', border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', outline: 'none' }} />
-            <button type="submit" style={{ ...menuItemStyle, width: 'auto', border: '1px solid var(--accent-color)', color: 'var(--accent-color)' }}>rename</button>
+            <button type="submit" style={{ ...menuItemStyle, width: 'auto', border: '1px solid var(--accent-color)', color: 'var(--accent-color)' }}>{t('rename')}</button>
           </form>
         </>
       )}

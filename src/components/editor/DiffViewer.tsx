@@ -8,6 +8,7 @@ import { useUIStore, useSettingsStore, useDiffStore } from '../../store'
 import { registerCSharpHover, trackHoverModel } from '../../utils/csharp-hover'
 import { appFontStack } from '../../utils/fonts'
 import { MarkdownView } from './MarkdownView'
+import { useI18n } from '../../i18n'
 
 export interface DiffViewerHandle {
   getVisibleLine: () => number | null
@@ -23,9 +24,11 @@ interface DiffViewerProps {
   onPopOut?: () => void
   onVisibleLineChange?: (line: number) => void
   initialLine?: number
+  /** floating controls drawn over the diff (position them absolutely) */
+  children?: React.ReactNode
 }
 
-export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function DiffViewer({ original, modified, language, filePath, onClose, onPopOut, onVisibleLineChange, initialLine }, ref) {
+export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function DiffViewer({ original, modified, language, filePath, onClose, onPopOut, onVisibleLineChange, initialLine, children }, ref) {
   // zoom and view type are persisted so they survive file switches (diff remounts)
   const sideBySide = useDiffStore(s => s.sideBySide)
   const setSideBySide = useDiffStore(s => s.setSideBySide)
@@ -37,6 +40,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   const themeColors = useSettingsStore(s => s.settings.themeColors)
   const appFont = useSettingsStore(s => s.settings.appFont)
   const [mdPreview, setMdPreview] = useState(false)
+  const t = useI18n()
   const isMarkdown = !!filePath?.toLowerCase().endsWith('.md')
 
   const applyEditorTheme = (monaco: typeof import('monaco-editor')) => {
@@ -167,14 +171,14 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
                 background: 'var(--success-bg)', color: 'var(--success-color)',
                 fontWeight: 700, fontSize: 'calc(9px * var(--ui-text-scale, 1))', flexShrink: 0
               }}>
-                + added
+                {t('+ added')}
               </span>
               <span style={{
                 padding: '1px 6px', borderRadius: 'var(--radius-sm)',
                 background: 'var(--error-bg)', color: 'var(--error-color)',
                 fontWeight: 700, fontSize: 'calc(9px * var(--ui-text-scale, 1))', flexShrink: 0
               }}>
-                − removed
+                {t('− removed')}
               </span>
               <span style={{
                 color: 'var(--text-primary)', fontWeight: 500,
@@ -189,28 +193,28 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
           <ToggleButton
             active={sideBySide}
             onClick={() => setSideBySide(true)}
-            title="side by side" data-tip-desc="show the diff side by side"
+            title={t('side by side')} data-tip-desc={t('show the diff side by side')}
             icon={<Columns2 size={12} />}
           />
           <ToggleButton
             active={!sideBySide}
             onClick={() => setSideBySide(false)}
-            title="inline" data-tip-desc="show the diff inline"
+            title={t('inline')} data-tip-desc={t('show the diff inline')}
             icon={<Rows3 size={12} />}
           />
           {isMarkdown && (
             <ToggleButton
               active={mdPreview}
               onClick={() => setMdPreview(p => !p)}
-              title={mdPreview ? 'show diff' : 'preview rendered markdown'}
-              data-tip-desc={mdPreview ? 'show the diff view' : 'render the markdown preview'}
+              title={mdPreview ? t('show diff') : t('preview rendered markdown')}
+              data-tip-desc={mdPreview ? t('show the diff view') : t('render the markdown preview')}
               icon={<Eye size={12} />}
             />
           )}
           {onPopOut && (
             <button
               onClick={onPopOut}
-              title="open in full screen" data-tip-desc="open the viewer in full screen"
+              title={t('open in full screen')} data-tip-desc={t('open the viewer in full screen')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '24px', height: '20px', marginLeft: '2px',
@@ -243,14 +247,15 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
                 e.currentTarget.style.color = 'var(--text-muted)'
                 e.currentTarget.style.borderColor = 'var(--border-color)'
               }}
-              title="close" data-tip-desc="close this panel or dialog"
+              title={t('close')} data-tip-desc={t('close this panel or dialog')}
             >
               <X size={11} />
             </button>
           )}
         </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        {children}
         {mdPreview ? (
           <MarkdownView content={modified} />
         ) : (

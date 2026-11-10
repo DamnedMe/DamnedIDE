@@ -83,7 +83,7 @@ const files = [
 ].map(path => ({ path }))
 const groups = groupChanges(files)
 assert.deepEqual(groups.map(g => g.id), ['controller', 'service', 'test', 'docs'])
-assert.deepEqual(groups.map(g => g.label), ['Controller', 'Service', 'Test', 'Documentazione'])
+assert.deepEqual(groups.map(g => g.label), ['Controller', 'Service', 'Test', 'Documentation'])
 assert.deepEqual(groups[1].files.map(f => f.path), [
   'a/Services/AService.cs', 'b/Services/AService.cs', 'Themis.Application/Services/StoreManagerService.cs'
 ])

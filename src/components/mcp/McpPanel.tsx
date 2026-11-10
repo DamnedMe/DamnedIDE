@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plug, PlugZap, Plus, X, Trash2, Loader2, ChevronDown, ChevronUp, TerminalSquare, Pencil } from '@/components/icons'
 import { useMcpStore, MCP_PRESETS } from '../../store'
+import { useI18n } from '../../i18n'
 
 const PRESET_ICONS: Record<string, React.ReactNode> = {
   opencode: <TerminalSquare size={12} />,
@@ -22,6 +23,7 @@ function parseEnv(text: string): Record<string, string> | undefined {
 }
 
 export function McpPanel() {
+  const t = useI18n()
   const { custom, connected, status, errors, tools, addServer, removeServer, updateServer, setConnected, setStatus, setError, setTools } = useMcpStore()
   const [showAdd, setShowAdd] = useState(false)
   const [newCfg, setNewCfg] = useState({ name: '', command: '', args: '', env: '' })
@@ -143,21 +145,21 @@ export function McpPanel() {
           padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg-card)'
         }}>
           <div style={{ display: 'flex', gap: '6px' }}>
-            <input placeholder="name" value={editCfg.name} onChange={(e) => setEditCfg({ ...editCfg, name: e.target.value })} style={inputStyle} />
-            <input placeholder="command (e.g. npx)" value={editCfg.command} onChange={(e) => setEditCfg({ ...editCfg, command: e.target.value })} style={{ ...inputStyle, flex: 2 }} />
+            <input placeholder={t('name')} value={editCfg.name} onChange={(e) => setEditCfg({ ...editCfg, name: e.target.value })} style={inputStyle} />
+            <input placeholder={t('command (e.g. npx)')} value={editCfg.command} onChange={(e) => setEditCfg({ ...editCfg, command: e.target.value })} style={{ ...inputStyle, flex: 2 }} />
           </div>
-          <input placeholder="args (space separated)" value={editCfg.args}
+          <input placeholder={t('args (space separated)')} value={editCfg.args}
             onChange={(e) => setEditCfg({ ...editCfg, args: e.target.value })} style={inputStyle} />
-          <textarea placeholder="env (KEY=value, one per line)" value={editCfg.env} rows={2} spellCheck={false}
+          <textarea placeholder={t('env (KEY=value, one per line)')} value={editCfg.env} rows={2} spellCheck={false}
             onChange={(e) => setEditCfg({ ...editCfg, env: e.target.value })}
             style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 } as React.CSSProperties} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-            <button onClick={() => setEditingName(null)} style={smallBtn('var(--text-secondary)')}>cancel</button>
+            <button onClick={() => setEditingName(null)} style={smallBtn('var(--text-secondary)')}>{t('cancel')}</button>
             <button onClick={saveEdit} disabled={!editCfg.name.trim() || !editCfg.command.trim()} style={{
               ...smallBtn('var(--accent-color)'),
               background: editCfg.name.trim() && editCfg.command.trim() ? 'var(--accent-color)' : 'var(--bg-disabled)',
               color: editCfg.name.trim() && editCfg.command.trim() ? 'var(--text-inverse)' : 'var(--text-muted)'
-            }}>save</button>
+            }}>{t('save')}</button>
           </div>
         </div>
       )
@@ -184,20 +186,20 @@ export function McpPanel() {
             background: isConn ? 'var(--success-color)' : failed ? 'var(--error-color)' : connecting ? 'var(--warning-color)' : 'var(--border-color)' }} />
           {isConn && (
             <button onClick={() => setExpanded(prev => ({ ...prev, [config.name]: !prev[config.name] }))}
-              title={expanded[config.name] ? 'collapse tools' : 'show tools'} data-tip-desc="show or hide the tools exposed by this server"
+              title={expanded[config.name] ? t('collapse tools') : t('show tools')} data-tip-desc={t('show or hide the tools exposed by this server')}
               style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}>
               {expanded[config.name] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
           )}
           {!MCP_PRESETS.some(p => p.config.name === config.name) && (
             <>
-              <button onClick={() => startEdit(config)} title="edit server" data-tip-desc="edit this MCP server configuration"
+              <button onClick={() => startEdit(config)} title={t('edit server')} data-tip-desc={t('edit this MCP server configuration')}
                 style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
                 <Pencil size={11} />
               </button>
-              <button onClick={() => deleteServer(config.name)} title="remove server" data-tip-desc="remove this MCP server configuration"
+              <button onClick={() => deleteServer(config.name)} title={t('remove server')} data-tip-desc={t('remove this MCP server configuration')}
                 style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -206,13 +208,13 @@ export function McpPanel() {
             </>
           )}
           {isConn ? (
-            <button onClick={() => disconnect(config.name)} title="disconnect" data-tip-desc="disconnect from this MCP server"
+            <button onClick={() => disconnect(config.name)} title={t('disconnect')} data-tip-desc={t('disconnect from this MCP server')}
               style={{
                 display: 'flex', alignItems: 'center', padding: '3px 10px', height: '22px',
                 background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
                 color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
                 fontFamily: 'var(--font-mono)', fontWeight: 600
-              }}>disconnect</button>
+              }}>{t('disconnect')}</button>
           ) : (
             <button onClick={() => connect(config)} disabled={connecting}
               style={{
@@ -222,7 +224,7 @@ export function McpPanel() {
                 cursor: connecting ? 'not-allowed' : 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
                 fontFamily: 'var(--font-mono)', fontWeight: 600
               }}>
-              {connecting ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : 'connect'}
+              {connecting ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : t('connect')}
             </button>
           )}
         </div>
@@ -235,7 +237,7 @@ export function McpPanel() {
           <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '6px 10px' }}>
             {!tools[config.name] || tools[config.name].length === 0 ? (
               <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                no tools exposed
+                {t('no tools exposed')}
               </div>
             ) : (
               tools[config.name].map((tool) => {
@@ -251,7 +253,7 @@ export function McpPanel() {
                         {tool.description}
                       </span>
                       {showArgs && (
-                        <input placeholder="json args {..}" value={callArgs[key] || ''} spellCheck={false}
+                        <input placeholder={t('json args {..}')} value={callArgs[key] || ''} spellCheck={false}
                           onChange={(e) => setCallArgs(prev => ({ ...prev, [key]: e.target.value }))}
                           style={{
                             background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -263,13 +265,13 @@ export function McpPanel() {
                         let args: Record<string, unknown> = {}
                         try { args = callArgs[key] ? JSON.parse(callArgs[key]) : {} } catch { /* invalid json */ }
                         callTool(config.name, tool.name, args)
-                      }} title="call tool" data-tip-desc="invoke this tool with the given arguments"
+                      }} title={t('call tool')} data-tip-desc={t('invoke this tool with the given arguments')}
                         style={{
                           display: 'flex', alignItems: 'center', padding: '2px 8px', height: '20px',
                           background: 'var(--bg-tag)', border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-sm)',
                           color: 'var(--accent-color)', cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
                           fontFamily: 'var(--font-mono)', fontWeight: 600
-                        }}>call</button>
+                        }}>{t('call')}</button>
                     </div>
                     {results[key] && (
                       <pre style={{
@@ -295,10 +297,10 @@ export function McpPanel() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
           <PlugZap size={13} style={{ color: 'var(--accent-color)' }} />
-          Strumenti MCP
-          <span style={{ fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>· server di strumenti (stdio)</span>
+          {t('MCP tools')}
+          <span style={{ fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>· {t('tool servers (stdio)')}</span>
         </div>
-        <button onClick={() => setShowAdd(v => !v)} title="add custom MCP server" data-tip-desc="add a custom MCP server configuration"
+        <button onClick={() => setShowAdd(v => !v)} title={t('add custom MCP server')} data-tip-desc={t('add a custom MCP server configuration')}
           style={{
             display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px', height: '22px',
             background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -306,31 +308,31 @@ export function McpPanel() {
             fontFamily: 'var(--font-mono)', fontWeight: 600
           }}>
           <Plus size={10} />
-          add server
+          {t('add server')}
         </button>
       </div>
 
       <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
-        client MCP generico: lancia un server di strumenti via stdio e prova/invoca i suoi tool (Model Context Protocol). Gli agenti della chat (Claude, opencode, Codex, Cursor) si configurano nel pannello AI, non qui. La configurazione è mantenuta tra i riavvii.
+        {t('generic MCP client: launches a tool server via stdio and tries/invokes its tools (Model Context Protocol). The chat agents (Claude, opencode, Codex, Cursor) are configured in the AI panel, not here. The configuration is kept across restarts.')}
       </div>
 
       {showAdd && (
         <div style={{ border: '1px solid var(--accent-color)', borderRadius: 'var(--radius-md)', padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg-card)' }}>
           <div style={{ display: 'flex', gap: '6px' }}>
-            <input placeholder="name" value={newCfg.name} onChange={(e) => setNewCfg({ ...newCfg, name: e.target.value })} style={inputStyle} />
-            <input placeholder="command (e.g. npx)" value={newCfg.command} onChange={(e) => setNewCfg({ ...newCfg, command: e.target.value })} style={{ ...inputStyle, flex: 2 }} />
+            <input placeholder={t('name')} value={newCfg.name} onChange={(e) => setNewCfg({ ...newCfg, name: e.target.value })} style={inputStyle} />
+            <input placeholder={t('command (e.g. npx)')} value={newCfg.command} onChange={(e) => setNewCfg({ ...newCfg, command: e.target.value })} style={{ ...inputStyle, flex: 2 }} />
           </div>
-          <input placeholder="args (space separated)" value={newCfg.args}
+          <input placeholder={t('args (space separated)')} value={newCfg.args}
             onChange={(e) => setNewCfg({ ...newCfg, args: e.target.value })} style={inputStyle} />
-          <textarea placeholder="env (KEY=value, one per line)" value={newCfg.env} rows={2} spellCheck={false}
+          <textarea placeholder={t('env (KEY=value, one per line)')} value={newCfg.env} rows={2} spellCheck={false}
             onChange={(e) => setNewCfg({ ...newCfg, env: e.target.value })}
             style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 } as React.CSSProperties} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-            <button onClick={() => setShowAdd(false)} style={smallBtn('var(--text-secondary)')}>cancel</button>
+            <button onClick={() => setShowAdd(false)} style={smallBtn('var(--text-secondary)')}>{t('cancel')}</button>
             <button onClick={addCustom} disabled={!newCfg.name.trim() || !newCfg.command.trim()} style={{
               ...smallBtn('var(--accent-color)'), background: newCfg.name.trim() && newCfg.command.trim() ? 'var(--accent-color)' : 'var(--bg-disabled)',
               color: newCfg.name.trim() && newCfg.command.trim() ? 'var(--text-inverse)' : 'var(--text-muted)'
-            }}>add</button>
+            }}>{t('add')}</button>
           </div>
         </div>
       )}
@@ -340,7 +342,7 @@ export function McpPanel() {
         {custom.map(c => renderServer(c))}
         {allServers.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-            nessuno strumento MCP configurato
+            {t('no MCP tools configured')}
           </div>
         )}
       </div>

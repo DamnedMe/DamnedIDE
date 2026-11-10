@@ -3,7 +3,10 @@ import { WorktreeEntry, WorktreeWithStatus } from '../types/worktree'
 import { GitStatus, GitFileStatus, BranchInfo, CommitInfo } from '../types/git'
 import { AdoWorkItem, AdoPullRequest } from '../types/ado'
 import type { PromotionConfig } from '../shared/adoPromotion'
+import type { WorktreeLayout } from '../components/worktree/worktree-cleanup'
 import type { AdoLegacyConnection, AdoRepoList, AdoSettingsView } from '../shared/adoSettings'
+// i18n imports this module: tr only reads the store when called, never at module load
+import { tr } from '../i18n'
 import {
   SqlConnection,
   SqlExecutionResult,
@@ -237,7 +240,7 @@ export const useAdoSettingsStore = create<AdoSettingsState>((set, get) => ({
       } catch (e) {
         if (seq !== adoCatalogSeq) return
         // every connection reports the failure, so the folder resolution can say it
-        const error = (e as Error).message || 'lettura delle repository fallita'
+        const error = (e as Error).message || tr('reading the repositories failed')
         const catalog: Record<string, AdoRepoList> = {}
         for (const c of get().settings?.connections ?? []) catalog[c.id] = { ok: false, error }
         adoCatalogSig = sig
@@ -555,6 +558,9 @@ export interface AppSettings {
   changesShowPath: boolean
   // side of the panels' side menu (worktree strip + changes, editor explorer, git branches, DevOps lists, SQL explorer)
   sidebarSide: 'left' | 'right'
+  // Settings › Git › worktree: where the worktrees live and the PBI/bug subfolders; null = never
+  // set (DEFAULT_WORKTREE_LAYOUT applies and the Worktree panel asks to set it)
+  worktreeLayout: WorktreeLayout | null
   themeColors: {
     dark: ThemeColorConfig
     light: ThemeColorConfig
@@ -605,6 +611,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   gitTreePath: '',
   changesShowPath: true,
   sidebarSide: 'left',
+  worktreeLayout: null,
   themeColors: {
     dark: { ...DEFAULT_DARK_COLORS },
     light: { ...DEFAULT_LIGHT_COLORS }
@@ -665,9 +672,11 @@ export const useSettingsStore = create<SettingsState>((set) => {
       return { settings: next }
     }),
     // a fresh copy, applied in memory too (the panel and the app follow at once)
-    resetSettings: () => set(() => {
+    // the worktree folders describe the repositories, not a preference: kept like Azure DevOps
+    resetSettings: () => set((state) => {
       const settings: AppSettings = {
         ...DEFAULT_SETTINGS,
+        worktreeLayout: state.settings.worktreeLayout,
         customFonts: [],
         themeColors: { dark: { ...DEFAULT_DARK_COLORS }, light: { ...DEFAULT_LIGHT_COLORS } }
       }

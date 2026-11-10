@@ -2,6 +2,8 @@
 // Run: node --experimental-strip-types scripts/sql-export.check.ts
 import assert from 'node:assert/strict'
 import { columnText, formatCell, toCsv, toSqlScript, toTextTable, toTextTables, xlsxRows, type ExportSet } from '../src/components/sql/sqlExport.ts'
+import { IT as itGrid } from '../src/locales/it/sql-grid.ts'
+import { IT as itTools } from '../src/locales/it/sql-tools.ts'
 
 const orders: ExportSet = {
   title: 'Result set 1',
@@ -28,8 +30,11 @@ assert.equal(toTextTable({ ...orders, rows: [{ Id: 1, Name: 'y'.repeat(200), Not
 const customers: ExportSet = { title: 'Result set 2', columns: ['Code'], rows: [{ Code: 'C1' }], colTypes: {} }
 assert.equal(toTextTables([orders]), toTextTable(orders), 'a single set has no heading')
 const both = toTextTables([orders, customers])
-assert.ok(both.startsWith('Result set 1 · dbo.Orders · 2 righe\n|  Id |'), 'one heading per set')
-assert.ok(both.includes('\n\nResult set 2 · 1 riga\n| Code |'), 'blocks are separated by a blank line')
+assert.ok(both.startsWith('Result set 1 · dbo.Orders · 2 rows\n|  Id |'), 'one heading per set')
+assert.ok(both.includes('\n\nResult set 2 · 1 row\n| Code |'), 'blocks are separated by a blank line')
+const IT: Record<string, string> = { ...itGrid, ...itTools }
+const bothIt = toTextTables([orders, customers], (key, vars) => (IT[key] ?? key).replace(/\{(\w+)\}/g, (m, k: string) => (vars && k in vars ? String(vars[k]) : m)))
+assert.ok(bothIt.startsWith('Result set 1 · dbo.Orders · 2 righe\n') && bothIt.includes('\n\nResult set 2 · 1 riga\n'), 'the row counts follow the translator')
 
 // ─── grid formatting and copy text ──────────────────────────────────────────
 assert.equal(formatCell(null), 'NULL')

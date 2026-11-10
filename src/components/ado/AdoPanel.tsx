@@ -9,14 +9,15 @@ import { CreatePrDialog } from './CreatePrDialog'
 import { AdoRepoChooser } from './AdoRepoChooser'
 import { useAdoStore, useSettingsNavStore, useSettingsStore } from '../../store'
 import { useAdoFolder } from '../../hooks/useAdoFolder'
-import { ADO_MISSING_PAT } from '../../shared/adoSettings'
 import { AdoPullRequest, AdoPullRequestDetail } from '../../types/ado'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { AlertTriangle, Network, PanelLeftClose, PanelLeftOpen, Plus, Settings } from '@/components/icons'
+import { tr, useI18n } from '../../i18n'
 
 const openAdoSettings = () => useSettingsNavStore.getState().openSettings('ado-connections')
 
 export function AdoPanel({ repoPath }: { repoPath: string | null }) {
+  const t = useI18n()
   // Settings › Tema: the side menu docked on the right
   const sidebarRight = useSettingsStore(s => s.settings.sidebarSide === 'right')
   const { workItems, setWorkItems, pullRequests, setPullRequests } = useAdoStore()
@@ -76,7 +77,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
       .then(ok => {
         if (cancelled) return
         if (!ok) {
-          setUseError(ADO_MISSING_PAT)
+          setUseError(tr('PAT missing or unreadable: enter it in Settings › Azure DevOps › Connections'))
           setWorkItems([])
           setPullRequests([])
           return
@@ -84,7 +85,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
         window.electronAPI.ado.workItems(project).then(setWorkItems).catch(() => setWorkItems([]))
         if (repo) window.electronAPI.ado.pullRequests(project, repo).then(setPullRequests).catch(() => setPullRequests([]))
       })
-      .catch((e) => { if (!cancelled) setUseError((e as Error).message || 'Azure DevOps non raggiungibile') })
+      .catch((e) => { if (!cancelled) setUseError((e as Error).message || tr('Azure DevOps unreachable')) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, project, repo])
@@ -111,7 +112,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
               gap: '12px', color: 'var(--text-secondary)', fontSize: 'calc(13px * var(--ui-text-scale, 1))', textAlign: 'center'
             }}>
               <Network size={32} strokeWidth={1} />
-              apri un repository: Azure DevOps usa la repository con il nome della sua cartella
+              {t('open a repository: Azure DevOps uses the repository named like its folder')}
             </div>
           )}
           <TerminalDock repoPath={null} />
@@ -131,13 +132,13 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
         }}>
           <AlertTriangle size={12} style={{ flexShrink: 0 }} />
           <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>{useError}</span>
-          <button onClick={openAdoSettings} title="configura in Impostazioni" data-tip-desc="apri Impostazioni › Azure DevOps › Connessioni"
+          <button onClick={openAdoSettings} title={t('configure in Settings')} data-tip-desc={t('open Settings › Azure DevOps › Connections')}
             style={{
               flexShrink: 0, padding: '2px 8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', cursor: 'pointer',
               fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
             }}>
-            configura in Impostazioni
+            {t('configure in Settings')}
           </button>
         </div>
       )}
@@ -150,7 +151,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
           paddingTop: '6px', gap: '4px'
         }}>
           <button onClick={() => setLeftCollapsed(!leftCollapsed)}
-            title={leftCollapsed ? 'show lists' : 'collapse lists'} data-tip-desc="collapse or expand the pull request and work item lists"
+            title={leftCollapsed ? t('show lists') : t('collapse lists')} data-tip-desc={t('collapse or expand the pull request and work item lists')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'none', border: 'none',
@@ -162,7 +163,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
             {leftCollapsed !== sidebarRight ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
           </button>
           {/* use is sent first, so the dialog's own calls already go to this connection */}
-          <button onClick={() => { void selectConnection(); setShowCreatePr(true) }} title="new pull request" data-tip-desc="create a pull request for this branch"
+          <button onClick={() => { void selectConnection(); setShowCreatePr(true) }} title={t('new pull request')} data-tip-desc={t('create a pull request for this branch')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'none', border: 'none',
@@ -172,8 +173,8 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none' }}>
             <Plus size={14} />
           </button>
-          <button onClick={openAdoSettings} title="impostazioni Azure DevOps"
-            data-tip-desc={`${connection?.organization} / ${project} · repository ${repo}: apri Impostazioni › Azure DevOps › Connessioni`}
+          <button onClick={openAdoSettings} title={t('Azure DevOps settings')}
+            data-tip-desc={t('{org} / {project} · repository {repo}: open Settings › Azure DevOps › Connections', { org: connection?.organization ?? '', project, repo })}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'none', border: 'none',
@@ -216,7 +217,7 @@ export function AdoPanel({ repoPath }: { repoPath: string | null }) {
                 color: 'var(--text-muted)', gap: '8px', fontFamily: 'var(--font-mono)'
               }}>
                 <Network size={28} strokeWidth={1} />
-                <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>select an item to inspect it</span>
+                <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>{t('select an item to inspect it')}</span>
               </div>
             )}
           </div>

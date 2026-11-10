@@ -19,7 +19,7 @@ export function GitTreeDialog({ downloadUrl, onRetry, onClose }: GitTreeDialogPr
     const filters = window.electronAPI.platform === 'win32'
       ? [{ name: 'GitTree', extensions: ['exe'] }]
       // Linux AppImages and plain binaries have no extension
-      : [{ name: 'All files', extensions: ['*'] }]
+      : [{ name: t('All files'), extensions: ['*'] }]
     const picked = await window.electronAPI.dialog.openFile(t('select the GitTree executable'), filters).catch(() => null)
     if (!picked) return
     useSettingsStore.getState().updateSettings({ gitTreePath: picked })
@@ -35,7 +35,7 @@ export function GitTreeDialog({ downloadUrl, onRetry, onClose }: GitTreeDialogPr
   })
 
   return (
-    <Modal onClose={onClose} width={460} label="GitTree not found">
+    <Modal onClose={onClose} width={460} label={t('GitTree not found')}>
       <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <AlertTriangle size={16} style={{ color: 'var(--warning-color)', flexShrink: 0 }} />
@@ -53,7 +53,7 @@ export function GitTreeDialog({ downloadUrl, onRetry, onClose }: GitTreeDialogPr
             <Download size={11} /> {t('download GitTree')}
           </button>
           <button onClick={() => { void locate() }}
-            title={t('locate GitTree…')} data-tip-desc="pick the GitTree executable; it is remembered for the next time" style={btn(true)}>
+            title={t('locate GitTree…')} data-tip-desc={t('pick the GitTree executable; it is remembered for the next time')} style={btn(true)}>
             <FolderSearch size={11} /> {t('locate GitTree…')}
           </button>
         </div>

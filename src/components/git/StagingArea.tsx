@@ -1,5 +1,6 @@
 import { GitFileStatus } from '../../types/git'
 import { Plus, Minus } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface StagingAreaProps {
   modifiedFiles: GitFileStatus[]
@@ -10,10 +11,11 @@ interface StagingAreaProps {
 }
 
 export function StagingArea({ modifiedFiles, stagedFiles, onStage, onUnstage, onCommit }: StagingAreaProps) {
+  const t = useI18n()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <FileSection
-        title={`modified (${modifiedFiles.length})`} data-tip-desc="files modified but not staged"
+        title={t('modified ({n})', { n: modifiedFiles.length })} data-tip-desc="files modified but not staged"
         files={modifiedFiles}
         actionIcon={<Plus size={12} />}
         onAction={onStage}
@@ -21,7 +23,7 @@ export function StagingArea({ modifiedFiles, stagedFiles, onStage, onUnstage, on
         accentBg="var(--warning-bg)"
       />
       <FileSection
-        title={`staged (${stagedFiles.length})`} data-tip-desc="files staged for the next commit"
+        title={t('staged ({n})', { n: stagedFiles.length })} data-tip-desc="files staged for the next commit"
         files={stagedFiles}
         actionIcon={<Minus size={12} />}
         onAction={onUnstage}

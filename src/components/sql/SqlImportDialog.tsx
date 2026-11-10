@@ -4,6 +4,7 @@ import { Modal } from '../layout/Modal'
 import { SqlConnection } from '../../types/sql'
 import { suggestedImportDatabaseName, type BackupSource } from '../../shared/sqlBackup'
 import { useToastStore } from '../../store'
+import { tr, useI18n } from '../../i18n'
 
 const label: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: '6px',
@@ -76,6 +77,7 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
   const [info, setInfo] = useState<{ found: boolean; hint: string } | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
   const showToast = useToastStore(s => s.showToast)
+  const t = useI18n()
 
   useEffect(() => {
     if (source !== 'bacpac') return
@@ -100,9 +102,9 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
   }, [source, database])
 
   const pickBacpac = async () => {
-    const chosen = await window.electronAPI.dialog.openFile('Scegli il file .bacpac', [
-      { name: 'Data-tier application', extensions: ['bacpac'] },
-      { name: 'Tutti i file', extensions: ['*'] }
+    const chosen = await window.electronAPI.dialog.openFile(t('Choose the .bacpac file'), [
+      { name: t('Data-tier application'), extensions: ['bacpac'] },
+      { name: t('All files'), extensions: ['*'] }
     ])
     if (chosen) setBacpacPath(chosen)
   }
@@ -118,19 +120,19 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
       if (source === 'bak') {
         const res = await window.electronAPI.sql.restore(conn.id, { path: backupPath.trim(), database: targetName.trim(), replace })
         setResult(res.ok
-          ? { ok: true, message: `restore completato in ${((res.elapsedMs || 0) / 1000).toFixed(1)}s`, statement: res.statement }
-          : { ok: false, message: res.error || 'restore fallito' })
+          ? { ok: true, message: tr('restore completed in {s}s', { s: ((res.elapsedMs || 0) / 1000).toFixed(1) }), statement: res.statement }
+          : { ok: false, message: res.error || tr('restore failed') })
         if (res.ok) {
-          showToast(`database ${targetName.trim()} ripristinato`)
+          showToast(tr('database {name} restored', { name: targetName.trim() }))
           onImported?.(targetName.trim())
         }
       } else {
         const res = await window.electronAPI.sql.dataTier(conn.id, targetName.trim(), 'import', bacpacPath)
         setResult(res.ok
-          ? { ok: true, message: `import completato: ${targetName.trim()}` }
-          : { ok: false, message: res.error || 'import fallito' })
+          ? { ok: true, message: tr('import completed: {name}', { name: targetName.trim() }) }
+          : { ok: false, message: res.error || tr('import failed') })
         if (res.ok) {
-          showToast(`database ${targetName.trim()} importato`)
+          showToast(tr('database {name} imported', { name: targetName.trim() }))
           onImported?.(targetName.trim())
         }
       }
@@ -142,13 +144,13 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
   }
 
   return (
-    <Modal onClose={() => { if (!running) onClose() }} width={640} label="import database">
+    <Modal onClose={() => { if (!running) onClose() }} width={640} label={t('import database')}>
       <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <HardDriveUpload size={16} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Importa database
+              {t('Import database')}
             </div>
             <div style={{ fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
               {conn.server} · {database}
@@ -157,19 +159,19 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          <SourceTab active={source === 'bak'} icon={<Database size={14} />} title="Backup .bak" subtitle="RESTORE di un backup completo"
+          <SourceTab active={source === 'bak'} icon={<Database size={14} />} title="Backup .bak" subtitle={t('RESTORE of a full backup')}
             onClick={() => setSource('bak')} />
-          <SourceTab active={source === 'bacpac'} icon={<FileArchive size={14} />} title="Applicazione a livello dati" subtitle="import .bacpac con SqlPackage"
+          <SourceTab active={source === 'bacpac'} icon={<FileArchive size={14} />} title={t('Data-tier application')} subtitle={t('import .bacpac with SqlPackage')}
             onClick={() => setSource('bacpac')} />
         </div>
 
         {source === 'bak' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <span style={label}><FolderOpen size={11} /> percorso del .bak sul server SQL</span>
+            <span style={label}><FolderOpen size={11} /> {t('.bak path on the SQL server')}</span>
             <input value={backupPath} onChange={(e) => setBackupPath(e.target.value)} spellCheck={false} style={input}
-              placeholder="C:\\Backup\\Database.bak" aria-label="percorso backup sul server" />
+              placeholder="C:\\Backup\\Database.bak" aria-label={t('backup path on the server')} />
             <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              il file viene letto dal server: deve essere raggiungibile da lì (non è un percorso locale)
+              {t('the server reads the file: it must be reachable from there (it is not a local path)')}
             </span>
           </div>
         ) : (
@@ -182,25 +184,25 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
                 fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', lineHeight: 1.6
               }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                  <AlertCircle size={12} /> SqlPackage non trovato
+                  <AlertCircle size={12} /> {t('SqlPackage not found')}
                 </span>
-                <span>Serve <b>SqlPackage</b> (DacFx) per importare un .bacpac. Installalo con:</span>
+                <span>{t('You need {tool} (DacFx) to import a .bacpac. Install it with:').split('{tool}').flatMap((part, i) => i ? [<b key={i}>SqlPackage</b>, part] : [part])}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   <code style={{ background: 'var(--bg-primary)', padding: '2px 6px', borderRadius: 'var(--radius-sm)' }}>{info.hint}</code>
-                  <button onClick={() => { window.electronAPI.clipboard.write(info.hint); showToast('comando copiato') }} style={btn(true)}>
-                    copia
+                  <button onClick={() => { window.electronAPI.clipboard.write(info.hint); showToast(t('command copied')) }} style={btn(true)}>
+                    {t('copy')}
                   </button>
                   <button onClick={() => window.electronAPI.shell.openExternal('https://learn.microsoft.com/sql/tools/sqlpackage/sqlpackage-download')} style={btn(true)}>
-                    download
+                    {t('download')}
                   </button>
                 </div>
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <span style={label}><FolderOpen size={11} /> file .bacpac</span>
+              <span style={label}><FolderOpen size={11} /> {t('.bacpac file')}</span>
               <div style={{ display: 'flex', gap: '6px' }}>
-                <input readOnly value={bacpacPath} placeholder="scegli il file da importare" style={input} aria-label="file bacpac" />
-                <button onClick={pickBacpac} disabled={running} style={btn(!running)}>sfoglia…</button>
+                <input readOnly value={bacpacPath} placeholder={t('choose the file to import')} style={input} aria-label={t('bacpac file')} />
+                <button onClick={pickBacpac} disabled={running} style={btn(!running)}>{t('browse…')}</button>
               </div>
             </div>
           </>
@@ -208,9 +210,9 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, minWidth: '220px' }}>
-            <span style={label}><Database size={11} /> nome del database di destinazione</span>
+            <span style={label}><Database size={11} /> {t('destination database name')}</span>
             <input value={targetName} onChange={(e) => setTargetName(e.target.value)} spellCheck={false} style={input}
-              placeholder="nome_nuovo_database" aria-label="database di destinazione" />
+              placeholder={t('new_database_name')} aria-label={t('destination database')} />
           </div>
           {source === 'bak' && (
             <label style={{
@@ -218,13 +220,13 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
               fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)'
             }}>
               <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
-              sovrascrivi se esiste (REPLACE)
+              {t('overwrite if it exists (REPLACE)')}
             </label>
           )}
           {source === 'bacpac' && (
-            <button onClick={() => setBacpacPath('')} disabled={running || !bacpacPath} title="rimuovi il file scelto"
+            <button onClick={() => setBacpacPath('')} disabled={running || !bacpacPath} title={t('remove the chosen file')}
               style={{ ...btn(!running && !!bacpacPath), height: '28px', padding: '0 10px' }}>
-              <RefreshCw size={11} /> reset
+              <RefreshCw size={11} /> {t('reset')}
             </button>
           )}
         </div>
@@ -237,7 +239,7 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
             fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)',
             display: 'flex', flexDirection: 'column', gap: '1px'
           }}>
-            {lines.length === 0 && <span style={{ color: 'var(--text-muted)' }}>avvio di SqlPackage…</span>}
+            {lines.length === 0 && <span style={{ color: 'var(--text-muted)' }}>{t('starting SqlPackage…')}</span>}
             {lines.map((line, i) => <span key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{line}</span>)}
           </div>
         )}
@@ -266,10 +268,10 @@ export function SqlImportDialog({ conn, database, source: initialSource, onClose
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button onClick={onClose} disabled={running} style={btn(!running)}>chiudi</button>
+          <button onClick={onClose} disabled={running} style={btn(!running)}>{t('close')}</button>
           <button onClick={run} disabled={!canRun || running} style={btn(canRun && !running, true)}>
             {running ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <HardDriveUpload size={11} />}
-            {running ? 'import in corso…' : (source === 'bak' ? 'ripristina' : 'importa')}
+            {running ? t('importing…') : (source === 'bak' ? t('restore') : t('import'))}
           </button>
         </div>
       </div>

@@ -7,8 +7,13 @@
 //    output column, plus the key columns it needs to identify the row);
 // 3. buildResultSource() turns that description into SqlResultSource, and the
 //    grid resolves a column with resolveColumnEdit() before building the UPDATE.
-// Anything uncertain refuses the edit with an Italian reason instead of guessing.
+// Anything uncertain refuses the edit with a reason instead of guessing.
 // React-free: imported by the main process, the grid and scripts/sql-result-source.check.ts.
+
+/** The grid's refusal reasons are English; the grid passes its `t`/`tr` (i18n) to translate them.
+ *  The `blocked` texts built for the main process (mapResultSets, buildResultSource) stay Italian. */
+export type Translate = (key: string, vars?: Record<string, string | number>) => string
+const en: Translate = (key, vars) => (vars ? key.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : key)
 
 export interface SqlColumnSource {
   /** output column name, as the grid shows it */
@@ -326,18 +331,18 @@ export interface SqlEditTarget {
 
 export type SqlEditResolution = { ok: true; target: SqlEditTarget } | { ok: false; reason: string }
 
-function keysOf(columns: SqlColumnSource[], table: string): SqlEditResolution {
+function keysOf(columns: SqlColumnSource[], table: string, t: Translate): SqlEditResolution {
   const visible = columns.filter(c => !c.hidden)
   const keys = columns.filter(c => c.key && same(c.table, table))
   if (keys.length === 0) {
-    return { ok: false, reason: `Modifica rifiutata: la tabella ${table} non ha una chiave primaria o univoca, quindi la riga da modificare non si può identificare.` }
+    return { ok: false, reason: t('Edit refused: table {table} has no primary or unique key, so the row to change cannot be identified.', { table }) }
   }
   if (new Set(keys.map(k => (k.column ?? '').toLowerCase())).size !== keys.length) {
-    return { ok: false, reason: `Modifica rifiutata: ${table} compare più volte nella query e non si sa quale delle sue righe modificare.` }
+    return { ok: false, reason: t('Edit refused: {table} appears more than once in the query, so it is unclear which of its rows to change.', { table }) }
   }
   const hidden = keys.filter(k => k.hidden)
   if (hidden.length > 0) {
-    return { ok: false, reason: `Modifica rifiutata: aggiungi alla SELECT la chiave di ${table} (${keys.map(k => k.column).join(', ')}) per modificarne le colonne.` }
+    return { ok: false, reason: t('Edit refused: add the key of {table} ({keys}) to the SELECT to edit its columns.', { table, keys: keys.map(k => k.column).join(', ') }) }
   }
   return {
     ok: true,
@@ -354,31 +359,32 @@ function keysOf(columns: SqlColumnSource[], table: string): SqlEditResolution {
 }
 
 /** Which table, column and key an edit of `column` writes to — or why it must be refused. */
-export function resolveColumnEdit(source: SqlResultSource | undefined, column: string): SqlEditResolution {
+export function resolveColumnEdit(source: SqlResultSource | undefined, column: string, t: Translate = en): SqlEditResolution {
   if (!source?.columns) {
-    return { ok: false, reason: source?.blocked || 'Modifica non disponibile: SQL Server non ha descritto l\'origine di questo result set.' }
+    return { ok: false, reason: source?.blocked || t('Edit not available: SQL Server did not describe the source of this result set.') }
   }
   const matches = source.columns.filter(c => !c.hidden && c.name === column)
-  if (matches.length === 0) return { ok: false, reason: `Modifica non disponibile: colonna «${column}» non trovata nella descrizione del result set.` }
+  if (matches.length === 0) return { ok: false, reason: t('Edit not available: column «{column}» not found in the result set description.', { column }) }
   if (matches.length > 1) {
-    const tables = [...new Set(matches.map(c => c.table || 'espressione'))].join(' e ')
-    return { ok: false, reason: `Modifica rifiutata: più colonne si chiamano «${column}» (${tables}). Usa un alias (AS) per modificarla.` }
+    // 'A and B and C': the same chain the Italian text always had ('A e B e C')
+    const tables = [...new Set(matches.map(c => c.table || t('expression')))].reduce((a, b) => t('{a} and {b}', { a, b }))
+    return { ok: false, reason: t('Edit refused: several columns are named «{column}» ({tables}). Use an alias (AS) to edit it.', { column, tables }) }
   }
   const match = matches[0]
   if (!match.table || !match.column) {
-    return { ok: false, reason: `Modifica rifiutata: «${column}» è un valore calcolato, non una colonna di tabella.` }
+    return { ok: false, reason: t('Edit refused: «{column}» is a computed value, not a table column.', { column }) }
   }
-  const keys = keysOf(source.columns, match.table)
+  const keys = keysOf(source.columns, match.table, t)
   return keys.ok ? { ok: true, target: { ...keys.target, column: match.column } } : keys
 }
 
 /** The base table and key a row delete writes to. */
-export function resolveRowTarget(source: SqlResultSource | undefined): SqlEditResolution {
+export function resolveRowTarget(source: SqlResultSource | undefined, t: Translate = en): SqlEditResolution {
   if (!source?.columns) {
-    return { ok: false, reason: source?.blocked || 'Eliminazione non disponibile: SQL Server non ha descritto l\'origine di questo result set.' }
+    return { ok: false, reason: source?.blocked || t('Delete not available: SQL Server did not describe the source of this result set.') }
   }
-  if (!source.table) return { ok: false, reason: 'Eliminazione non disponibile: la tabella di origine della riga non è nota.' }
-  return keysOf(source.columns, source.table)
+  if (!source.table) return { ok: false, reason: t('Delete not available: the source table of the row is not known.') }
+  return keysOf(source.columns, source.table, t)
 }
 
 /** A new row can be inserted only when every column is a plain column of the base table. */

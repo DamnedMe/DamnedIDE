@@ -1,6 +1,7 @@
 import { Children, Fragment, isValidElement, useState } from 'react'
 import type { CSSProperties, ReactNode, ButtonHTMLAttributes } from 'react'
 import { AlertCircle, AlertTriangle, Check, Info, Loader2 } from '@/components/icons'
+import { tr } from '../../i18n'
 
 // Building blocks of the settings pages: page header, cards with rows, inputs,
 // buttons, chips and notices. Inline styles + theme tokens, like the rest of the IDE.
@@ -9,7 +10,7 @@ import { AlertCircle, AlertTriangle, Check, Info, Loader2 } from '@/components/i
 export const px = (n: number): string => `calc(${n}px * var(--ui-text-scale, 1))`
 
 /** Electron prefixes IPC rejections with "Error invoking remote method 'x': Error:" */
-export function ipcMessage(e: unknown, fallback = 'operazione fallita'): string {
+export function ipcMessage(e: unknown, fallback = tr('operation failed')): string {
   const raw = (e as Error)?.message || (typeof e === 'string' ? e : '')
   return raw.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '').trim() || fallback
 }

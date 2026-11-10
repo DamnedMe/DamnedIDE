@@ -1,4 +1,5 @@
 import { useMemo, ReactNode } from 'react'
+import { useI18n } from '../../i18n'
 
 // Lightweight, dependency-free Markdown renderer. Produces React elements (no
 // dangerouslySetInnerHTML), so untrusted markdown is escaped by React by default.
@@ -134,6 +135,7 @@ function renderInlineSimple(text: string, keyBase: string): ReactNode[] {
 
 export function MarkdownView({ content }: { content: string }) {
   const blocks = useMemo(() => parseBlocks(content), [content])
+  const t = useI18n()
 
   return (
     <div className="md-view" style={{
@@ -194,7 +196,7 @@ export function MarkdownView({ content }: { content: string }) {
             return <p key={i}>{b.lines?.map((l, j) => <span key={j}>{renderInline(l, `p${i}-${j}`)}</span>)}</p>
         }
       })}
-      {blocks.length === 0 && <p style={{ color: 'var(--text-muted)' }}>(empty document)</p>}
+      {blocks.length === 0 && <p style={{ color: 'var(--text-muted)' }}>{t('(empty document)')}</p>}
     </div>
   )
 }

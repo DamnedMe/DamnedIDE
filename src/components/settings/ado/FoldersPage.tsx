@@ -6,11 +6,13 @@ import type { SettingsPageId } from '../../../store'
 import { folderKey as toFolderKey, folderName } from '../../../shared/adoSettings'
 import type { AdoConnectionConfig, AdoRepoRef } from '../../../shared/adoSettings'
 import { useAdoFolder } from '../../../hooks/useAdoFolder'
+import { tr, useI18n } from '../../../i18n'
 import { Btn, Card, CardBody, Chip, Loading, Notice, PathText, SubHeading, ipcMessage, px, spin } from '../ui'
 import { RepoRefSelect, connectionLabel, encodeRef, useCatalogOnMount } from './adoUi'
 
 /** The ADO repository used by each local folder (main checkout); the open folder comes first. */
 export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null; onOpenPage: (page: SettingsPageId) => void }) {
+  const t = useI18n()
   const settings = useAdoSettingsStore(s => s.settings)
   const catalog = useAdoSettingsStore(s => s.catalog)
   const catalogLoading = useAdoSettingsStore(s => s.catalogLoading)
@@ -33,7 +35,9 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
   const api = window.electronAPI?.adoSettings
   const usesMsg = (name: string, ref: AdoRepoRef) => {
     const c = connections.find(x => x.id === ref.connectionId)
-    return `${name} usa ${ref.repository}${c ? ` (${connectionLabel(c)})` : ""}`
+    return c
+      ? tr('{name} uses {repo} ({connection})', { name, repo: ref.repository, connection: connectionLabel(c) })
+      : tr('{name} uses {repo}', { name, repo: ref.repository })
   }
 
   const setFolder = async (key: string, ref: AdoRepoRef | null, done?: string) => {
@@ -43,7 +47,7 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
       await useAdoSettingsStore.getState().load()
       if (done) showToast(done)
     } catch (e) {
-      showToast(ipcMessage(e, 'salvataggio fallito'), 'error')
+      showToast(ipcMessage(e, tr('save failed')), 'error')
     } finally {
       setBusy(null)
     }
@@ -56,7 +60,7 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
       await folder.choose(pick)
       showToast(usesMsg(folder.folderName, pick))
     } catch (e) {
-      showToast(ipcMessage(e, 'salvataggio fallito'), 'error')
+      showToast(ipcMessage(e, tr('save failed')), 'error')
     } finally {
       setBusy(null)
     }
@@ -68,8 +72,8 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
 
   const refresh = (
     <Btn onClick={() => { void loadCatalog(true) }} disabled={catalogLoading}
-      title="rileggi le repository" data-tip-desc="reads the repository list of every connection from Azure DevOps again">
-      {catalogLoading ? <Loader2 size={11} style={spin} /> : <RefreshCw size={11} />} aggiorna elenco
+      title={t('read the repositories again')} data-tip-desc={t('reads the repository list of every connection from Azure DevOps again')}>
+      {catalogLoading ? <Loader2 size={11} style={spin} /> : <RefreshCw size={11} />} {t('refresh list')}
     </Btn>
   )
 
@@ -81,9 +85,9 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
   const renderCurrent = () => {
     if (!repoPath) {
       return (
-        <Card title="Cartella aperta" icon={<FolderOpen size={12} />}>
+        <Card title={t('Current folder')} icon={<FolderOpen size={12} />}>
           <CardBody>
-            <Notice>nessuna cartella aperta: apri un repository per scegliere la sua repository Azure DevOps.</Notice>
+            <Notice>{t('no folder open: open a repository to choose its Azure DevOps repository.')}</Notice>
           </CardBody>
         </Card>
       )
@@ -91,17 +95,17 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
     let body: ReactNode
     switch (folder.status) {
       case 'loading':
-        body = <Loading>ricerca della repository «{folder.folderName}»…</Loading>
+        body = <Loading>{t('looking for the repository «{name}»…', { name: folder.folderName })}</Loading>
         break
       case 'no-connections':
         body = (
           <CardBody>
             <Notice tone="warning" actions={
-              <Btn variant="primary" onClick={() => onOpenPage('ado-connections')} title="aggiungi connessione" data-tip-desc="Azure DevOps › Connessioni">
-                <Cloud size={11} /> configura una connessione
+              <Btn variant="primary" onClick={() => onOpenPage('ado-connections')} title={t('add connection')} data-tip-desc={t('Azure DevOps › Connections')}>
+                <Cloud size={11} /> {t('set up a connection')}
               </Btn>
             }>
-              nessuna connessione Azure DevOps configurata.
+              {t('no Azure DevOps connection configured.')}
             </Notice>
           </CardBody>
         )
@@ -110,16 +114,16 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
         body = (
           <CardBody>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <Chip tone="success" icon={<Check size={9} />}>in uso</Chip>
+              <Chip tone="success" icon={<Check size={9} />}>{t('in use')}</Chip>
               <RepoRefSelect connections={connections} catalog={catalog}
                 value={folder.connection && folder.repository ? { connectionId: folder.connection.id, repository: folder.repository } : null}
                 onChange={(ref) => { if (currentKey) void setFolder(currentKey, ref, usesMsg(folder.folderName, ref)) }}
                 disabled={busy === currentKey}
-                title="repository Azure DevOps di questa cartella" tip="used by DevOps, Release and Worktree for this folder"
+                title={t("this folder's Azure DevOps repository")} tip={t('used by DevOps, Release and Worktree for this folder')}
                 style={{ flex: '1 1 220px' }} />
-              <Btn onClick={() => { if (currentKey) void setFolder(currentKey, null, 'scelta dimenticata') }} disabled={busy === currentKey}
-                title="dimentica" data-tip-desc="forgets the choice: the folder looks for the repository with its own name again">
-                <Eraser size={11} /> dimentica
+              <Btn onClick={() => { if (currentKey) void setFolder(currentKey, null, t('choice forgotten')) }} disabled={busy === currentKey}
+                title={t('forget')} data-tip-desc={t('forgets the choice: the folder looks for the repository with its own name again')}>
+                <Eraser size={11} /> {t('forget')}
               </Btn>
             </div>
           </CardBody>
@@ -131,22 +135,22 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
           <CardBody>
             <Notice tone="warning">
               {folder.status === 'ambiguous'
-                ? <>più repository Azure DevOps si chiamano «{folder.folderName}»: scegli quale usare per questa cartella</>
-                : <>nessuna repository Azure DevOps si chiama «{folder.folderName}»: scegli quale usare per questa cartella</>}
+                ? <>{t('more Azure DevOps repositories are named «{name}»: choose which one to use for this folder', { name: folder.folderName })}</>
+                : <>{t('no Azure DevOps repository is named «{name}»: choose which one to use for this folder', { name: folder.folderName })}</>}
             </Notice>
             {folder.candidates.length > 0 ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <RepoRefSelect connections={connections} catalog={catalog} refs={folder.candidates}
                   value={pick} onChange={setPick}
-                  title="repository per questa cartella" tip="the choice is remembered for this folder"
+                  title={t('repository for this folder')} tip={t('the choice is remembered for this folder')}
                   style={{ flex: '1 1 220px' }} />
                 <Btn variant="primary" onClick={() => { void choose() }} disabled={!pick || busy === currentKey}
-                  title="usa e ricorda" data-tip-desc="saves the choice for this folder (shared by every IDE window)">
-                  {busy === currentKey ? <Loader2 size={11} style={spin} /> : <Check size={11} />} usa e ricorda
+                  title={t('use and remember')} data-tip-desc={t('saves the choice for this folder (shared by every IDE window)')}>
+                  {busy === currentKey ? <Loader2 size={11} style={spin} /> : <Check size={11} />} {t('use and remember')}
                 </Btn>
               </div>
             ) : (
-              <Notice actions={refresh}>nessuna repository leggibile nelle connessioni configurate.</Notice>
+              <Notice actions={refresh}>{t('no readable repository in the configured connections.')}</Notice>
             )}
           </CardBody>
         )
@@ -157,12 +161,12 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
             <Notice tone="error" actions={
               <>
                 {refresh}
-                <Btn onClick={() => onOpenPage('ado-connections')} title="connessioni" data-tip-desc="Azure DevOps › Connessioni">
-                  <Cloud size={11} /> connessioni
+                <Btn onClick={() => onOpenPage('ado-connections')} title={t('connections')} data-tip-desc={t('Azure DevOps › Connections')}>
+                  <Cloud size={11} /> {t('connections')}
                 </Btn>
               </>
             }>
-              Azure DevOps non restituisce le repository:
+              {t('Azure DevOps does not return the repositories:')}
               {folder.errors.map(e => <div key={e}>{e}</div>)}
             </Notice>
           </CardBody>
@@ -171,12 +175,12 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
     }
     return (
       <Card accent
-        title={<>Cartella aperta <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>· {folder.folderName}</span></>}
+        title={<>{t('Current folder')} <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>· {folder.folderName}</span></>}
         icon={<FolderOpen size={12} />}
         description={
           <>
             <PathText muted>{shownPath}</PathText>
-            {isWorktree && <> — worktree di <PathText muted>{folderName(folder.folderPath ?? '')}</PathText>: usa la repository della cartella principale</>}
+            {isWorktree && <> — {t('worktree of')} <PathText muted>{folderName(folder.folderPath ?? '')}</PathText>: {t("uses the main folder's repository")}</>}
           </>
         }
       >
@@ -190,19 +194,18 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
     .filter(([key]) => key !== currentKey)
     .sort(([a], [b]) => a.localeCompare(b))
 
-  if (!api) return <Notice tone="warning">impostazioni Azure DevOps non disponibili in questa finestra</Notice>
+  if (!api) return <Notice tone="warning">{t('Azure DevOps settings not available in this window')}</Notice>
 
   return (
     <>
-      {!settings ? <Card><Loading>lettura impostazioni…</Loading></Card> : renderCurrent()}
+      {!settings ? <Card><Loading>{t('reading settings…')}</Loading></Card> : renderCurrent()}
 
       {settings && connections.length > 0 && (
         <>
-          <SubHeading actions={refresh}>altre cartelle ({others.length})</SubHeading>
+          <SubHeading actions={refresh}>{t('other folders ({n})', { n: others.length })}</SubHeading>
           {others.length === 0 ? (
             <Notice>
-              nessun'altra cartella associata. Ogni cartella usa la repository con il suo stesso nome; se non è chiaro quale,
-              DevOps, Rilascio e Worktree lo chiedono e la scelta compare qui.
+              {t('no other folder mapped. Every folder uses the repository with its own name; when it is not clear which one, DevOps, Release and Worktree ask and the choice shows up here.')}
             </Notice>
           ) : (
             <Card>
@@ -221,11 +224,11 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
                       <RepoRefSelect connections={connections} catalog={catalog} value={ref}
                         onChange={(next) => { void setFolder(key, next, usesMsg(folderName(key), next)) }}
                         disabled={busy === key}
-                        title={c ? `repository (${connectionLabel(c)})` : 'repository'} tip="repository Azure DevOps used by this folder"
+                        title={c ? `repository (${connectionLabel(c)})` : 'repository'} tip={t('repository Azure DevOps used by this folder')}
                         style={{ flex: '1 1 180px' }} />
-                      <Btn onClick={() => { void setFolder(key, null, 'cartella dimenticata') }} disabled={busy === key}
-                        title="dimentica" data-tip-desc="forgets this folder: next time it looks for the repository with its own name">
-                        {busy === key ? <Loader2 size={11} style={spin} /> : <Eraser size={11} />} dimentica
+                      <Btn onClick={() => { void setFolder(key, null, t('folder forgotten')) }} disabled={busy === key}
+                        title={t('forget')} data-tip-desc={t('forgets this folder: next time it looks for the repository with its own name')}>
+                        {busy === key ? <Loader2 size={11} style={spin} /> : <Eraser size={11} />} {t('forget')}
                       </Btn>
                     </div>
                   </div>
@@ -238,12 +241,12 @@ export function FoldersPage({ repoPath, onOpenPage }: { repoPath: string | null;
 
       {catalogErrors.length > 0 && folder.status !== 'error' && (
         <Notice tone="warning">
-          repository non lette da {catalogErrors.map(x => `${connectionLabel(x.c)} (${x.list.error})`).join(' · ')}
+          {t('repositories not read from {list}', { list: catalogErrors.map(x => `${connectionLabel(x.c)} (${x.list.error})`).join(' · ') })}
         </Notice>
       )}
 
       <Notice tone="info" icon={<GitFork size={12} />}>
-        un worktree usa la repository della sua cartella principale. Le scelte sono condivise da tutte le finestre e le istanze dell'IDE.
+        {t('a worktree uses the repository of its main folder. The choices are shared by every window and instance of the IDE.')}
       </Notice>
     </>
   )

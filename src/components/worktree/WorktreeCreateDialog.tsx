@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { X } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface WorktreeCreateDialogProps {
   repoPath: string
@@ -13,6 +14,7 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
   const [path, setPath] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const t = useI18n()
 
   if (!isOpen) return null
 
@@ -54,8 +56,8 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
           alignItems: 'center',
           marginBottom: '20px'
         }}>
-          <h3 style={{ margin: 0, fontSize: 'calc(15px * var(--ui-text-scale, 1))' }}>Nuovo Worktree</h3>
-          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog" style={{
+          <h3 style={{ margin: 0, fontSize: 'calc(15px * var(--ui-text-scale, 1))' }}>{t('new worktree')}</h3>
+          <button onClick={onClose} title={t('close')} data-tip-desc={t('close this panel or dialog')} style={{
             background: 'transparent',
             border: 'none',
             color: 'var(--text-secondary)',
@@ -72,17 +74,17 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
               type="text"
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
-              placeholder="es. feature/1234"
+              placeholder={t('e.g. {example}', { example: 'feature/1234' })}
               style={inputStyle}
             />
           </label>
           <label style={{ fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
-            Percorso
+            {t('path')}
             <input
               type="text"
               value={path}
               onChange={(e) => setPath(e.target.value)}
-              placeholder="es. C:\Source\Repos\MyRepo\.worktrees\feature\1234"
+              placeholder={t('e.g. {example}', { example: 'C:\\Source\\Repos\\MyRepo\\.worktrees\\feature\\1234' })}
               style={inputStyle}
             />
           </label>
@@ -114,7 +116,7 @@ export function WorktreeCreateDialog({ repoPath, isOpen, onClose, onCreated }: W
               fontWeight: 500
             }}
           >
-            {isLoading ? 'Creazione...' : 'Crea Worktree'}
+            {isLoading ? t('creating...') : t('create worktree')}
           </button>
         </div>
       </div>

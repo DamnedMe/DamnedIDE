@@ -19,14 +19,14 @@ test('a single cell and a whole column can be copied with Ctrl+C and from the co
   await cell(page, 0, 'Total').click({ modifiers: ['Alt'] })
   await page.keyboard.press('Control+C')
   await expect.poll(() => lastCopy(page)).toBe('99.5\n12')
-  await expect(page.getByText('colonna «Total» copiata: 2 valori')).toBeVisible()
+  await expect(page.getByText('column «Total» copied: 2 values')).toBeVisible()
 
   // context menu of a cell
   await cell(page, 1, 'CustomerId').click({ button: 'right' })
-  await page.getByText('copia valore cella', { exact: true }).click()
+  await page.getByText('copy cell value', { exact: true }).click()
   await expect.poll(() => lastCopy(page)).toBe('2')
   await cell(page, 1, 'CustomerId').click({ button: 'right' })
-  await page.getByText('copia colonna «CustomerId» (2 valori)', { exact: true }).click()
+  await page.getByText('copy column «CustomerId» (2 values)', { exact: true }).click()
   await expect.poll(() => lastCopy(page)).toBe('1\n2')
 
   // several rows: Ctrl+C still copies the rows with header

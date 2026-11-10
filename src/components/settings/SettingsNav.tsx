@@ -6,6 +6,7 @@ import {
 } from '@/components/icons'
 import type { AppIcon } from '@/components/icons'
 import type { SettingsPageId } from '../../store'
+import { useI18n } from '../../i18n'
 import { px } from './ui'
 
 export interface SettingsGroup {
@@ -13,6 +14,7 @@ export interface SettingsGroup {
   label: string
 }
 
+// labels and descriptions are English: translated at render with t()
 export interface SettingsPageMeta {
   id: SettingsPageId
   group: string
@@ -25,86 +27,86 @@ export interface SettingsPageMeta {
 }
 
 export const SETTINGS_GROUPS: SettingsGroup[] = [
-  { id: 'general', label: 'Generale' },
-  { id: 'appearance', label: 'Aspetto' },
+  { id: 'general', label: 'General' },
+  { id: 'appearance', label: 'Appearance' },
   { id: 'editor', label: 'Editor' },
-  { id: 'terminal', label: 'Terminale' },
+  { id: 'terminal', label: 'Terminal' },
   { id: 'git', label: 'Git' },
   { id: 'ado', label: 'Azure DevOps' },
   { id: 'ai', label: 'AI' },
-  { id: 'devices', label: 'Dispositivi' }
+  { id: 'devices', label: 'Devices' }
 ]
 
 export const SETTINGS_PAGE_META: SettingsPageMeta[] = [
   {
-    id: 'updates', group: 'general', label: 'Aggiornamenti', icon: RefreshCw,
-    description: 'versione installata e aggiornamenti automatici da GitHub',
+    id: 'updates', group: 'general', label: 'Updates', icon: RefreshCw,
+    description: 'installed version and automatic updates from GitHub',
     keywords: 'aggiornamenti versione ota update updates installa scarica release github riavvia'
   },
   {
-    id: 'language', group: 'general', label: 'Lingua', icon: Languages,
-    description: "lingua dell'interfaccia dell'IDE",
+    id: 'language', group: 'general', label: 'Language', icon: Languages,
+    description: 'language of the IDE interface',
     keywords: 'lingua language italiano english inglese traduzione'
   },
   {
-    id: 'theme', group: 'appearance', label: 'Tema', icon: Sun,
-    description: 'tema scuro o chiaro, colore primario, lato del menu laterale e tema standard',
+    id: 'theme', group: 'appearance', label: 'Theme', icon: Sun,
+    description: 'dark or light theme, primary color, side of the side menu and standard theme',
     keywords: 'tema theme scuro chiaro dark light colore primario accento accent standard menu laterale sidebar sinistra destra left right layout'
   },
   {
-    id: 'text', group: 'appearance', label: 'Testo e icone', icon: Type,
-    description: "dimensione del testo e delle icone, font dell'interfaccia",
+    id: 'text', group: 'appearance', label: 'Text and icons', icon: Type,
+    description: 'size of the text and icons, interface font',
     keywords: 'testo text font dimensione size carattere icone icon interfaccia famiglia family google fonts'
   },
   {
-    id: 'colors', group: 'appearance', label: 'Colori', icon: Palette,
-    description: "colori della sintassi nell'editor, per il tema attivo",
+    id: 'colors', group: 'appearance', label: 'Colors', icon: Palette,
+    description: 'syntax colors in the editor, for the active theme',
     keywords: 'colori colors sintassi syntax editor keyword parole chiave stringhe commenti tipi metodi palette'
   },
   {
     id: 'editor', group: 'editor', label: 'Editor', icon: PenLine,
-    description: "comportamento dell'editor di codice",
+    description: 'behavior of the code editor',
     keywords: 'editor minimap tab spazi indentazione numeri di riga line numbers a capo word wrap legature ligatures salvataggio automatico auto save scorciatoie navigazione keybindings'
   },
   {
-    id: 'terminal', group: 'terminal', label: 'Terminale', icon: TerminalSquare,
-    description: 'dimensione del testo dei terminali integrati',
+    id: 'terminal', group: 'terminal', label: 'Terminal', icon: TerminalSquare,
+    description: 'text size of the integrated terminals',
     keywords: 'terminale terminal console font dimensione size zoom ctrl rotellina xterm'
   },
   {
     id: 'git', group: 'git', label: 'Git', icon: GitBranch,
-    description: 'client GitTree aperto dalla voce Git e lista delle modifiche',
+    description: 'GitTree client opened by the Git entry and the changes list',
     // no « path »: words match by prefix, « pat » must find only the PAT page
     keywords: 'git gittree client eseguibile executable percorso scarica download changes modifiche file nome cartella folder gruppi raggruppa tipologia worktree'
   },
   {
-    id: 'ado-connections', group: 'ado', label: 'Connessioni', icon: Cloud,
-    description: 'organization, project e PAT di Azure DevOps',
+    id: 'ado-connections', group: 'ado', label: 'Connections', icon: Cloud,
+    description: 'Azure DevOps organization, project and PAT',
     keywords: 'azure devops ado connessioni connection organization organizzazione project progetto pat token personal access'
   },
   {
-    id: 'ado-folders', group: 'ado', label: 'Repository per cartella', icon: FolderGit2,
-    description: 'quale repository Azure DevOps usa ogni cartella aperta',
+    id: 'ado-folders', group: 'ado', label: 'Repositories by folder', icon: FolderGit2,
+    description: 'which Azure DevOps repository each open folder uses',
     keywords: 'azure devops ado cartella cartelle folder repository repo mappatura worktree associazione'
   },
   {
-    id: 'ado-release', group: 'ado', label: 'Rilascio', icon: Rocket,
-    description: 'repository BE e FE promosse dal pannello Rilascio',
+    id: 'ado-release', group: 'ado', label: 'Release', icon: Rocket,
+    description: 'BE and FE repositories promoted from the Release panel',
     keywords: 'azure devops ado rilascio release promozione promote be fe backend frontend dev qa prod'
   },
   {
-    id: 'ai-agents', group: 'ai', label: 'Agenti', icon: Bot,
-    description: 'agenti AI della chat: accesso, verifica e modello',
+    id: 'ai-agents', group: 'ai', label: 'Agents', icon: Bot,
+    description: 'chat AI agents: access, check and model',
     keywords: 'ai agenti agents claude codex cursor opencode api key login modello model chat'
   },
   {
-    id: 'ai-mcp', group: 'ai', label: 'Server MCP', icon: PlugZap,
-    description: 'server di strumenti MCP (stdio) usati dagli agenti',
+    id: 'ai-mcp', group: 'ai', label: 'MCP servers', icon: PlugZap,
+    description: 'MCP tool servers (stdio) used by the agents',
     keywords: 'mcp server strumenti tools stdio plugin'
   },
   {
-    id: 'remote', group: 'devices', label: 'Accesso remoto', icon: Smartphone,
-    description: "DamnedCloud: associa un telefono e controlla l'IDE da remoto",
+    id: 'remote', group: 'devices', label: 'Remote access', icon: Smartphone,
+    description: 'DamnedCloud: pair a phone and control the IDE remotely',
     keywords: 'remoto remote dispositivi devices telefono phone mobile damnedcloud qr tailscale associa pairing'
   }
 ]
@@ -122,12 +124,14 @@ const fold = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').to
 /**
  * Pages where every word of the query starts a word of the label, group,
  * description or keywords (« pat » finds the PAT page, not « mappatura »).
+ * `t` adds the translated label, group and description: either language matches.
  */
-export function filterPages(query: string): SettingsPageMeta[] {
+export function filterPages(query: string, t: (key: string) => string = k => k): SettingsPageMeta[] {
   const words = fold(query).split(/[^\p{L}\p{N}]+/u).filter(Boolean)
   if (words.length === 0) return SETTINGS_PAGE_META
   return SETTINGS_PAGE_META.filter(p => {
-    const hay = fold(`${p.label} ${groupLabel(p.group)} ${p.description} ${p.keywords}`).split(/[^\p{L}\p{N}]+/u)
+    const texts = [p.label, groupLabel(p.group), p.description]
+    const hay = fold(`${texts.join(' ')} ${texts.map(x => t(x)).join(' ')} ${p.keywords}`).split(/[^\p{L}\p{N}]+/u)
     return words.every(w => hay.some(h => h.startsWith(w)))
   })
 }
@@ -146,7 +150,8 @@ interface NavProps {
 
 export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, compact }: NavProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
-  const pages = filterPages(query)
+  const t = useI18n()
+  const pages = filterPages(query, t)
 
   // the active page stays visible (also when another panel opened it): only the
   // list scrolls, scrollIntoView could move the overflow-hidden panel ancestors too
@@ -199,11 +204,11 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
           if (e.key === 'Enter' && pages[0]) { onSelect(pages[0].id); focusPage(pages[0].id) }
           if (e.key === 'ArrowDown' && pages[0]) { e.preventDefault(); onSelect(pages[0].id); focusPage(pages[0].id) }
         }}
-        placeholder="cerca nelle impostazioni"
-        aria-label="cerca nelle impostazioni"
+        placeholder={t('search settings')}
+        aria-label={t('search settings')}
         spellCheck={false}
-        title="cerca una pagina delle impostazioni"
-        data-tip-desc="filtra le pagine per nome e parole chiave (es. pat, font, worktree); Invio apre la prima"
+        title={t('search a settings page')}
+        data-tip-desc={t('filter the pages by name and keywords (e.g. pat, font, worktree); Enter opens the first')}
         style={{
           width: '100%', minHeight: px(28),
           padding: '0 calc(11px * var(--icon-zoom, 1) + 14px) 0 calc(12px * var(--icon-zoom, 1) + 14px)',
@@ -214,7 +219,7 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
         onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)' }}
       />
       {query && (
-        <button onClick={() => onQuery('')} title="cancella la ricerca" data-tip-desc="mostra di nuovo tutte le pagine"
+        <button onClick={() => onQuery('')} title={t('clear the search')} data-tip-desc={t('show all the pages again')}
           style={{ position: 'absolute', right: '4px', display: 'flex', padding: '3px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
           <X size={11} />
         </button>
@@ -234,8 +239,8 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
         onClick={() => onSelect(p.id)}
         aria-current={active ? 'page' : undefined}
         tabIndex={active || (!pages.some(x => x.id === page) && p.id === pages[0]?.id) ? 0 : -1}
-        title={p.label}
-        data-tip-desc={p.description}
+        title={t(p.label)}
+        data-tip-desc={t(p.description)}
         style={{
           display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0,
           width: compact ? 'auto' : '100%', textAlign: 'left',
@@ -253,7 +258,7 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
         onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
       >
         <Icon size={13} style={{ flexShrink: 0, opacity: active ? 1 : 0.85 }} />
-        <span style={{ flex: compact ? undefined : 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</span>
+        <span style={{ flex: compact ? undefined : 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(p.label)}</span>
         {badge && (
           <span aria-label={badge.tip} title={badge.tip} style={{
             width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
@@ -266,8 +271,8 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
 
   const resetBtn = (
     <button onClick={onReset}
-      title="ripristina predefiniti"
-      data-tip-desc="riporta tema, colori, testo, editor, terminale, lingua, GitTree e lista changes ai valori iniziali (chiede conferma; Azure DevOps, agenti e dispositivi non cambiano)"
+      title={t('reset defaults')}
+      data-tip-desc={t('resets theme, colors, text, editor, terminal, language, GitTree and changes list to their initial values (asks for confirmation; Azure DevOps, agents and devices do not change)')}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexShrink: 0,
         width: compact ? undefined : '100%', padding: compact ? '0 8px' : '0 10px', minHeight: px(28),
@@ -277,13 +282,13 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
       onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--error-color)'; e.currentTarget.style.color = 'var(--error-color)'; e.currentTarget.style.background = 'var(--error-bg)' }}
       onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent' }}>
       <RotateCcw size={11} />
-      {!compact && 'ripristina predefiniti'}
+      {!compact && t('reset defaults')}
     </button>
   )
 
   const empty = (
     <div style={{ padding: compact ? '4px 2px' : '14px 10px', color: 'var(--text-muted)', fontSize: px(10), fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>
-      nessuna pagina per «{query.trim()}»
+      {t('no page for «{query}»', { query: query.trim() })}
     </div>
   )
 
@@ -294,7 +299,7 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
           {search}
           {resetBtn}
         </div>
-        <div ref={listRef} role="navigation" aria-label="pagine delle impostazioni" onKeyDown={onListKey}
+        <div ref={listRef} role="navigation" aria-label={t('settings pages')} onKeyDown={onListKey}
           style={{ position: 'relative', display: 'flex', gap: '5px', overflowX: 'auto', paddingBottom: '2px' }}>
           {pages.length === 0 ? empty : pages.map(item)}
         </div>
@@ -309,21 +314,21 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
       background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)'
     }}>
       <div style={{ padding: '12px 10px 8px', flexShrink: 0 }}>{search}</div>
-      <div ref={listRef} role="navigation" aria-label="pagine delle impostazioni" onKeyDown={onListKey}
+      <div ref={listRef} role="navigation" aria-label={t('settings pages')} onKeyDown={onListKey}
         style={{ position: 'relative', flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 8px 10px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
         {pages.length === 0 && empty}
         {SETTINGS_GROUPS.map(g => {
           const inGroup = pages.filter(p => p.group === g.id)
           if (inGroup.length === 0) return null
           return (
-            <div key={g.id} role="group" aria-label={g.label} style={{ display: 'flex', flexDirection: 'column', gap: '1px', paddingTop: '6px' }}>
+            <div key={g.id} role="group" aria-label={t(g.label)} style={{ display: 'flex', flexDirection: 'column', gap: '1px', paddingTop: '6px' }}>
               {/* a group with one page needs no heading: the page carries the same name */}
               {SETTINGS_PAGE_META.filter(p => p.group === g.id).length > 1 && (
                 <div style={{
                   padding: '6px 10px 3px', fontSize: px(9), fontWeight: 700, color: 'var(--text-muted)',
                   fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.6px'
                 }}>
-                  {g.label}
+                  {t(g.label)}
                 </div>
               )}
               {inGroup.map(item)}

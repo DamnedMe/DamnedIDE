@@ -1,18 +1,23 @@
 import { useState } from 'react'
 import { Loader2, X, GitBranch, FolderGit2, Bug, Sparkles, Layers } from '@/components/icons'
-import { useI18n } from '../../i18n'
+import { useI18n, tr } from '../../i18n'
 import { joinPath } from '../../utils/paths'
+import { useSettingsStore } from '../../store'
+import { DEFAULT_WORKTREE_LAYOUT, isAbsolutePath } from './worktree-cleanup'
 import type { WorktreeEntry } from '../../types/worktree'
 
 interface NewWorktreeDialogProps {
   repoPath: string
+  /** where a relative worktree root is resolved: the main checkout (default: repoPath), so a
+   *  linked worktree opened as the repository does not get the new worktrees nested inside it */
+  basePath?: string
   /** other worktrees: their branches can be used as the base (stacked worktree) */
   worktrees?: WorktreeEntry[]
   onClose: () => void
   onCreated: () => void
 }
 
-export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: NewWorktreeDialogProps) {
+export function NewWorktreeDialog({ repoPath, basePath = repoPath, worktrees, onClose, onCreated }: NewWorktreeDialogProps) {
   const [id, setId] = useState('')
   const [wtType, setWtType] = useState<'feature' | 'bugfix'>('feature')
   const [base, setBase] = useState('')
@@ -20,8 +25,11 @@ export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: N
   const [error, setError] = useState<string | null>(null)
   const t = useI18n()
 
+  // Settings › Git › worktree: root (relative to the main checkout unless absolute) and the type subfolder
+  const layout = useSettingsStore(s => s.settings.worktreeLayout) ?? DEFAULT_WORKTREE_LAYOUT
+  const rootDir = isAbsolutePath(layout.root) ? layout.root : joinPath(basePath, layout.root.trim().replace(/^\.(?:[\\/]|$)/, ''))
   const branch = id.trim() ? `${wtType}/${id.trim()}` : ''
-  const worktreePath = id.trim() ? joinPath(repoPath, '.worktrees', wtType, id.trim()) : ''
+  const worktreePath = id.trim() ? joinPath(rootDir, wtType === 'feature' ? layout.pbiFolder : layout.bugFolder, id.trim()) : ''
 
   // candidate bases: every other worktree's branch (excluding the one being created)
   const baseOptions = (worktrees || [])
@@ -37,7 +45,7 @@ export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: N
       await window.electronAPI.worktree.add(repoPath, branch, worktreePath, base || undefined)
       onCreated()
     } catch (e) {
-      setError((e as Error).message || 'Errore durante la creazione del worktree')
+      setError((e as Error).message || tr('error while creating the worktree'))
     } finally {
       setIsCreating(false)
     }
@@ -86,7 +94,7 @@ export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: N
             <FolderGit2 size={15} style={{ color: 'var(--accent-color)' }} />
             {t('new worktree')}
           </h3>
-          <button onClick={onClose} title={t('cancel')} data-tip-desc="close the dialog"
+          <button onClick={onClose} title={t('cancel')} data-tip-desc={t('close the dialog')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -107,7 +115,7 @@ export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: N
           <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             {t('PBI id')}
             <input value={id} onChange={(e) => setId(e.target.value.replace(/\D/g, ''))}
-              placeholder="es. 3404"
+              placeholder={t('e.g. {example}', { example: '3404' })}
               inputMode="numeric"
               style={{
                 display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
@@ -124,14 +132,14 @@ export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: N
           <label style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>
             base
             <select value={base} onChange={(e) => setBase(e.target.value)}
-              title="branch da cui nasce il nuovo worktree" data-tip-desc="start point of the new branch: develop or another branch (stacked worktree)"
+              title={t('branch the new worktree starts from')} data-tip-desc={t('start point of the new branch: develop or another branch (stacked worktree)')}
               style={{
                 display: 'block', width: '100%', marginTop: '4px', padding: '7px 10px',
                 background: 'var(--bg-input)', border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
                 fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', boxSizing: 'border-box', outline: 'none'
               }}>
-              <option value="">develop (default)</option>
+              <option value="">develop ({t('default')})</option>
               {baseOptions.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </label>
@@ -145,8 +153,8 @@ export function NewWorktreeDialog({ repoPath, worktrees, onClose, onCreated }: N
             }}>
               <Layers size={12} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>
-                worktree impilato: <b>{branch || 'nuovo branch'}</b> nascerà da <b>{base}</b>, non da develop.
-                Il completamento aprirà la PR verso {base}.
+                {t('stacked worktree:')} <b>{branch || t('new branch')}</b> {t('will start from')} <b>{base}</b>,{' '}
+                {t('not from develop. Completing it will open the PR towards {base}.', { base })}
               </span>
             </div>
           )}

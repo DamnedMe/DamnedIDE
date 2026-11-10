@@ -1,5 +1,6 @@
 import { AdoPullRequest } from '../../types/ado'
 import { GitPullRequest, CheckCheck, CircleDot, ThumbsDown } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface PullRequestListProps {
   pullRequests: AdoPullRequest[]
@@ -8,6 +9,7 @@ interface PullRequestListProps {
 }
 
 export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequestListProps) {
+  const t = useI18n()
   if (pullRequests.length === 0) {
     return (
       <div style={{
@@ -19,7 +21,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
         color: 'var(--text-secondary)',
         fontSize: 'calc(12px * var(--ui-text-scale, 1))'
       }}>
-        Nessuna pull request attiva
+        {t('No active pull requests')}
       </div>
     )
   }
@@ -64,7 +66,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
                 background: 'var(--warning-bg)', color: 'var(--warning-color)',
                 fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)'
               }}>
-                <CheckCheck size={9} /> approval
+                <CheckCheck size={9} /> {t('approval')}
               </span>
             )}
             {pr.myVote >= 5 && (
@@ -74,7 +76,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
                 background: 'var(--success-bg)', color: 'var(--success-color)',
                 fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)'
               }}>
-                <CheckCheck size={9} /> approved
+                <CheckCheck size={9} /> {t('approved')}
               </span>
             )}
             {pr.myVote <= -5 && (
@@ -84,7 +86,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
                 background: 'var(--error-bg)', color: 'var(--error-color)',
                 fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)'
               }}>
-                <ThumbsDown size={9} /> rejected
+                <ThumbsDown size={9} /> {t('rejected')}
               </span>
             )}
             {pr.status === 'completed' && (
@@ -93,7 +95,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
                 background: 'var(--bg-tag)', color: 'var(--accent-color)',
                 fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0
               }}>
-                completed
+                {t('completed')}
               </span>
             )}
             {pr.isDraft && (
@@ -102,7 +104,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
                 background: 'var(--bg-subtle)', color: 'var(--text-muted)',
                 fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0
               }}>
-                draft
+                {t('draft')}
               </span>
             )}
           </div>
@@ -141,7 +143,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
             background: 'var(--warning-bg)', color: 'var(--warning-color)',
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontWeight: 700, fontFamily: 'var(--font-mono)'
           }}>
-            <CircleDot size={9} /> {needsApproval.length} da approvare
+            <CircleDot size={9} /> {t('{n} to approve', { n: needsApproval.length })}
           </span>
         )}
       </div>
@@ -154,7 +156,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
             textTransform: 'uppercase', letterSpacing: '0.5px',
             background: 'var(--warning-bg)'
           }}>
-            richiedono la tua approvazione
+            {t('need your approval')}
           </div>
           {needsApproval.map(renderItem)}
         </>
@@ -166,7 +168,7 @@ export function PullRequestList({ pullRequests, onSelect, selectedId }: PullRequ
             color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
             textTransform: 'uppercase', letterSpacing: '0.5px'
           }}>
-            attive
+            {t('active PRs')}
           </div>
           {others.map(renderItem)}
         </>

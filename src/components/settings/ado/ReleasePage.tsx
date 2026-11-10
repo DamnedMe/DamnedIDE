@@ -7,6 +7,7 @@ import type { PromotionConfig, ReleaseStage } from '../../../shared/adoPromotion
 import { releaseRepos, sameName, siblingRepos, withBeRepo } from '../../../shared/adoSettings'
 import type { AdoConnectionConfig } from '../../../shared/adoSettings'
 import { useAdoFolder } from '../../../hooks/useAdoFolder'
+import { tr, useI18n } from '../../../i18n'
 import { Btn, Card, CardBody, Chip, Loading, Notice, Row, SelectInput, ipcMessage, px } from '../ui'
 import { RepoNameSelect, reposOf, useCatalogOnMount } from './adoUi'
 
@@ -22,6 +23,7 @@ const STAGE_OPTIONS = (Object.entries(RELEASE_STAGE_LABELS) as [ReleaseStage, st
  * same setRelease the panel uses). Every change is saved at once.
  */
 export function ReleasePage({ repoPath, onOpenPage }: { repoPath: string | null; onOpenPage: (page: SettingsPageId) => void }) {
+  const t = useI18n()
   const settings = useAdoSettingsStore(s => s.settings)
   const catalog = useAdoSettingsStore(s => s.catalog)
   const catalogLoading = useAdoSettingsStore(s => s.catalogLoading)
@@ -43,7 +45,7 @@ export function ReleasePage({ repoPath, onOpenPage }: { repoPath: string | null;
       await useAdoSettingsStore.getState().load()
       showToast(message)
     } catch (e) {
-      showToast(ipcMessage(e, 'salvataggio fallito'), 'error')
+      showToast(ipcMessage(e, tr('save failed')), 'error')
     } finally {
       setSaving(null)
     }
@@ -68,17 +70,17 @@ export function ReleasePage({ repoPath, onOpenPage }: { repoPath: string | null;
     const setBe = (v: string) => {
       // FE never equals BE: a saved FE that became the BE goes back to automatic
       const next = withBeRepo(config, v === AUTO ? undefined : v)
-      void save(key, next, v === AUTO ? 'BE: repository della cartella aperta' : `BE di ${c.project}: ${v}`)
+      void save(key, next, v === AUTO ? t("BE: the current folder's repository") : t('BE of {project}: {repo}', { project: c.project, repo: v }))
     }
     const setFe = (v: string) => {
       const next: PromotionConfig = { ...(config ?? {}) }
       if (v === AUTO) delete next.feRepo
       else next.feRepo = v === NONE ? '' : v
-      void save(key, next, v === AUTO ? 'FE automatico' : v === NONE ? `${c.project}: nessun FE` : `FE di ${c.project}: ${v}`)
+      void save(key, next, v === AUTO ? t('automatic FE') : v === NONE ? t('{project}: no FE', { project: c.project }) : t('FE of {project}: {repo}', { project: c.project, repo: v }))
     }
     const setStage = (v: string) => {
       const stage = v as ReleaseStage
-      void save(key, { ...(config ?? {}), stage }, `rilascio di ${c.project}: ${RELEASE_STAGE_LABELS[stage]}`)
+      void save(key, { ...(config ?? {}), stage }, t('release of {project}: {stage}', { project: c.project, stage: RELEASE_STAGE_LABELS[stage] }))
     }
 
     const overrides = Object.keys(config?.branches ?? {})
@@ -87,55 +89,55 @@ export function ReleasePage({ repoPath, onOpenPage }: { repoPath: string | null;
         title={<><span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{c.organization} /</span> {c.project}</>}
         icon={<Cloud size={12} />}
         actions={c.id === currentId
-          ? <Chip tone="accent" icon={<FolderOpen size={9} />} title={`usata da ${folder.folderName}`} tip="the open folder uses this connection">cartella aperta</Chip>
+          ? <Chip tone="accent" icon={<FolderOpen size={9} />} title={t('used by {name}', { name: folder.folderName })} tip={t('the open folder uses this connection')}>{t('current folder')}</Chip>
           : undefined}
       >
-        <Row icon={<Server size={13} />} label="repository BE"
-          hint={folderRepo ? `automatico: ${folderRepo}, la repository della cartella aperta` : 'automatico: la repository della cartella da cui si apre il Rilascio'}>
+        <Row icon={<Server size={13} />} label={t('BE repository')}
+          hint={folderRepo ? t("automatic: {repo}, the current folder's repository", { repo: folderRepo }) : t('automatic: the repository of the folder the Release opens from')}>
           <RepoNameSelect repos={repos} catalogRead={!!list?.ok} value={beValue} onChange={setBe}
-            special={[{ value: AUTO, label: folderRepo ? `automatico (${folderRepo})` : 'automatico (cartella aperta)' }]}
-            title="repository del backend" tip="saved for this project; the Release panel uses it as BE"
+            special={[{ value: AUTO, label: folderRepo ? t('automatic ({repo})', { repo: folderRepo }) : t('automatic (current folder)') }]}
+            title={t('backend repository')} tip={t('saved for this project; the Release panel uses it as BE')}
             style={{ minWidth: px(200) }} />
         </Row>
-        <Row icon={<MonitorSmartphone size={13} />} label="repository FE"
-          hint={autoFe ? `automatico: ${autoFe}, associata a un'altra cartella di questo project` : "automatico: una repository associata a un'altra cartella di questo project"}>
+        <Row icon={<MonitorSmartphone size={13} />} label={t('FE repository')}
+          hint={autoFe ? t('automatic: {repo}, mapped to another folder of this project', { repo: autoFe }) : t('automatic: a repository mapped to another folder of this project')}>
           <RepoNameSelect repos={repos.filter(r => !(eff.be && sameName(r, eff.be)))} catalogRead={!!list?.ok} value={feValue} onChange={setFe}
             special={[
-              { value: AUTO, label: autoFe ? `automatico (${autoFe})` : 'automatico (nessuna proposta)' },
-              { value: NONE, label: 'nessun FE' }
+              { value: AUTO, label: autoFe ? t('automatic ({repo})', { repo: autoFe }) : t('automatic (no suggestion)') },
+              { value: NONE, label: t('no FE') }
             ]}
-            title="repository del frontend" tip="saved for this project; never the same as the BE"
+            title={t('frontend repository')} tip={t('saved for this project; never the same as the BE')}
             style={{ minWidth: px(200) }} />
         </Row>
-        <Row icon={<Link2 size={13} />} label="fase predefinita"
-          hint="quella con cui si apre il pannello Rilascio; develop → qa → prod crea la PR qa → prod da sola appena la PR develop → qa è completata">
+        <Row icon={<Link2 size={13} />} label={t('default stage')}
+          hint={t('the one the Release panel opens on; develop → qa → prod creates the qa → prod PR by itself as soon as the develop → qa PR is completed')}>
           <SelectInput value={config?.stage ?? 'dev-qa'} options={STAGE_OPTIONS} onChange={setStage}
-            title="fase di rilascio predefinita" tip="saved for this project; the Release panel changes it too"
+            title={t('default release stage')} tip={t('saved for this project; the Release panel changes it too')}
             style={{ minWidth: px(200) }} />
         </Row>
         <CardBody>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', fontSize: px(10), fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
             <Rocket size={11} />
-            rilascio:
-            {eff.be ? <Chip tone="accent">BE {eff.be}</Chip> : <Chip>BE dalla cartella aperta</Chip>}
+            {t('release:')}
+            {eff.be ? <Chip tone="accent">BE {eff.be}</Chip> : <Chip>{t('BE from the current folder')}</Chip>}
             <ArrowRight size={10} />
-            {eff.fe ? <Chip tone="accent">FE {eff.fe}</Chip> : <Chip>nessun FE</Chip>}
-            {busy && <span>salvataggio…</span>}
+            {eff.fe ? <Chip tone="accent">FE {eff.fe}</Chip> : <Chip>{t('no FE')}</Chip>}
+            {busy && <span>{t('saving…')}</span>}
           </div>
-          {!list && catalogLoading && <Loading>lettura repository…</Loading>}
+          {!list && catalogLoading && <Loading>{t('reading repositories…')}</Loading>}
           {list && !list.ok && (
             <Notice tone="error" actions={
-              <Btn onClick={() => onOpenPage('ado-connections')} title="connessioni" data-tip-desc="Azure DevOps › Connessioni">
-                <Cloud size={11} /> connessioni
+              <Btn onClick={() => onOpenPage('ado-connections')} title={t('connections')} data-tip-desc={t('Azure DevOps › Connections')}>
+                <Cloud size={11} /> {t('connections')}
               </Btn>
             }>
-              repository non lette: {list.error}. Le scelte salvate restano valide.
+              {t('repositories not read: {error}. The saved choices stay valid.', { error: list.error })}
             </Notice>
           )}
           {overrides.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: px(9.5), fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
               <GitBranch size={11} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <span>branch scelti a mano per {overrides.join(', ')}: si cambiano nel pannello Rilascio</span>
+              <span>{t('branches picked by hand for {list}: they are changed in the Release panel', { list: overrides.join(', ') })}</span>
             </div>
           )}
         </CardBody>
@@ -143,24 +145,24 @@ export function ReleasePage({ repoPath, onOpenPage }: { repoPath: string | null;
     )
   }
 
-  if (!api) return <Notice tone="warning">impostazioni Azure DevOps non disponibili in questa finestra</Notice>
+  if (!api) return <Notice tone="warning">{t('Azure DevOps settings not available in this window')}</Notice>
 
   return (
     <>
       {!settings ? (
-        <Card><Loading>lettura impostazioni…</Loading></Card>
+        <Card><Loading>{t('reading settings…')}</Loading></Card>
       ) : connections.length === 0 ? (
         <Notice tone="warning" actions={
-          <Btn variant="primary" onClick={() => onOpenPage('ado-connections')} title="aggiungi connessione" data-tip-desc="Azure DevOps › Connessioni">
-            <Cloud size={11} /> configura una connessione
+          <Btn variant="primary" onClick={() => onOpenPage('ado-connections')} title={t('add connection')} data-tip-desc={t('Azure DevOps › Connections')}>
+            <Cloud size={11} /> {t('set up a connection')}
           </Btn>
         }>
-          nessuna connessione Azure DevOps configurata: il rilascio usa la connessione della cartella aperta.
+          {t("no Azure DevOps connection configured: the release uses the current folder's connection.")}
         </Notice>
       ) : (
         <>
           <Notice tone="info" icon={<Rocket size={12} />}>
-            le stesse scelte del pannello Rilascio, per project: ogni modifica è salvata subito e vale per tutte le finestre e le istanze dell'IDE.
+            {t('the same choices as the Release panel, per project: every change is saved at once and applies to every window and instance of the IDE.')}
           </Notice>
           {ordered.map(renderConnection)}
         </>

@@ -1,4 +1,5 @@
 import { FileSearch, FileCode, X } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 export interface ReferenceHit {
   file: string
@@ -27,7 +28,9 @@ function displayPath(file: string, rootPath?: string | null): string {
   return file.replace(/\\/g, '/').split('/').filter(Boolean).slice(-3).join('/')
 }
 
-export function ReferencesModal({ symbol, hits, title = 'references', rootPath, onClose, onNavigate }: ReferencesModalProps) {
+export function ReferencesModal({ symbol, hits, title: titleProp, rootPath, onClose, onNavigate }: ReferencesModalProps) {
+  const t = useI18n()
+  const title = titleProp ?? t('references')
   const base = 'var(--text-primary)'
   return (
     <div style={{
@@ -53,7 +56,7 @@ export function ReferencesModal({ symbol, hits, title = 'references', rootPath, 
               {title} — <span style={{ color: 'var(--accent-color)' }}>{symbol}</span>
             </span>
           </h3>
-          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
+          <button onClick={onClose} title={t('close')} data-tip-desc={t('close this panel or dialog')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -68,13 +71,13 @@ export function ReferencesModal({ symbol, hits, title = 'references', rootPath, 
         <div style={{ flex: 1, overflow: 'auto', padding: '6px' }}>
           {hits.length === 0 && (
             <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
-              no references found for <span style={{ color: 'var(--accent-color)' }}>{symbol}</span>
+              {t('no references found for')} <span style={{ color: 'var(--accent-color)' }}>{symbol}</span>
             </div>
           )}
           {hits.map((h, i) => (
             <div key={i}
               onClick={() => onNavigate(h.file, h.line)}
-              title={h.file} data-tip-desc="open this file at the reference"
+              title={h.file} data-tip-desc={t('open this file at the reference')}
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
                 padding: '6px 10px', borderRadius: 'var(--radius-sm)',
@@ -85,7 +88,7 @@ export function ReferencesModal({ symbol, hits, title = 'references', rootPath, 
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
               <FileCode size={12} style={{ flexShrink: 0, color: 'var(--accent-color)' }} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayPath(h.file, rootPath)}</span>
-              <span style={{ flexShrink: 0, color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>line {h.line}</span>
+              <span style={{ flexShrink: 0, color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>{t('line {n}', { n: h.line })}</span>
             </div>
           ))}
         </div>

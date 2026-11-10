@@ -38,9 +38,10 @@ const r2 = await service.remove(repo, wt2, true)
 assert.equal(r2.ok, true, 'forced removal succeeds')
 assert.equal(existsSync(wt2), false, 'worktree folder deleted on force')
 
-// guard: removing the main repo only prunes, never deletes it
+// guard: the main repo is refused outright (git's first entry), never deleted
 const r3 = await service.remove(repo, repo, true)
-assert.equal(r3.ok, true)
+assert.equal(r3.ok, false)
+assert.equal(r3.skipped, true, 'refused before touching anything')
 assert.equal(existsSync(repo), true, 'main repository is never deleted')
 
 // locked folder fallback: moveToTrash frees the path, scheduleDelete cleans it

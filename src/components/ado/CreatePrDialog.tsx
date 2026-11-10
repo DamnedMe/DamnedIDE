@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, X, GitPullRequest, RotateCw } from '@/components/icons'
 import { useToastStore } from '../../store'
+import { tr, useI18n } from '../../i18n'
 
 interface CreatePrDialogProps {
   project: string
@@ -10,6 +11,7 @@ interface CreatePrDialogProps {
 }
 
 export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDialogProps) {
+  const t = useI18n()
   const [branches, setBranches] = useState<string[]>([])
   const [source, setSource] = useState('')
   const [target, setTarget] = useState('')
@@ -56,8 +58,8 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
       })
       if (result) {
         onCreated()
-        if (autoComplete && result.mode === 'open') showToast(`PR #${result.id} creata, auto-complete non armato: impostalo da Azure DevOps`, 'error')
-      } else setError('Errore durante la creazione della PR (controlla branches/policies).')
+        if (autoComplete && result.mode === 'open') showToast(tr('PR #{id} created, auto-complete not armed: set it in Azure DevOps', { id: result.id }), 'error')
+      } else setError(tr('Error while creating the PR (check branches/policies).'))
     } finally { setIsCreating(false) }
   }
 
@@ -79,9 +81,9 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <h3 style={{ margin: 0, fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <GitPullRequest size={15} style={{ color: 'var(--success-color)' }} />
-            new pull request
+            {t('new pull request')}
           </h3>
-          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
+          <button onClick={onClose} title={t('close')} data-tip-desc={t('close this panel or dialog')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '24px', height: '24px', background: 'transparent',
@@ -96,28 +98,28 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div>
-            {fieldLabel('source branch')}
+            {fieldLabel(t('source branch'))}
             <select value={source} onChange={(e) => setSource(e.target.value)} style={inputStyle}>
-              <option value="">select...</option>
+              <option value="">{t('select...')}</option>
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
           <div>
-            {fieldLabel('target branch')}
+            {fieldLabel(t('target branch'))}
             <select value={target} onChange={(e) => setTarget(e.target.value)} style={inputStyle}>
-              <option value="">select...</option>
+              <option value="">{t('select...')}</option>
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
           <div>
-            {fieldLabel('title')}
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="PR title"
+            {fieldLabel(t('title'))}
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('PR title')}
               spellCheck={false} style={inputStyle} />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              {fieldLabel('description')}
-              <button onClick={fillFromCommits} disabled={!source || !target || isLoadingCommits} title="fill from commits" data-tip-desc="fill the PR title and description from the commit messages"
+              {fieldLabel(t('description'))}
+              <button onClick={fillFromCommits} disabled={!source || !target || isLoadingCommits} title={t('fill from commits')} data-tip-desc={t('fill the PR title and description from the commit messages')}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '4px', background: 'none',
                   border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -126,18 +128,18 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
                   opacity: source && target ? 1 : 0.5
                 }}>
                 {isLoadingCommits ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> : <RotateCw size={9} />}
-                from commits
+                {t('from commits')}
               </button>
             </div>
             <textarea value={description} onChange={(e) => { setDescription(e.target.value); setDescriptionTouched(true) }}
-              placeholder="auto-filled from commits"
+              placeholder={t('auto-filled from commits')}
               spellCheck={false} rows={8}
               style={{ ...inputStyle, resize: 'vertical', minHeight: '110px', lineHeight: 1.5 }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <input type="checkbox" checked={autoComplete} onChange={(e) => setAutoComplete(e.target.checked)}
               style={{ accentColor: 'var(--accent-color)' }} />
-            <span style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>auto-complete when policies pass</span>
+            <span style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('auto-complete when policies pass')}</span>
           </div>
 
           {error && (
@@ -147,7 +149,7 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
           )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-            <button onClick={onClose} style={secondaryBtnStyle}>cancel</button>
+            <button onClick={onClose} style={secondaryBtnStyle}>{t('cancel')}</button>
             <button onClick={handleCreate} disabled={!source || !target || !title.trim() || isCreating}
               style={{
                 ...primaryBtnStyle,
@@ -155,7 +157,7 @@ export function CreatePrDialog({ project, repo, onClose, onCreated }: CreatePrDi
                 color: source && target && title.trim() ? 'var(--text-inverse)' : 'var(--text-muted)',
                 cursor: source && target && title.trim() ? 'pointer' : 'not-allowed'
               }}>
-              {isCreating ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : 'create'}
+              {isCreating ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : t('create')}
             </button>
           </div>
         </div>

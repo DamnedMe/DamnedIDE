@@ -1,6 +1,7 @@
 import { SqlConnection, SqlRecentConnection } from '../../types/sql'
 import { Clock, Database, Plus } from '@/components/icons'
 import { authShortLabel } from './sqlForm'
+import { useI18n } from '../../i18n'
 
 interface RecentConnectionsMenuProps {
   connections: SqlConnection[]
@@ -13,6 +14,7 @@ interface RecentConnectionsMenuProps {
 }
 
 export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent, onSelectSaved, onClose, anchor }: RecentConnectionsMenuProps) {
+  const t = useI18n()
   return (
     <>
       <div style={{ position: 'fixed', inset: 0, zIndex: 299 }} onClick={onClose} />
@@ -27,12 +29,12 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
           letterSpacing: '0.5px', color: 'var(--text-muted)',
           borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '6px'
         }}>
-          <Clock size={10} /> recent connections
+          <Clock size={10} /> {t('recent connections')}
         </div>
         <div style={{ maxHeight: '200px', overflow: 'auto' }}>
           {recent.length === 0 && (
             <div style={{ padding: '10px 12px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
-              no recent connections yet
+              {t('no recent connections yet')}
             </div>
           )}
           {recent.map((r, i) => (
@@ -60,7 +62,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
               borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)',
               display: 'flex', alignItems: 'center', gap: '6px'
             }}>
-              <Database size={10} /> saved connections
+              <Database size={10} /> {t('saved connections')}
             </div>
             <div style={{ maxHeight: '200px', overflow: 'auto' }}>
               {connections.map(c => (
@@ -79,7 +81,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
                     {c.label}
                   </span>
                   <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: c.isConnected ? 'var(--success-color)' : 'var(--text-muted)' }}>
-                    {c.isConnected ? 'connected' : 'disconnected'}
+                    {c.isConnected ? t('connected') : t('disconnected')}
                   </span>
                 </div>
               ))}
@@ -97,7 +99,7 @@ export function RecentConnectionsMenu({ connections, recent, onNew, onOpenRecent
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
             <Plus size={11} style={{ color: 'var(--accent-color)' }} />
-            new connection
+            {t('new connection')}
           </div>
         </div>
       </div>

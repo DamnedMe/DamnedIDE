@@ -3,6 +3,7 @@ import { GitFileStatus } from '../../types/git'
 import { FileDiffList } from '../git/FileDiffList'
 import { joinPath } from '../../utils/paths'
 import { ListPlus, RefreshCw, Loader2, GitCompare } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface ChangesPanelProps {
   repoPath: string
@@ -15,6 +16,7 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeFile, setActiveFile] = useState<string | null>(null)
+  const t = useI18n()
 
   const load = useCallback(async (initial = false) => {
     if (initial) setIsLoading(true)
@@ -142,16 +144,16 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
       }}>
         <GitCompare size={11} style={{ color: 'var(--accent-color)' }} />
         <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>
-          changes ({staged.length + unstaged.length})
+          {t('changes ({n})', { n: staged.length + unstaged.length })}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
-          <button onClick={handleStageAll} title="stage all changes" data-tip-desc="stage every modified file at once"
+          <button onClick={handleStageAll} title={t('stage all changes')} data-tip-desc={t('stage every modified file at once')}
             style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--success-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
             <ListPlus size={11} />
           </button>
-          <button onClick={() => load()} title="refresh" data-tip-desc="reload the current data from the repository"
+          <button onClick={() => load()} title={t('refresh')} data-tip-desc={t('reload the current data from the repository')}
             style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -160,11 +162,11 @@ export function ChangesPanel({ repoPath, onOpenDiff }: ChangesPanelProps) {
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        {renderZone('staged changes', staged, 'var(--success-color)')}
-        {renderZone('changes', unstaged, 'var(--warning-color)')}
+        {renderZone(t('staged changes'), staged, 'var(--success-color)')}
+        {renderZone(t('changes'), unstaged, 'var(--warning-color)')}
         {staged.length === 0 && unstaged.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-            no changes
+            {t('no changes')}
           </div>
         )}
       </div>

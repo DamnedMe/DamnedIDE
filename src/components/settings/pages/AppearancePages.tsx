@@ -21,7 +21,7 @@ export function ThemePage({ onOpenPage }: { onOpenPage: (page: SettingsPageId) =
     const lum = relativeLuminance(value)
     const isDark = s.theme === 'dark'
     if ((isDark && lum < 0.08) || (!isDark && lum > 0.92)) {
-      showToast(isDark ? 'colore troppo scuro per il tema scuro (bloccato)' : 'colore troppo chiaro per il tema chiaro (bloccato)', 'error')
+      showToast(isDark ? t('color too dark for the dark theme (blocked)') : t('color too light for the light theme (blocked)'), 'error')
       return
     }
     updateSettings({ accentColor: value })
@@ -30,41 +30,41 @@ export function ThemePage({ onOpenPage }: { onOpenPage: (page: SettingsPageId) =
   return (
     <>
       <Card>
-        <Row icon={<Sun size={13} />} label={t('theme')} hint="sfondo, testo e bordi di tutta l'IDE">
+        <Row icon={<Sun size={13} />} label={t('theme')} hint={t('background, text and borders of the whole IDE')}>
           <div style={{ display: 'flex', gap: '4px' }}>
             <ThemeBtn icon={<Moon size={11} />} label={t('dark')} active={s.theme === 'dark'} onClick={() => updateSettings({ theme: 'dark' })} />
             <ThemeBtn icon={<Sun size={11} />} label={t('light')} active={s.theme === 'light'} onClick={() => updateSettings({ theme: 'light' })} />
           </div>
         </Row>
-        <Row icon={<Columns2 size={13} />} label="menu laterale" hint="lato di worktree, explorer, branch, liste DevOps ed esplora SQL">
+        <Row icon={<Columns2 size={13} />} label={t('side menu')} hint={t('side of worktree, explorer, branches, DevOps lists and SQL explorer')}>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <ThemeBtn icon={<ArrowLeft size={11} />} label="sinistra" active={s.sidebarSide !== 'right'} onClick={() => updateSettings({ sidebarSide: 'left' })} />
-            <ThemeBtn icon={<ArrowRight size={11} />} label="destra" active={s.sidebarSide === 'right'} onClick={() => updateSettings({ sidebarSide: 'right' })} />
+            <ThemeBtn icon={<ArrowLeft size={11} />} label={t('left side')} active={s.sidebarSide !== 'right'} onClick={() => updateSettings({ sidebarSide: 'left' })} />
+            <ThemeBtn icon={<ArrowRight size={11} />} label={t('right side')} active={s.sidebarSide === 'right'} onClick={() => updateSettings({ sidebarSide: 'right' })} />
           </div>
         </Row>
-        <Row icon={<Palette size={13} />} label={t('primary color')} hint="evidenziazioni, pulsanti e selezioni; indipendente dal tema">
+        <Row icon={<Palette size={13} />} label={t('primary color')} hint={t('highlights, buttons and selections; independent of the theme')}>
           <ColorInput value={s.accentColor} onChange={handleAccentChange}
-            title="primary color (indipendente dal tema)" tip="accent color used across the IDE (independent of the theme)" />
+            title={t('primary color (independent of the theme)')} tip={t('accent color used across the IDE (independent of the theme)')} />
         </Row>
-        <Row icon={<Palette size={13} />} label={t('editor colors')} hint={`colori della sintassi per il tema ${s.theme === 'dark' ? 'scuro' : 'chiaro'}`}>
-          <Btn onClick={() => onOpenPage('colors')} title="apri i colori della sintassi" data-tip-desc="Aspetto › Colori">
-            modifica <ChevronRight size={11} />
+        <Row icon={<Palette size={13} />} label={t('editor colors')} hint={t('syntax colors for the {theme} theme', { theme: s.theme === 'dark' ? t('dark') : t('light') })}>
+          <Btn onClick={() => onOpenPage('colors')} title={t('open the syntax colors')} data-tip-desc={t('Appearance › Colors')}>
+            {t('edit')} <ChevronRight size={11} />
           </Btn>
         </Row>
       </Card>
 
-      <Card title="Tema standard" icon={<Save size={12} />}
-        description="il colore primario e i colori dell'editor salvati come riferimento: ci torni quando vuoi">
+      <Card title={t('Standard theme')} icon={<Save size={12} />}
+        description={t('the primary color and the editor colors saved as a reference: go back to them whenever you want')}>
         <CardBody>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <Btn onClick={() => { setThemeDefaults(); showToast('tema corrente salvato come standard') }}
-              title="salva colore primario e colori editor correnti come standard"
-              data-tip-desc="save the current accent color and editor colors as the standard theme">
+            <Btn onClick={() => { setThemeDefaults(); showToast(t('current theme saved as standard')) }}
+              title={t('save the current primary color and editor colors as standard')}
+              data-tip-desc={t('save the current accent color and editor colors as the standard theme')}>
               <Save size={11} /> {t('set current as standard theme')}
             </Btn>
-            <Btn onClick={() => { resetThemeToDefaults(); showToast('tema ripristinato allo standard') }}
-              title="ripristina colore primario e colori editor allo standard salvato"
-              data-tip-desc="restore the accent color and editor colors to the saved standard">
+            <Btn onClick={() => { resetThemeToDefaults(); showToast(t('theme restored to the standard')) }}
+              title={t('restore the primary color and editor colors to the saved standard')}
+              data-tip-desc={t('restore the accent color and editor colors to the saved standard')}>
               <RotateCcw size={11} /> {t('reset default theme settings')}
             </Btn>
           </div>
@@ -100,7 +100,7 @@ export function TextPage() {
       APP_FONT_CHOICES.some(c => c.value.toLowerCase() === name.toLowerCase())
     updateSettings({ customFonts: exists ? s.customFonts : [...s.customFonts, name], appFont: name })
     setNewFont('')
-    showToast(`font "${name}" applicato`)
+    showToast(t('font "{name}" applied', { name }))
   }
 
   const removeCustomFont = (name: string) => {
@@ -112,36 +112,36 @@ export function TextPage() {
 
   return (
     <>
-      <Card title="Dimensioni" icon={<Type size={12} />} description="valgono per tutta l'IDE: pannelli, editor, SQL">
-        <Row icon={<Type size={13} />} label={t('font size')} hint="testo dell'IDE e degli editor">
+      <Card title={t('Sizes')} icon={<Type size={12} />} description={t('they apply to the whole IDE: panels, editor, SQL')}>
+        <Row icon={<Type size={13} />} label={t('font size')} hint={t('text of the IDE and the editors')}>
           <RangeInput min={8} max={30} step={0.5} value={s.fontSize} onChange={(v) => updateSettings({ fontSize: v })}
-            title="dimensione del testo" tip="IDE and editor text size" />
+            title={t('text size')} tip={t('IDE and editor text size')} />
         </Row>
-        <Row icon={<Images size={13} />} label={t('icon size')} hint="icone della barra del titolo e dei pannelli">
+        <Row icon={<Images size={13} />} label={t('icon size')} hint={t('icons of the title bar and the panels')}>
           <RangeInput min={10} max={30} step={1} value={s.iconSize} onChange={(v) => updateSettings({ iconSize: Math.round(v) })}
-            title="dimensione delle icone" tip="icon size across the IDE" />
+            title={t('icon size')} tip={t('icon size across the IDE')} />
         </Row>
       </Card>
 
-      <Card title="Font" icon={<Type size={12} />} description="la famiglia usata dall'interfaccia; i terminali restano monospace">
+      <Card title="Font" icon={<Type size={12} />} description={t('the family used by the interface; terminals stay monospace')}>
         <Row icon={<Type size={13} />} label={t('interface font')}>
           <SelectInput value={s.appFont} onChange={(v) => updateSettings({ appFont: v })} options={fontChoices}
-            title="font dell'interfaccia" tip="family applied to the whole IDE" style={{ maxWidth: px(240) }} />
+            title={t('interface font')} tip={t('family applied to the whole IDE')} style={{ maxWidth: px(240) }} />
         </Row>
         <CardBody>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: px(10.5), fontFamily: 'var(--font-mono)' }}>
             <Plus size={12} /> {t('add font')}
-            <span style={{ color: 'var(--text-muted)', fontSize: px(9.5) }}>— Google Fonts o un font installato</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: px(9.5) }}>— {t('Google Fonts or an installed font')}</span>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <input value={newFont} onChange={(e) => setNewFont(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addCustomFont() }}
               placeholder={t('font family')}
-              title="nome della famiglia (Google Fonts o font installato)" data-tip-desc="type a font family name, e.g. Nunito or Fira Sans"
+              title={t('family name (Google Fonts or installed font)')} data-tip-desc={t('type a font family name, e.g. Nunito or Fira Sans')}
               style={{ ...inputStyle, flex: 1 }}
             />
             <Btn variant="primary" onClick={addCustomFont} disabled={!newFont.trim()}
-              title="aggiungi e applica il font" data-tip-desc="add the typed font family and apply it">
+              title={t('add and apply the font')} data-tip-desc={t('add the typed font family and apply it')}>
               {t('add')}
             </Btn>
           </div>
@@ -155,7 +155,7 @@ export function TextPage() {
                   borderRadius: '999px', color: 'var(--text-primary)', fontSize: px(9.5), fontFamily: 'var(--font-mono)'
                 }}>
                   {f}
-                  <button onClick={() => removeCustomFont(f)} title={`${t('remove')} ${f}`} data-tip-desc="remove this custom font"
+                  <button onClick={() => removeCustomFont(f)} title={`${t('remove')} ${f}`} data-tip-desc={t('remove this custom font')}
                     style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '1px' }}
                     onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -206,11 +206,11 @@ export function ColorsPage() {
 
   return (
     <Card
-      title={`${t('editor colors')} — ${s.theme}`}
+      title={`${t('editor colors')} — ${s.theme === 'dark' ? t('dark') : t('light')}`}
       icon={<Palette size={12} />}
-      description="cambia tema in Aspetto › Tema per modificare l'altra tavolozza"
+      description={t('switch theme in Appearance › Theme to edit the other palette')}
       actions={
-        <Btn onClick={resetColors} title="reimposta i colori della sintassi" data-tip-desc="restore the default syntax colors of this theme">
+        <Btn onClick={resetColors} title={t('reset the syntax colors')} data-tip-desc={t('restore the default syntax colors of this theme')}>
           <RotateCcw size={11} /> {t('reset colors')}
         </Btn>
       }
@@ -218,8 +218,8 @@ export function ColorsPage() {
       {COLOR_ENTRIES.map(entry => (
         <Row key={entry.key}
           icon={<span style={{ width: '10px', height: '10px', borderRadius: '3px', background: colors[entry.key], border: '1px solid var(--border-color)', display: 'block' }} />}
-          label={<span style={{ color: colors[entry.key] }}>{entry.label}</span>}>
-          <ColorInput value={colors[entry.key]} onChange={(v) => setColor(entry.key, v)} title={entry.label} tip="color of this token kind in the code editors" />
+          label={<span style={{ color: colors[entry.key] }}>{t(entry.label)}</span>}>
+          <ColorInput value={colors[entry.key]} onChange={(v) => setColor(entry.key, v)} title={t(entry.label)} tip={t('color of this token kind in the code editors')} />
         </Row>
       ))}
     </Card>

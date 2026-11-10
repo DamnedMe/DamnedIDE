@@ -7,6 +7,7 @@ import {
 } from '@/components/icons'
 import { layoutSqlDiagram, TableLayout } from './sqlDiagramLayout'
 import { useSettingsStore } from '../../store'
+import { tr, useI18n } from '../../i18n'
 
 interface DiagramViewProps {
   connId: string
@@ -52,6 +53,7 @@ function shortName(name: string, max = 31) {
 }
 
 export function DiagramView({ connId, database, tables, onClose, onRunQuery, trackOperation }: DiagramViewProps) {
+  const t = useI18n()
   const [data, setData] = useState<SqlDiagramData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -84,7 +86,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
     if (!pending) {
       const request = () => window.electronAPI.sql.diagram(connId, database, tables)
       pending = trackOperation
-        ? trackOperation(`Generating diagram for ${database}`, request)
+        ? trackOperation(tr('Generating diagram for {database}', { database }), request)
         : request()
       diagramRequests.set(key, pending)
       if (diagramRequests.size > 8) diagramRequests.delete(diagramRequests.keys().next().value as string)
@@ -377,7 +379,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
           <span style={{ minWidth: 0 }}>
             <strong style={{ display: 'block', fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', fontWeight: 600 }}>{database}</strong>
             <span style={{ display: 'block', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              {data ? `${data.tables.length} tables · ${data.edges.length} relations` : 'database diagram'}
+              {data ? t('{tables} tables · {relations} relations', { tables: data.tables.length, relations: data.edges.length }) : t('database diagram')}
             </span>
           </span>
         </div>
@@ -388,11 +390,11 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
         }}>
           <Search size={12} style={{ position: 'absolute', left: '9px', color: 'var(--text-muted)' }} />
           <input
-            aria-label="search diagram tables"
+            aria-label={t('search diagram tables')}
             value={search}
             onChange={event => setSearch(event.target.value)}
             onKeyDown={event => { if (event.key === 'Enter' && searchMatches[0]) focusTable(searchMatches[0]) }}
-            placeholder="Find a table…"
+            placeholder={t('Find a table…')}
             style={{
               width: '100%', height: '28px', padding: '0 58px 0 28px', boxSizing: 'border-box',
               border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)',
@@ -402,26 +404,26 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
           />
           {search && (
             <span style={{ position: 'absolute', right: '8px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
-              {searchMatches.length} found
+              {t('{n} found', { n: searchMatches.length })}
             </span>
           )}
         </label>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', alignItems: 'center' }}>
-          <button style={toolbarButton} title="zoom out" data-tip-desc="zoom out the diagram" onClick={() => zoomAt(zoom / 1.2)}><ZoomOut size={12} /></button>
-          <span data-testid="diagram-zoom-level" aria-label={`diagram zoom ${Math.round(zoom * 100)} percent`}
+          <button style={toolbarButton} title={t('zoom out')} data-tip-desc={t('zoom out the diagram')} onClick={() => zoomAt(zoom / 1.2)}><ZoomOut size={12} /></button>
+          <span data-testid="diagram-zoom-level" aria-label={t('diagram zoom {n} percent', { n: Math.round(zoom * 100) })}
             style={{ minWidth: '38px', textAlign: 'center', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
             {Math.round(zoom * 100)}%
           </span>
-          <button style={toolbarButton} title="zoom in" data-tip-desc="zoom in the diagram" onClick={() => zoomAt(zoom * 1.2)}><ZoomIn size={12} /></button>
-          <button style={toolbarButton} title="fit all tables" data-tip-desc="fit every table into the view" onClick={fit}><Maximize2 size={12} /></button>
-          <button style={toolbarButton} title="reset automatic layout" data-tip-desc="reset the automatic layout of the diagram" onClick={regenerateLayout}><RefreshCw size={12} /></button>
-          <button style={toolbarButton} title="reload database metadata" data-tip-desc="reload the database metadata from the server" onClick={() => void load(true)} disabled={loading}>
+          <button style={toolbarButton} title={t('zoom in')} data-tip-desc={t('zoom in the diagram')} onClick={() => zoomAt(zoom * 1.2)}><ZoomIn size={12} /></button>
+          <button style={toolbarButton} title={t('fit all tables')} data-tip-desc={t('fit every table into the view')} onClick={fit}><Maximize2 size={12} /></button>
+          <button style={toolbarButton} title={t('reset automatic layout')} data-tip-desc={t('reset the automatic layout of the diagram')} onClick={regenerateLayout}><RefreshCw size={12} /></button>
+          <button style={toolbarButton} title={t('reload database metadata')} data-tip-desc={t('reload the database metadata from the server')} onClick={() => void load(true)} disabled={loading}>
             <Loader2 size={12} style={loading ? { animation: 'spin 0.9s linear infinite' } : undefined} />
           </button>
-          <button style={toolbarButton} title="export current view as SVG" data-tip-desc="export the diagram as an SVG image" onClick={() => exportCurrent('svg')}><Download size={12} /></button>
-          <button style={toolbarButton} title="export current view as PNG" data-tip-desc="export the diagram as a PNG image" onClick={() => exportCurrent('png')}><Image size={12} /></button>
-          <button style={{ ...toolbarButton, marginLeft: '3px' }} title="close diagram" data-tip-desc="close the diagram view" onClick={onClose}><X size={12} /></button>
+          <button style={toolbarButton} title={t('export current view as SVG')} data-tip-desc={t('export the diagram as an SVG image')} onClick={() => exportCurrent('svg')}><Download size={12} /></button>
+          <button style={toolbarButton} title={t('export current view as PNG')} data-tip-desc={t('export the diagram as a PNG image')} onClick={() => exportCurrent('png')}><Image size={12} /></button>
+          <button style={{ ...toolbarButton, marginLeft: '3px' }} title={t('close diagram')} data-tip-desc={t('close the diagram view')} onClick={onClose}><X size={12} /></button>
         </div>
       </header>
 
@@ -436,8 +438,8 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                   ))}
                 </div>
                 <Loader2 size={15} style={{ animation: 'spin 0.9s linear infinite', marginBottom: '8px' }} />
-                <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>Building the relationship map</div>
-                <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', marginTop: '4px' }}>Loading tables, keys and foreign-key connections…</div>
+                <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('Building the relationship map')}</div>
+                <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', marginTop: '4px' }}>{t('Loading tables, keys and foreign-key connections…')}</div>
               </div>
             </div>
           )}
@@ -445,20 +447,20 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
             <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: '24px', zIndex: 2 }}>
               <div style={{ maxWidth: '460px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
                 <div style={{ color: 'var(--error-color)', fontSize: 'calc(11px * var(--ui-text-scale, 1))', marginBottom: '10px' }}>{error}</div>
-                <button style={{ ...toolbarButton, width: 'auto', padding: '0 12px' }} onClick={() => void load(true)}>try again</button>
+                <button style={{ ...toolbarButton, width: 'auto', padding: '0 12px' }} onClick={() => void load(true)}>{t('try again')}</button>
               </div>
             </div>
           )}
           {!loading && !error && data && layout.length === 0 && (
             <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-              no tables in this database
+              {t('no tables in this database')}
             </div>
           )}
           {data && layout.length > 0 && (
             <svg
               ref={svgRef}
               role="img"
-              aria-label={`database diagram ${database}`}
+              aria-label={t('database diagram {name}', { name: database })}
               aria-keyshortcuts="Control++ Control+- Control+0"
               tabIndex={0}
               width="100%"
@@ -485,7 +487,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
               </defs>
               <rect width="100%" height="100%" fill="url(#sql-diagram-grid-large)" pointerEvents="none" />
               <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-                <g aria-label="relationships" pointerEvents="none">
+                <g aria-label={t('relationships')} pointerEvents="none">
                   {edgeGeometry.map(edge => (
                     <path key={edge.key} d={edge.path} fill="none" stroke={edge.selected ? FK_COLOR : 'var(--border-color)'}
                       strokeWidth={overview ? 2.2 : 1.5} opacity={edge.selected ? 0.88 : overview ? 0.46 : 0.6}
@@ -511,7 +513,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                       }}
                       style={{ cursor: dragRef.current?.table === table.name ? 'grabbing' : 'pointer' }}
                     >
-                      <title>{table.name} — {table.columns.length} columns</title>
+                      <title>{t('{name} — {n} columns', { name: table.name, n: table.columns.length })}</title>
                       <rect x="-7" y="-7" width={table.w + 14} height={(overview ? 48 : table.h) + 14} rx="9"
                         fill={isSelected ? 'var(--accent-bg)' : 'transparent'} opacity={isSelected ? 0.85 : 0} />
                       <rect x="0" y="0" width={table.w} height={overview ? 48 : table.h} rx="7"
@@ -524,7 +526,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                       </text>
                       {overview ? (
                         <text x="10" y="41" fontSize={8.5 * svgTextScale} fill="var(--text-muted)" fontFamily="var(--font-mono)">
-                          {table.columns.length} columns
+                          {t('{n} columns', { n: table.columns.length })}
                         </text>
                       ) : (
                         <>
@@ -543,7 +545,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                           ))}
                           {table.hiddenColumnCount > 0 && (
                             <text x="10" y={table.h - 7} fontSize={8.5 * svgTextScale} fill="var(--text-muted)" fontFamily="var(--font-mono)">
-                              + {table.hiddenColumnCount} more columns · inspect →
+                              {t('+ {n} more columns · inspect →', { n: table.hiddenColumnCount })}
                             </text>
                           )}
                         </>
@@ -562,23 +564,23 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
               background: 'color-mix(in srgb, var(--bg-card) 90%, transparent)', color: 'var(--text-muted)',
               fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', pointerEvents: 'none'
             }}>
-              {overview ? 'overview · zoom in for columns' : `${visibleTables.length} visible · drag canvas · double-click table to query`}
+              {overview ? t('overview · zoom in for columns') : t('{n} visible · drag canvas · double-click table to query', { n: visibleTables.length })}
             </div>
           )}
         </div>
 
         {selected && (
-          <aside className="sql-diagram__inspector" aria-label={`table details ${selected.name}`} style={{
+          <aside className="sql-diagram__inspector" aria-label={t('table details {name}', { name: selected.name })} style={{
             width: '286px', minWidth: '240px', maxWidth: '34%', borderLeft: '1px solid var(--border-subtle)',
             background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', minHeight: 0
           }}>
             <div style={{ padding: '12px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>selected table</div>
+                <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>{t('selected table')}</div>
                 <strong style={{ display: 'block', fontSize: 'calc(12px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', overflowWrap: 'anywhere' }}>{selected.name}</strong>
-                <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selected.columns.length} columns</span>
+                <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{t('{n} columns', { n: selected.columns.length })}</span>
               </div>
-              <button style={toolbarButton} title="close table details" data-tip-desc="close the details of this table" onClick={() => setSelectedTable(null)}><PanelRightClose size={12} /></button>
+              <button style={toolbarButton} title={t('close table details')} data-tip-desc={t('close the details of this table')} onClick={() => setSelectedTable(null)}><PanelRightClose size={12} /></button>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '6px 0' }}>
               {selected.columns.map(column => (
@@ -591,7 +593,7 @@ export function DiagramView({ connId, database, tables, onClose, onRunQuery, tra
                   </span>
                   <span style={{ minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{column.name}</span>
-                    {column.nullable && <span style={{ fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>nullable</span>}
+                    {column.nullable && <span style={{ fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('nullable')}</span>}
                   </span>
                   <span style={{ fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{column.type}</span>
                 </div>

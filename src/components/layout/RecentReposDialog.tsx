@@ -1,4 +1,5 @@
 import { FolderOpen, History, Trash2, X } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface RecentReposDialogProps {
   repos: string[]
@@ -9,6 +10,7 @@ interface RecentReposDialogProps {
 }
 
 export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onClear }: RecentReposDialogProps) {
+  const t = useI18n()
   return (
     <div style={{
       position: 'fixed', inset: 0, background: 'var(--bg-overlay)',
@@ -25,9 +27,9 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <h3 style={{ margin: 0, fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <History size={15} style={{ color: 'var(--accent-color)' }} />
-            open repository
+            {t('open repository')}
           </h3>
-          <button onClick={onSkip} title="skip" data-tip-desc="skip this step"
+          <button onClick={onSkip} title={t('skip')} data-tip-desc={t('skip this step')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px',
               background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -40,13 +42,13 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
         </div>
 
         <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-          recent repositories
+          {t('recent repositories')}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflow: 'auto', marginBottom: '14px' }}>
           {repos.length === 0 && (
             <div style={{ padding: '18px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
-              no recent repositories
+              {t('no recent repositories')}
             </div>
           )}
           {repos.map((r) => (
@@ -66,7 +68,7 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-          <button onClick={onClear} title="clear recent repos" data-tip-desc="remove all recently opened repositories"
+          <button onClick={onClear} title={t('clear recent repos')} data-tip-desc={t('remove all recently opened repositories')}
             style={{
               display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 12px',
               background: 'var(--bg-card)', border: '1px solid var(--border-color)',
@@ -75,21 +77,21 @@ export function RecentReposDialog({ repos, onOpenRepo, onOpenFolder, onSkip, onC
             }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)'; e.currentTarget.style.borderColor = 'var(--error-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-color)' }}>
-            <Trash2 size={11} /> clear
+            <Trash2 size={11} /> {t('clear')}
           </button>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={onSkip} style={{
               padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer',
               fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
-            }}>skip</button>
+            }}>{t('skip')}</button>
             <button onClick={onOpenFolder} style={{
               display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px',
               background: 'var(--accent-color)', color: 'var(--text-inverse)',
               border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer',
               fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
             }}>
-              <FolderOpen size={12} /> open folder
+              <FolderOpen size={12} /> {t('open folder')}
             </button>
           </div>
         </div>

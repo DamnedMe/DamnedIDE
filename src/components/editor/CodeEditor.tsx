@@ -21,6 +21,7 @@ import { whenLineCanBeShown } from './revealLine'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT, patchCSharpGrammar } from './monaco-theme'
 import { useEditorStore, useWorktreeStore, useUIStore, useSettingsStore } from '../../store'
+import { useI18n, tr } from '../../i18n'
 import {
   FileCode, FolderOpen, X, Circle,
   PanelLeftClose, PanelLeftOpen, FolderTree, Search,
@@ -152,6 +153,7 @@ export function CodeEditor() {
   const setEditorNav = useEditorStore(s => s.setEditorNav)
   const settings = useSettingsStore(s => s.settings)
   const sidebarRight = settings.sidebarSide === 'right'
+  const t = useI18n()
   const [mdPreview, setMdPreview] = useState(false)
   const isMarkdownActive = !!activeFile?.toLowerCase().endsWith('.md')
   const [quickOutput, setQuickOutput] = useState<OutputEntry[] | null>(null)
@@ -432,7 +434,7 @@ export function CodeEditor() {
         originalContentsRef.current.set(filePath, content)
         setOpenFiles(prev => prev.map(f => f.path === filePath ? { ...f, content } : f))
       } catch {
-        setOpenFiles(prev => prev.map(f => f.path === filePath ? { ...f, content: `// unable to read` } : f))
+        setOpenFiles(prev => prev.map(f => f.path === filePath ? { ...f, content: tr('// unable to read') } : f))
       }
     }
   }, [openFiles])
@@ -1016,7 +1018,7 @@ export function CodeEditor() {
     setIsRunning(false)
     setBuildProgress(null)
     runningKindRef.current = null
-    pushOutputLine('info', '[stopped]')
+    pushOutputLine('info', t('[stopped]'))
   }
 
   const restartQuickCmd = async () => {
@@ -1045,7 +1047,7 @@ export function CodeEditor() {
       if (wasBuild && code === 0 && buildTotalRef.current > 0) {
         setBuildProgress({ completed: buildTotalRef.current, total: buildTotalRef.current })
       }
-      pushOutputLine('info', `[exited ${code ?? '?'}]`)
+      pushOutputLine('info', tr('[exited {code}]', { code: code ?? '?' }))
       setIsRunning(false)
       setRunningProcessId(null)
       runningKindRef.current = null
@@ -1069,8 +1071,8 @@ export function CodeEditor() {
             <FolderOpen size={28} strokeWidth={1} />
           </div>
           <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
-            <p style={{ margin: '0 0 4px', fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>open a folder</p>
-            <p style={{ margin: 0, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>to browse and edit files</p>
+            <p style={{ margin: '0 0 4px', fontSize: 'calc(13px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('open a folder')}</p>
+            <p style={{ margin: 0, fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('to browse and edit files')}</p>
           </div>
           <button
             onClick={async () => {
@@ -1084,7 +1086,7 @@ export function CodeEditor() {
               fontSize: 'calc(12px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)'
             }}
           >
-            open folder
+            {t('open folder')}
           </button>
         </div>
       </PanelContainer>
@@ -1100,18 +1102,18 @@ export function CodeEditor() {
         display: 'flex', alignItems: 'center', gap: '2px',
         borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
       }}>
-        <LeftTab active={leftPanel === 'explorer'} onClick={() => setLeftPanel('explorer')} title="explorer" data-tip-desc="show the file explorer">
+        <LeftTab active={leftPanel === 'explorer'} onClick={() => setLeftPanel('explorer')} title={t('explorer')} data-tip-desc={t('show the file explorer')}>
           <FolderTree size={11} />
         </LeftTab>
-        <LeftTab active={leftPanel === 'search'} onClick={() => setLeftPanel('search')} title="search (ctrl+shift+f)" data-tip-desc="search across the workspace (Ctrl+Shift+F)">
+        <LeftTab active={leftPanel === 'search'} onClick={() => setLeftPanel('search')} title={t('search (ctrl+shift+f)')} data-tip-desc={t('search across the workspace (Ctrl+Shift+F)')}>
           <Search size={11} />
         </LeftTab>
-        <LeftTab active={leftPanel === 'changes'} onClick={() => setLeftPanel('changes')} title="changes" data-tip-desc="show the changed files of this worktree">
+        <LeftTab active={leftPanel === 'changes'} onClick={() => setLeftPanel('changes')} title={t('changes')} data-tip-desc={t('show the changed files of this worktree')}>
           <GitCompare size={11} />
         </LeftTab>
         <button
           onClick={() => setExplorerVisible(false)}
-          title="collapse panel" data-tip-desc="collapse this side panel to save space"
+          title={t('collapse panel')} data-tip-desc={t('collapse this side panel to save space')}
           style={{
             marginLeft: 'auto', display: 'flex', alignItems: 'center',
             background: 'none', border: 'none', color: 'var(--text-muted)',
@@ -1158,7 +1160,7 @@ export function CodeEditor() {
         }}>
           <button
             onClick={() => setExplorerVisible(true)}
-            title="show explorer" data-tip-desc="show the file explorer panel"
+            title={t('show explorer')} data-tip-desc={t('show the file explorer panel')}
             style={{
               display: 'flex', alignItems: 'center', background: 'none',
               border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px'
@@ -1188,7 +1190,7 @@ export function CodeEditor() {
                   key={f.path}
                   onClick={() => { setActiveFile(f.path); setDiffView(null) }}
                   title={f.path}
-                  data-tip-desc="open this file in the editor"
+                  data-tip-desc={t('open this file in the editor')}
                   data-tip-delay="1000"
                   style={{
                     display: 'flex', alignItems: 'center', gap: '6px',
@@ -1208,7 +1210,7 @@ export function CodeEditor() {
                   {f.dirty && <Circle size={6} fill="var(--accent-color)" style={{ color: 'var(--accent-color)' }} />}
                   <button
                     onClick={(e) => closeFile(f.path, e)}
-                    title="close file" data-tip-desc="close this tab without saving"
+                    title={t('close file')} data-tip-desc={t('close this tab without saving')}
                     style={{
                       display: 'flex', background: 'none', border: 'none',
                       color: 'var(--text-muted)', cursor: 'pointer', padding: '1px',
@@ -1226,7 +1228,7 @@ export function CodeEditor() {
         )}
         {isMarkdownActive && (
           <button onClick={() => setMdPreview(p => !p)}
-            title={mdPreview ? 'show source' : 'preview rendered markdown'} data-tip-desc={mdPreview ? 'show the markdown source code' : 'render the markdown preview'}
+            title={mdPreview ? t('show source') : t('preview rendered markdown')} data-tip-desc={mdPreview ? t('show the markdown source code') : t('render the markdown preview')}
             style={{
               display: 'flex', alignItems: 'center', gap: '4px', padding: '0 8px',
               background: mdPreview ? 'var(--accent-bg)' : 'transparent',
@@ -1237,7 +1239,7 @@ export function CodeEditor() {
             onMouseEnter={(e) => { if (!mdPreview) e.currentTarget.style.color = 'var(--text-secondary)' }}
             onMouseLeave={(e) => { if (!mdPreview) e.currentTarget.style.color = 'var(--text-muted)' }}>
             <Eye size={11} />
-            {mdPreview ? 'source' : 'preview'}
+            {mdPreview ? t('source') : t('preview')}
           </button>
         )}
         {rootPath && (
@@ -1246,7 +1248,7 @@ export function CodeEditor() {
               <select
                 value={startupProject?.relative ?? ''}
                 onChange={(e) => handleStartupProjectChange(e.target.value)}
-                 title="startup project" data-tip-desc="the .NET project used by run; solution build includes every project"
+                 title={t('startup project')} data-tip-desc={t('the .NET project used by run; solution build includes every project')}
                 style={{
                   maxWidth: '140px', padding: '1px 4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
                   fontFamily: 'var(--font-mono)', background: 'var(--bg-input)',
@@ -1263,7 +1265,7 @@ export function CodeEditor() {
               <select
                 value={launchProfile ?? ''}
                 onChange={(e) => handleLaunchProfileChange(e.target.value)}
-                title="launch profile" data-tip-desc="the launchSettings.json profile used by run (saved per solution)"
+                title={t('launch profile')} data-tip-desc={t('the launchSettings.json profile used by run (saved per solution)')}
                 style={{
                   maxWidth: '140px', padding: '1px 4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))',
                   fontFamily: 'var(--font-mono)', background: 'var(--bg-input)',
@@ -1276,7 +1278,7 @@ export function CodeEditor() {
                 ))}
               </select>
             )}
-            <button onClick={() => startQuickCmd('build')} disabled={isRunning} title="build" data-tip-desc="build the solution or project (dotnet build)"
+            <button onClick={() => startQuickCmd('build')} disabled={isRunning} title={t('build')} data-tip-desc={t('build the solution or project (dotnet build)')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -1290,7 +1292,7 @@ export function CodeEditor() {
             >
               <Hammer size={11} />
             </button>
-            <button onClick={() => startQuickCmd('run')} disabled={isRunning} title="run" data-tip-desc="run the startup project with the selected launch profile"
+            <button onClick={() => startQuickCmd('run')} disabled={isRunning} title={t('run')} data-tip-desc={t('run the startup project with the selected launch profile')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -1304,7 +1306,7 @@ export function CodeEditor() {
             >
               <Play size={11} />
             </button>
-            <button onClick={stopQuickCmd} disabled={!isRunning} title="stop" data-tip-desc="stop the running process"
+            <button onClick={stopQuickCmd} disabled={!isRunning} title={t('stop')} data-tip-desc={t('stop the running process')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -1318,7 +1320,7 @@ export function CodeEditor() {
             >
               <Square size={10} fill="currentColor" />
             </button>
-            <button onClick={restartQuickCmd} disabled={!isRunning} title="restart" data-tip-desc="restart the running process"
+            <button onClick={restartQuickCmd} disabled={!isRunning} title={t('restart')} data-tip-desc={t('restart the running process')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -1340,9 +1342,9 @@ export function CodeEditor() {
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0,
             color: roslynStatus === 'ready' ? 'var(--success-color)' : 'var(--warning-color)',
             borderRight: '1px solid var(--border-subtle)'
-          }} title={roslynStatus === 'ready' ? 'C# semantic navigation (Roslyn) attivo' : 'indicizzazione C# in corso…'} data-tip-desc='C# semantic analysis status'>
+          }} title={roslynStatus === 'ready' ? t('C# semantic navigation (Roslyn) active') : t('C# indexing in progress…')} data-tip-desc={t('C# semantic analysis status')}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
-            {roslynStatus === 'ready' ? 'roslyn' : 'indexing'}
+            {roslynStatus === 'ready' ? 'roslyn' : t('indexing')}
           </div>
         )}
         {activeFile?.toLowerCase().endsWith('.cs') && roslynStatus === 'ready' && (csErrorCount.errors > 0 || csErrorCount.warnings > 0) && (
@@ -1352,19 +1354,19 @@ export function CodeEditor() {
             borderRight: '1px solid var(--border-subtle)'
           }}>
             {csErrorCount.errors > 0 && (
-              <span style={{ color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '3px' }} title={`${csErrorCount.errors} errori`} data-tip-desc="compiler errors in the active file">
+              <span style={{ color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '3px' }} title={csErrorCount.errors === 1 ? t('1 error') : t('{n} errors', { n: csErrorCount.errors })} data-tip-desc={t('compiler errors in the active file')}>
                 <XCircle size={10} /> {csErrorCount.errors}
               </span>
             )}
             {csErrorCount.warnings > 0 && (
-              <span style={{ color: 'var(--warning-color)', display: 'flex', alignItems: 'center', gap: '3px' }} title={`${csErrorCount.warnings} warning`} data-tip-desc="compiler warnings in the active file">
+              <span style={{ color: 'var(--warning-color)', display: 'flex', alignItems: 'center', gap: '3px' }} title={csErrorCount.warnings === 1 ? t('1 warning') : t('{n} warnings', { n: csErrorCount.warnings })} data-tip-desc={t('compiler warnings in the active file')}>
                 <AlertTriangle size={10} /> {csErrorCount.warnings}
               </span>
             )}
           </div>
         )}
         <div style={{ display: 'flex', gap: '1px', flexShrink: 0, padding: '0 2px', borderRight: '1px solid var(--border-subtle)' }}>
-          <button onClick={goBack} disabled={navBackRef.current.length === 0} title="back (Ctrl+-)" data-tip-desc="navigate to the previous location (Ctrl+-)"
+          <button onClick={goBack} disabled={navBackRef.current.length === 0} title={t('back (Ctrl+-)')} data-tip-desc={t('navigate to the previous location (Ctrl+-)')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '18px', padding: 0,
@@ -1378,7 +1380,7 @@ export function CodeEditor() {
           >
             <ArrowLeft size={11} />
           </button>
-          <button onClick={goForward} disabled={navForwardRef.current.length === 0} title="forward (Ctrl+Shift+-)" data-tip-desc="navigate to the next location (Ctrl+Shift+-)"
+          <button onClick={goForward} disabled={navForwardRef.current.length === 0} title={t('forward (Ctrl+Shift+-)')} data-tip-desc={t('navigate to the next location (Ctrl+Shift+-)')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '18px', padding: 0,
@@ -1398,8 +1400,8 @@ export function CodeEditor() {
             <button
               onClick={() => saveActiveFileRef.current()}
               disabled={!activeFileDirty}
-              title="save (Ctrl+S)"
-              data-tip-desc="save the active file to disk (Ctrl+S)"
+              title={t('save (Ctrl+S)')}
+              data-tip-desc={t('save the active file to disk (Ctrl+S)')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '22px', height: '18px', padding: 0,
@@ -1425,7 +1427,7 @@ export function CodeEditor() {
           activeFile={activeFile}
           onShowText={(title, text) => setGitModal({ title, text })}
           onShowBlame={(blame) => setGitModal({ title: 'git blame', blame })}
-          onShowHistory={(history) => setGitModal({ title: 'git history', history })}
+          onShowHistory={(history) => setGitModal({ title: t('git history'), history })}
         />
       )}
 
@@ -1495,9 +1497,9 @@ export function CodeEditor() {
           }}>
             <FileCode size={32} strokeWidth={1} />
             <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', textAlign: 'center', lineHeight: 1.8 }}>
-              select a file from the explorer<br />
+              {t('select a file from the explorer')}<br />
               <span style={{ color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
-                ctrl+f find in file · ctrl+shift+f search all files · ctrl+s save
+                {t('ctrl+f find in file · ctrl+shift+f search all files · ctrl+s save')}
               </span>
             </div>
           </div>
@@ -1516,10 +1518,10 @@ export function CodeEditor() {
           }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
               {isRunning && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-color)' }} />}
-              {isRunning ? 'running...' : 'output'}
+              {isRunning ? t('running...') : t('output')}
             </span>
             {isRunning && runningKindRef.current === 'build' && buildProgress && (
-              <div title={`compiled projects: ${buildProgress.completed}/${buildProgress.total}`} data-tip-desc="build progress based on completed projects"
+              <div title={t('compiled projects: {done}/{total}', { done: buildProgress.completed, total: buildProgress.total })} data-tip-desc={t('build progress based on completed projects')}
                 style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: '110px', maxWidth: '180px', flexShrink: 0 }}>
                 <div style={{ flex: 1, height: '5px', overflow: 'hidden', borderRadius: '3px', background: 'var(--bg-tag)', border: '1px solid var(--border-subtle)' }}>
                   <div style={{ width: `${Math.round((buildProgress.completed / buildProgress.total) * 100)}%`, height: '100%', background: 'var(--accent-color)', transition: 'width 0.2s ease' }} />
@@ -1537,8 +1539,8 @@ export function CodeEditor() {
                   <button
                     key={level}
                     onClick={() => setOutputFilter(f => ({ ...f, [level]: !f[level] }))}
-                    title={`${active ? 'hide' : 'show'} ${level} messages`}
-                    data-tip-desc={`${active ? 'hide' : 'show'} the ${level} messages in the output`}
+                    title={active ? t('hide {level} messages', { level }) : t('show {level} messages', { level })}
+                    data-tip-desc={active ? t('hide the {level} messages in the output', { level }) : t('show the {level} messages in the output', { level })}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 6px', height: '16px',
                       background: active ? 'var(--bg-tag)' : 'transparent',
@@ -1554,13 +1556,13 @@ export function CodeEditor() {
                 )
               })}
             </div>
-            <button onClick={copyOutput} title="copy output" data-tip-desc="copy all the output text to the clipboard (Ctrl+C)"
+            <button onClick={copyOutput} title={t('copy output')} data-tip-desc={t('copy all the output text to the clipboard (Ctrl+C)')}
               style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}
               onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
               onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
               <Copy size={10} />
             </button>
-            <button onClick={() => setQuickOutput(null)} title="close output" data-tip-desc="close the command output panel"
+            <button onClick={() => setQuickOutput(null)} title={t('close output')} data-tip-desc={t('close the command output panel')}
               style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '1px', flexShrink: 0 }}
               onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
               onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -1641,7 +1643,7 @@ export function CodeEditor() {
         <ReferencesModal
           symbol={implPicker.symbol}
           hits={implPicker.hits}
-          title="implementation" data-tip-desc="go to the implementation of the symbol"
+          title={t('implementation')}
           rootPath={rootPath}
           onClose={() => setImplPicker(null)}
           onNavigate={(file, line) => { setImplPicker(null); openFileRef.current(file, line) }}
@@ -1683,18 +1685,19 @@ function EditorContextMenu({ x, y, lineNumber, symbol, onGoDefinition, onGoImple
   onRevertBlock: (line: number) => void
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
+  const t = useI18n()
   // pages in the SAME space; the mouse wheel switches between them
   const pages: { label: string; onClick: () => void; danger?: boolean }[][] = []
   const symbolPage = symbol ? [
-    { label: `Go to Definition — ${symbol}`, onClick: onGoDefinition },
-    { label: `Go to Implementation — ${symbol}`, onClick: onGoImplementation },
-    { label: `Find All References — ${symbol}`, onClick: onFindReferences }
+    { label: t('Go to Definition — {symbol}', { symbol }), onClick: onGoDefinition },
+    { label: t('Go to Implementation — {symbol}', { symbol }), onClick: onGoImplementation },
+    { label: t('Find All References — {symbol}', { symbol }), onClick: onFindReferences }
   ] : []
   if (symbolPage.length > 0) pages.push(symbolPage)
   // page 2 is always present when a symbol is shown, so the wheel can switch to it
   pages.push([
-    { label: 'Revert this line', onClick: () => onRevertLine(lineNumber) },
-    { label: 'Revert modified block', onClick: () => onRevertBlock(lineNumber) }
+    { label: t('Revert this line'), onClick: () => onRevertLine(lineNumber) },
+    { label: t('Revert modified block'), onClick: () => onRevertBlock(lineNumber) }
   ])
   const [page, setPage] = useState(0)
   const count = pages.length
@@ -1767,7 +1770,7 @@ function LeftTab(props: { active: boolean; onClick: () => void; title: string; c
   )
 }
 
-export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensitive, onCaseToggle, spaceSensitive, onSpaceToggle, placeholder = 'filter files...' }: {
+export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensitive, onCaseToggle, spaceSensitive, onSpaceToggle, placeholder }: {
   value: string
   placeholder?: string
   onChange: (v: string) => void
@@ -1778,12 +1781,13 @@ export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensiti
   spaceSensitive: boolean
   onSpaceToggle: () => void
 }) {
+  const t = useI18n()
   return (
     <div style={{ padding: '4px 8px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t('filter files...')}
         spellCheck={false}
         style={{
           width: '100%', padding: '3px 6px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
@@ -1793,11 +1797,11 @@ export function FileFilterBar({ value, onChange, mode, onModeChange, caseSensiti
         }}
       />
       <div style={{ display: 'flex', gap: '2px', marginTop: '3px' }}>
-        <FToggle active={mode === 'startsWith'} onClick={() => onModeChange('startsWith')} title="starts with" data-tip-desc="filter mode: starts with" icon={<ChevronRight size={10} />} />
-        <FToggle active={mode === 'like'} onClick={() => onModeChange('like')} title="contains" data-tip-desc="filter mode: contains" icon={<Asterisk size={10} />} />
-        <FToggle active={mode === 'regex'} onClick={() => onModeChange('regex')} title="regex" data-tip-desc="filter mode: regular expression" icon={<Regex size={10} />} />
-        <FToggle active={caseSensitive} onClick={onCaseToggle} title="case sensitive" data-tip-desc="match the exact case" icon={<CaseSensitive size={10} />} />
-        <FToggle active={spaceSensitive} onClick={onSpaceToggle} title="match spaces" data-tip-desc="keep spaces significant in the filter" icon={<SeparatorHorizontal size={10} />} />
+        <FToggle active={mode === 'startsWith'} onClick={() => onModeChange('startsWith')} title={t('starts with')} data-tip-desc={t('filter mode: starts with')} icon={<ChevronRight size={10} />} />
+        <FToggle active={mode === 'like'} onClick={() => onModeChange('like')} title={t('contains')} data-tip-desc={t('filter mode: contains')} icon={<Asterisk size={10} />} />
+        <FToggle active={mode === 'regex'} onClick={() => onModeChange('regex')} title="regex" data-tip-desc={t('filter mode: regular expression')} icon={<Regex size={10} />} />
+        <FToggle active={caseSensitive} onClick={onCaseToggle} title={t('case sensitive')} data-tip-desc={t('match the exact case')} icon={<CaseSensitive size={10} />} />
+        <FToggle active={spaceSensitive} onClick={onSpaceToggle} title={t('match spaces')} data-tip-desc={t('keep spaces significant in the filter')} icon={<SeparatorHorizontal size={10} />} />
       </div>
     </div>
   )
@@ -1828,6 +1832,7 @@ export function ZoomControls({ fontSize, onZoomIn, onZoomOut, onReset }: {
   onZoomOut: () => void
   onReset: () => void
 }) {
+  const t = useI18n()
   const btnStyle = {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     width: '20px', height: '18px', padding: 0,
@@ -1841,15 +1846,15 @@ export function ZoomControls({ fontSize, onZoomIn, onZoomOut, onReset }: {
       display: 'flex', alignItems: 'center', gap: '1px',
       padding: '3px 6px', flexShrink: 0
     }}>
-      <button style={btnStyle} onClick={onZoomOut} title="zoom out (ctrl+-)" data-tip-desc="decrease the font size (Ctrl+-)"
+      <button style={btnStyle} onClick={onZoomOut} title={t('zoom out (ctrl+-)')} data-tip-desc={t('decrease the font size (Ctrl+-)')}
         onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
         onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>−</button>
-      <span onClick={onReset} title="reset zoom (ctrl+0)" data-tip-desc="reset the font size to default (Ctrl+0)" style={{
+      <span onClick={onReset} title={t('reset zoom (ctrl+0)')} data-tip-desc={t('reset the font size to default (Ctrl+0)')} style={{
         fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
         color: 'var(--text-muted)', cursor: 'pointer',
         minWidth: '28px', textAlign: 'center', userSelect: 'none'
       }}>{Math.round(fontSize)}px</span>
-      <button style={btnStyle} onClick={onZoomIn} title="zoom in (ctrl++)" data-tip-desc="increase the font size (Ctrl++)"
+      <button style={btnStyle} onClick={onZoomIn} title={t('zoom in (ctrl++)')} data-tip-desc={t('increase the font size (Ctrl++)')}
         onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
         onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>+</button>
     </div>

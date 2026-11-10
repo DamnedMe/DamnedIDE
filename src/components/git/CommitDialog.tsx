@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { X } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 interface CommitDialogProps {
   onCommit: (message: string) => void
@@ -8,6 +9,7 @@ interface CommitDialogProps {
 
 export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
   const [message, setMessage] = useState('')
+  const t = useI18n()
 
   return (
     <div style={{
@@ -27,7 +29,7 @@ export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
           <h3 style={{ margin: 0, fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
             commit
           </h3>
-          <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog" style={{
+          <button onClick={onClose} title={t('close')} data-tip-desc={t('close this panel or dialog')} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '26px', height: '26px', background: 'var(--bg-card)',
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -43,7 +45,7 @@ export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="commit message..."
+          placeholder={t('commit message...')}
           rows={5}
           autoFocus
           style={{
@@ -66,7 +68,7 @@ export function CommitDialog({ onCommit, onClose }: CommitDialogProps) {
             color: 'var(--text-secondary)', cursor: 'pointer',
             fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
           }}>
-            cancel
+            {t('cancel')}
           </button>
           <button
             onClick={() => message.trim() && onCommit(message.trim())}

@@ -4,6 +4,7 @@ import { FileTypeIcon } from '../../utils/file-icon'
 import { joinPath, dirnameOf, samePath } from '../../utils/paths'
 import { compileFileFilter } from '../../utils/file-filter'
 import type { FileFilter } from '../../utils/file-filter'
+import { useI18n } from '../../i18n'
 
 interface TreeNode {
   name: string
@@ -41,6 +42,7 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
   const [expandAllFlag, setExpandAllFlag] = useState(0)
   const fileListRef = useRef<CachedFileList | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: TreeNode } | null>(null)
+  const t = useI18n()
 
   useEffect(() => {
     loadRoot()
@@ -159,7 +161,7 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
   }
 
   const handleCreateFile = async (parentNode: TreeNode) => {
-    const name = prompt('File name:')
+    const name = prompt(t('File name:'))
     if (!name) return
     try {
       const newPath = joinPath(parentNode.path, name)
@@ -169,7 +171,7 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
   }
 
   const handleCreateFolder = async (parentNode: TreeNode) => {
-    const name = prompt('Folder name:')
+    const name = prompt(t('Folder name:'))
     if (!name) return
     try {
       const newPath = joinPath(parentNode.path, name)
@@ -334,7 +336,7 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
     return (
       <div style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: 'calc(12px * var(--ui-text-scale, 1))' }}>
         <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
-        Loading...
+        {t('Loading...')}
       </div>
     )
   }
@@ -352,26 +354,26 @@ export function FileTree({ rootPath, onFileSelect, selectedFile, filter }: FileT
         display: 'flex', gap: '1px', padding: '2px 6px',
         borderBottom: '1px solid var(--border-subtle)', flexShrink: 0
       }}>
-        <ToolbarBtn onClick={handleCollapseAll} title="collapse all" data-tip-desc="collapse every folder in the tree" disabled={!!filteredTree}>
+        <ToolbarBtn onClick={handleCollapseAll} title={t('collapse all')} data-tip-desc={t('collapse every folder in the tree')} disabled={!!filteredTree}>
           <ChevronsUpDown size={11} />
         </ToolbarBtn>
-        <ToolbarBtn onClick={handleExpandAll} title="expand all" data-tip-desc="expand every folder in the tree" disabled={!!filteredTree}>
+        <ToolbarBtn onClick={handleExpandAll} title={t('expand all')} data-tip-desc={t('expand every folder in the tree')} disabled={!!filteredTree}>
           <ChevronsDownUp size={11} />
         </ToolbarBtn>
       </div>
       {isFiltering && (
         <div style={{ padding: '8px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: 'calc(11px * var(--ui-text-scale, 1))' }}>
           <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
-          indexing...
+          {t('indexing...')}
         </div>
       )}
       {!isFiltering && filteredTree && (
         <div style={{ padding: '3px 8px', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
           {totalMatches === 0
-            ? 'no files match'
+            ? t('no files match')
             : totalMatches > MAX_DISPLAY
-              ? `${totalMatches} matches — showing first ${MAX_DISPLAY}`
-              : `${totalMatches} match${totalMatches === 1 ? '' : 'es'}`}
+              ? t('{n} matches — showing first {max}', { n: totalMatches, max: MAX_DISPLAY })
+              : totalMatches === 1 ? t('1 match') : t('{n} matches', { n: totalMatches })}
         </div>
       )}
       <div style={{ flex: 1, overflow: 'auto' }}>
@@ -474,6 +476,7 @@ function FileContextMenu({ x, y, node, onClose, onDelete, onNewFile, onNewFolder
   onNewFolder: (node: TreeNode) => void
   onOpenFolder: (node: TreeNode) => void
 }) {
+  const t = useI18n()
   const targetNode = node.isDirectory ? node : { ...node, isDirectory: true } as TreeNode
   const menuItem = (label: string, icon: React.ReactNode, action: () => void, danger?: boolean) => (
     <div onClick={() => { action(); onClose() }}
@@ -500,11 +503,11 @@ function FileContextMenu({ x, y, node, onClose, onDelete, onNewFile, onNewFolder
         borderRadius: 'var(--radius-md)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
         padding: '4px 0', minWidth: '180px', animation: 'fadeIn 0.1s ease'
       }}>
-        {node.isDirectory && menuItem('New file', <FilePlus size={12} />, () => onNewFile(node))}
-        {node.isDirectory && menuItem('New folder', <FolderPlus size={12} />, () => onNewFolder(node))}
-        {menuItem('Copy path', <Copy size={12} />, () => window.electronAPI.clipboard.write(node.path))}
-        {menuItem('Delete', <Trash2 size={12} />, () => onDelete(node), true)}
-        {menuItem('Open folder', <ExternalLink size={12} />, () => onOpenFolder(node))}
+        {node.isDirectory && menuItem(t('New file'), <FilePlus size={12} />, () => onNewFile(node))}
+        {node.isDirectory && menuItem(t('New folder'), <FolderPlus size={12} />, () => onNewFolder(node))}
+        {menuItem(t('Copy path'), <Copy size={12} />, () => window.electronAPI.clipboard.write(node.path))}
+        {menuItem(t('Delete'), <Trash2 size={12} />, () => onDelete(node), true)}
+        {menuItem(t('Open folder'), <ExternalLink size={12} />, () => onOpenFolder(node))}
       </div>
     </>
   )

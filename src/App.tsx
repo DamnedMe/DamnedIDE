@@ -17,7 +17,7 @@ import { RecentFoldersMenu } from './components/layout/RecentFoldersMenu'
 import { GitTreeDialog } from './components/git/GitTreeDialog'
 import { X, GitFork, FileCode, GitBranch, Cloud, Rocket, Database } from './components/icons'
 import { useUIStore, useGitStore, useSettingsStore, useRecentReposStore, useSqlStore, useTerminalStore, useEditorStore, useWorktreeStore, useToastStore, useSettingsNavStore, migrateLegacyAdoStorage } from './store'
-import { useI18n } from './i18n'
+import { useI18n, tr } from './i18n'
 import { hexToRgba } from './utils/color'
 import { basenameOf } from './utils/paths'
 import { appFontStack, ensureFontLoaded, uiTextScale } from './utils/fonts'
@@ -147,7 +147,9 @@ export default function App() {
       const recents = useRecentReposStore.getState()
       const wasRecent = recents.repos.includes(path)
       if (wasRecent) recents.removeRepo(path)
-      showToast(`"${path}" non è un repository git: scegli la cartella che contiene .git${wasRecent ? ' (rimosso dai recenti)' : ''}`, 'error')
+      showToast(wasRecent
+        ? tr('"{path}" is not a git repository: choose the folder that contains .git (removed from recents)', { path })
+        : tr('"{path}" is not a git repository: choose the folder that contains .git', { path }), 'error')
       return null
     }
     handleRepoSelected(root)
@@ -162,7 +164,7 @@ export default function App() {
       const p = await window.electronAPI.dialog.openFolder()
       if (p) return await openRepo(p)
     } catch (e) {
-      showToast((e as Error).message || 'apertura cartella fallita', 'error')
+      showToast((e as Error).message || tr('opening the folder failed'), 'error')
     }
     return null
   }
@@ -177,11 +179,11 @@ export default function App() {
       const saved = useSettingsStore.getState().settings.gitTreePath
       const res = await window.electronAPI.gitTree.open(target, saved || undefined)
       if (res.notFound) { setGitTreeDownloadUrl(res.downloadUrl ?? ''); return }
-      if (!res.ok) { showToast(res.error || 'avvio di GitTree fallito', 'error'); return }
+      if (!res.ok) { showToast(res.error || tr('starting GitTree failed'), 'error'); return }
       if (res.path && res.path !== saved) updateSettings({ gitTreePath: res.path })
-      showToast('aperto in GitTree')
+      showToast(tr('opened in GitTree'))
     } catch (e) {
-      showToast((e as Error).message || 'avvio di GitTree fallito', 'error')
+      showToast((e as Error).message || tr('starting GitTree failed'), 'error')
     }
   }
 
@@ -325,12 +327,12 @@ export default function App() {
   const t = useI18n()
   // short visible labels; the title keeps t(id), the panel name used by the title and tests
   const tabs: TitleBarTab[] = [
-    { id: 'worktree', label: 'Worktree', icon: GitFork, title: t('worktree'), tip: 'manage git worktrees (feature/bugfix)' },
-    { id: 'editor', label: 'Editor', icon: FileCode, title: t('editor'), tip: 'code editor with C# navigation and references' },
-    { id: 'git', label: 'Git', icon: GitBranch, title: t('git'), tip: 'open the repository (or the selected worktree) in GitTree; stage and commit here' },
-    { id: 'ado', label: 'DevOps', icon: Cloud, title: t('ado'), tip: 'work items and pull requests from Azure DevOps' },
-    { id: 'release', label: t('Release'), icon: Rocket, title: t('release'), tip: 'promote develop → qa → prod with Azure DevOps pull requests (BE/FE)' },
-    { id: 'sql', label: 'SQL', icon: Database, title: t('sql'), tip: 'SQL Server connections, queries and schema' }
+    { id: 'worktree', label: 'Worktree', icon: GitFork, title: t('worktree'), tip: t('manage git worktrees (feature/bugfix)') },
+    { id: 'editor', label: 'Editor', icon: FileCode, title: t('editor'), tip: t('code editor with C# navigation and references') },
+    { id: 'sql', label: 'SQL', icon: Database, title: t('sql'), tip: t('SQL Server connections, queries and schema') },
+    { id: 'git', label: 'Git', icon: GitBranch, title: t('git'), tip: t('open the repository (or the selected worktree) in GitTree; stage and commit here') },
+    { id: 'ado', label: 'DevOps', icon: Cloud, title: t('ado'), tip: t('work items and pull requests from Azure DevOps') },
+    { id: 'release', label: t('Release'), icon: Rocket, title: t('release'), tip: t('promote develop → qa → prod with Azure DevOps pull requests (BE/FE)') }
   ]
 
   const lastPanelRef = useRef<PanelId>('worktree')
@@ -470,6 +472,7 @@ const bannerText = (n: number) => `calc(${n}px * var(--ui-text-scale, 1))`
  */
 function UpdateBanner() {
   const showToast = useToastStore(s => s.showToast)
+  const t = useI18n()
   const [st, setSt] = useState<UpdateState | null>(null)
   const [busy, setBusy] = useState(false)
   // closed for this version / this pending restart
@@ -493,23 +496,24 @@ function UpdateBanner() {
     setBusy(true)
     try {
       const res = await window.electronAPI.updater.installLatest()
-      if (!res.ok) showToast(`${res.error || 'installazione aggiornamento fallita'} — dettagli in Impostazioni › Aggiornamenti`, 'error')
-      else if (res.upToDate) showToast('sei già alla versione più recente')
+      if (!res.ok) showToast(tr('{error} — details in Settings › Updates', { error: res.error || tr('update install failed') }), 'error')
+      else if (res.upToDate) showToast(tr('you are already on the latest version'))
     } catch (e) {
-      showToast((e as Error).message || 'installazione aggiornamento fallita', 'error')
+      showToast((e as Error).message || tr('update install failed'), 'error')
     } finally {
       setBusy(false)
     }
   }
   const restart = () => {
-    window.electronAPI.updater.restart().catch(e => showToast((e as Error).message || 'riavvio non riuscito', 'error'))
+    window.electronAPI.updater.restart().catch(e => showToast((e as Error).message || tr('restart failed'), 'error'))
   }
 
-  const message = restartFor ? `versione ${restartFor} installata`
-    : installing ? `installazione della ${st.version} in corso${st.managed ? ' (pkexec chiede la password)' : ''}…`
-      : st.status === 'downloading' ? `nuova versione ${st.version} — scaricamento ${st.progress ?? 0}%`
-        : st.status === 'downloaded' ? `nuova versione ${st.version} scaricata`
-          : `nuova versione ${st.version} disponibile`
+  const version = st.version ?? ''
+  const message = restartFor ? t('version {version} installed', { version: restartFor })
+    : installing ? (st.managed ? t('installing {version} (pkexec asks for the password)…', { version }) : t('installing {version}…', { version }))
+      : st.status === 'downloading' ? t('new version {version} — downloading {progress}%', { version, progress: st.progress ?? 0 })
+        : st.status === 'downloaded' ? t('new version {version} downloaded', { version })
+          : t('new version {version} available', { version })
   const buttonStyle = {
     padding: '5px 12px', background: 'var(--accent-color)', color: 'var(--text-inverse)',
     border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', whiteSpace: 'nowrap' as const,
@@ -535,27 +539,27 @@ function UpdateBanner() {
         <span>{message}</span>
         {restartFor && (
           <span style={{ fontSize: bannerText(9.5), color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            chiudi anche le altre finestre di DamnedIDE: usano ancora la versione precedente
+            {t('close the other DamnedIDE windows too: they still run the previous version')}
           </span>
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto', flexShrink: 0 }}>
         {restartFor ? (
           <button onClick={restart} style={buttonStyle}
-            title={`riavvia DamnedIDE con la versione ${restartFor}`} data-tip-desc="relaunch the IDE on the installed version">
-            riavvia ora
+            title={t('restart DamnedIDE on version {version}', { version: restartFor })} data-tip-desc={t('relaunch the IDE on the installed version')}>
+            {t('restart now')}
           </button>
         ) : !installing && (
           <button onClick={() => void install()} style={buttonStyle}
             title={st.managed
-              ? `installa la versione ${st.version} con il gestore pacchetti (pkexec chiede la password di amministratore)`
-              : `installa la versione ${st.version}: DamnedIDE si chiude, si aggiorna e si riapre`}
-            data-tip-desc="downloads the update when needed, then installs it">
-            installa la versione {st.version}
+              ? t('install version {version} with the package manager (pkexec asks for the administrator password)', { version })
+              : t('install version {version}: DamnedIDE closes, updates and reopens', { version })}
+            data-tip-desc={t('downloads the update when needed, then installs it')}>
+            {t('install version {version}', { version })}
           </button>
         )}
-        <button onClick={() => setDismissed(key)} aria-label="più tardi"
-          title="più tardi" data-tip-desc="hide this banner; Settings › Aggiornamenti keeps the update"
+        <button onClick={() => setDismissed(key)} aria-label={t('later')}
+          title={t('later')} data-tip-desc={t('hide this banner; Settings › Updates keeps the update')}
           style={{
             display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px',
             color: 'var(--text-muted)'

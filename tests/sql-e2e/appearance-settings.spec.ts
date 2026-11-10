@@ -7,8 +7,8 @@ import { test, expect } from './sql.fixture'
 test('appearance settings: global font family and size ranges', async ({ page }) => {
   await page.goto('/')
   await page.getByTitle('settings', { exact: true }).click()
-  // settings open on the remembered page: text size and fonts are on Aspetto › Testo e icone
-  await page.getByRole('navigation', { name: 'pagine delle impostazioni' }).getByRole('button', { name: 'Testo e icone' }).click()
+  // settings open on the remembered page: text size and fonts are on Appearance › Text and icons
+  await page.getByRole('navigation', { name: 'settings pages' }).getByRole('button', { name: 'Text and icons' }).click()
 
   // the font select is the one containing the default Nunito option
   const fontSelect = page.locator('select', { has: page.locator('option[value="Nunito"]') })
@@ -31,7 +31,7 @@ test('appearance settings: global font family and size ranges', async ({ page })
   // a custom family can be added, applied and removed
   const addInput = page.getByPlaceholder('font family')
   await addInput.fill('Georgia')
-  await page.getByTitle('aggiungi e applica il font').click()
+  await page.getByTitle('add and apply the font').click()
   await expect(fontSelect).toHaveValue('Georgia')
   await expect(fontSelect.locator('option[value="Georgia"]')).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain('Georgia')

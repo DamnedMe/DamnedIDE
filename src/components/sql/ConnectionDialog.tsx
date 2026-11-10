@@ -3,6 +3,7 @@ import { SqlConnection, SqlConnectionConfig, SqlRecentConnection, SqlTestResult 
 import { Modal } from '../layout/Modal'
 import { authTypesForPlatform, ConnectionForm, EMPTY_FORM, connectionToForm, formToConfig } from './sqlForm'
 import { Database, History, KeyRound, Link2, Loader2, PlugZap, ShieldCheck, X } from '@/components/icons'
+import { tr, useI18n } from '../../i18n'
 
 type TabId = 'login' | 'properties' | 'string'
 
@@ -16,6 +17,7 @@ interface ConnectionDialogProps {
 }
 
 export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatabases, onConnect }: ConnectionDialogProps) {
+  const t = useI18n()
   const [tab, setTab] = useState<TabId>('login')
   const [form, setForm] = useState<ConnectionForm>(() => connectionToForm(initial || {}))
   const [testing, setTesting] = useState(false)
@@ -67,7 +69,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
     setTestResult(null)
     const res = await onTest(formToConfig(form))
     if (res.ok) {
-      setTestResult({ ok: true, message: res.version ? `connected · ${res.version.split('\n')[0]}` : 'connection succeeded' })
+      setTestResult({ ok: true, message: res.version ? tr('connected · {version}', { version: res.version.split('\n')[0] }) : tr('connection succeeded') })
       if (databases === null) {
         setLoadingDbs(true)
         onListDatabases({ ...formToConfig(form), database: undefined })
@@ -76,7 +78,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
           .finally(() => setLoadingDbs(false))
       }
     } else {
-      setTestResult({ ok: false, message: res.error || 'connection failed' })
+      setTestResult({ ok: false, message: res.error || tr('connection failed') })
     }
     setTesting(false)
   }
@@ -89,7 +91,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
       : formToConfig(form)
     const res = await onConnect(cfg)
     if (res.ok) onClose()
-    else setTestResult({ ok: false, message: res.error || 'connection failed' })
+    else setTestResult({ ok: false, message: res.error || tr('connection failed') })
     setConnecting(false)
   }
 
@@ -128,18 +130,18 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
   } as Record<string, string[]>)[form.authType] || []
 
   return (
-    <Modal onClose={onClose} width={470} label="connect to server">
+    <Modal onClose={onClose} width={470} label={t('connect to server')}>
       <div style={{ padding: '16px 20px 0', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 'calc(14px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
-              {initial?.id ? 'edit connection' : 'connect to server'}
+              {initial?.id ? t('edit connection') : t('connect to server')}
             </div>
             <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginTop: '2px' }}>
-              database engine · damnedide
+              {t('database engine · damnedide')}
             </div>
           </div>
-          <button onClick={onClose} aria-label="close" title="close" data-tip-desc="close this panel or dialog"
+          <button onClick={onClose} aria-label={t('close')} title={t('close')} data-tip-desc={t('close this panel or dialog')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '28px', height: '28px', background: 'var(--bg-card)',
@@ -152,18 +154,18 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
           </button>
         </div>
         <div style={{ display: 'flex', gap: '2px', marginTop: '14px', borderBottom: '1px solid var(--border-subtle)' }}>
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
+          {tabs.map(tb => (
+            <button key={tb.id} onClick={() => setTab(tb.id)}
               style={{
                 padding: '6px 12px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',
-                background: tab === t.id ? 'var(--bg-card)' : 'transparent',
-                color: tab === t.id ? 'var(--accent-color)' : 'var(--text-secondary)',
+                background: tab === tb.id ? 'var(--bg-card)' : 'transparent',
+                color: tab === tb.id ? 'var(--accent-color)' : 'var(--text-secondary)',
                 border: '1px solid transparent', borderBottom: 'none',
                 borderTopLeftRadius: 'var(--radius-sm)', borderTopRightRadius: 'var(--radius-sm)',
-                cursor: 'pointer', fontWeight: tab === t.id ? 600 : 400,
+                cursor: 'pointer', fontWeight: tab === tb.id ? 600 : 400,
                 transition: 'color 140ms ease'
               }}>
-              {t.label}
+              {t(tb.label)}
             </button>
           ))}
         </div>
@@ -172,7 +174,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {tab === 'login' && (
           <>
-            <Field label="server name">
+            <Field label={t('server name')}>
               <div style={{ display: 'flex', gap: '4px' }}>
                 <input
                   ref={serverRef}
@@ -184,13 +186,13 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleTest()
                   }}
-                  placeholder={isWindows ? 'localhost · (localdb)\\MSSQLLocalDB · server\\instance' : 'localhost · server\\instance · host,port'}
+                  placeholder={isWindows ? t('localhost · (localdb)\\MSSQLLocalDB · server\\instance') : t('localhost · server\\instance · host,port')}
                   spellCheck={false}
                   style={inputStyle}
                 />
                 <button
                   onClick={() => setShowHistory(v => !v)}
-                  title="recent connections" data-tip-desc="recently used SQL connections"
+                  title={t('recent connections')} data-tip-desc={t('recently used SQL connections')}
                   style={iconBtnStyle}
                 >
                   <History size={13} />
@@ -199,7 +201,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               {showHistory && (
                 <div style={{ marginTop: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', animation: 'menuIn 140ms ease' }}>
                   {history.length === 0 && (
-                    <div style={{ padding: '8px 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>no recent connections</div>
+                    <div style={{ padding: '8px 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('no recent connections')}</div>
                   )}
                   {history.map((r, i) => (
                     <div key={i} onClick={() => pickHistory(r)}
@@ -214,37 +216,37 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                 </div>
               )}
               {isLocalDb && (isWindows
-                ? <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>LocalDB uses its local named pipe; transport encryption is disabled automatically.</div>
-                : <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>LocalDB esiste solo su Windows: su questo sistema usa un SQL Server su host/porta.</div>)}
+                ? <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>{t('LocalDB uses its local named pipe; transport encryption is disabled automatically.')}</div>
+                : <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>{t('LocalDB exists only on Windows: on this system use a SQL Server on host/port.')}</div>)}
             </Field>
 
-            <Field label="authentication">
+            <Field label={t('authentication')}>
               <select value={form.authType} onChange={(e) => set({ authType: e.target.value as ConnectionForm['authType'] })} style={inputStyle}>
-                {authTypes.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                {authTypes.map(a => <option key={a.value} value={a.value}>{t(a.label)}</option>)}
               </select>
               {!isWindows && form.authType === 'windows' && (
                 <div style={{ marginTop: 4, color: 'var(--warning-color)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>
-                  Windows Authentication non usa la sessione di Windows su questo sistema: servono dominio, utente e password (NTLM) espliciti.
+                  {t('Windows Authentication does not use the Windows session on this system: an explicit domain, user and password (NTLM) are required.')}
                 </div>
               )}
             </Field>
 
             {authNeeds.includes('domain') && (
-              <Field label="domain (optional)">
+              <Field label={t('domain (optional)')}>
                 <input value={form.domain} onChange={(e) => set({ domain: e.target.value })} spellCheck={false} style={inputStyle} />
               </Field>
             )}
             {(authNeeds.includes('user')) && (
-              <Field label={form.authType === 'windows' ? 'user name (optional)' : 'login'}>
+              <Field label={form.authType === 'windows' ? t('user name (optional)') : t('login')}>
                 <input value={form.user} onChange={(e) => set({ user: e.target.value })} spellCheck={false} style={inputStyle} autoComplete="off" />
               </Field>
             )}
             {authNeeds.includes('password') && (
-              <Field label="password">
+              <Field label={t('password')}>
                 <input type="password" value={form.password} onChange={(e) => set({ password: e.target.value })} spellCheck={false} style={inputStyle} autoComplete="off" />
                 <div style={{ marginTop: '5px' }}>
                   <Checkbox
-                    label="remember password"
+                    label={t('remember password')}
                     checked={form.rememberPassword}
                     onChange={(v) => set({ rememberPassword: v })}
                   />
@@ -252,22 +254,22 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               </Field>
             )}
             {authNeeds.includes('tenantId') && (
-              <Field label="tenant id">
+              <Field label={t('tenant id')}>
                 <input value={form.tenantId} onChange={(e) => set({ tenantId: e.target.value })} spellCheck={false} style={inputStyle} />
               </Field>
             )}
             {authNeeds.includes('clientId') && (
-              <Field label="client id">
+              <Field label={t('client id')}>
                 <input value={form.clientId} onChange={(e) => set({ clientId: e.target.value })} spellCheck={false} style={inputStyle} />
               </Field>
             )}
             {authNeeds.includes('clientSecret') && (
-              <Field label="client secret">
+              <Field label={t('client secret')}>
                 <input type="password" value={form.clientSecret} onChange={(e) => set({ clientSecret: e.target.value })} spellCheck={false} style={inputStyle} autoComplete="off" />
               </Field>
             )}
             {authNeeds.includes('accessToken') && (
-              <Field label="access token">
+              <Field label={t('access token')}>
                 <textarea
                   value={form.accessToken}
                   onChange={(e) => set({ accessToken: e.target.value })}
@@ -290,7 +292,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                 onMouseDown={(e) => { if (canConnect && !testing) e.currentTarget.style.transform = 'scale(0.98)' }}
                 onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)' }}>
                 {testing ? <Loader2 size={12} style={{ animation: 'spin 0.9s linear infinite' }} /> : <PlugZap size={12} />}
-                test connection
+                {t('test connection')}
               </button>
               {testResult && (
                 <div style={{
@@ -309,7 +311,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
 
         {tab === 'properties' && (
           <>
-            <Field label="database name">
+            <Field label={t('database name')}>
               <div style={{ display: 'flex', gap: '4px' }}>
                 <select
                   value={form.database}
@@ -318,9 +320,9 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                   disabled={databases === null && !loadingDbs}
                 >
                   {form.database && (!databases || !databases.includes(form.database)) && (
-                    <option value={form.database}>{form.database} (custom)</option>
+                    <option value={form.database}>{t('{name} (custom)', { name: form.database })}</option>
                   )}
-                  {!form.database && <option value="">&lt;default&gt;</option>}
+                  {!form.database && <option value="">{t('<default>')}</option>}
                   {(databases || []).map(db => <option key={db} value={db}>{db}</option>)}
                 </select>
                 <button
@@ -332,46 +334,46 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
                       .finally(() => setLoadingDbs(false))
                   }}
                   disabled={loadingDbs}
-                  title="load databases" data-tip-desc="load the databases of this connection"
+                  title={t('load databases')} data-tip-desc={t('load the databases of this connection')}
                   style={{ ...iconBtnStyle, width: 'auto', padding: '0 10px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', gap: '4px' }}
                 >
                   {loadingDbs ? <Loader2 size={12} style={{ animation: 'spin 0.9s linear infinite' }} /> : <Database size={12} />}
-                  load
+                  {t('load')}
                 </button>
               </div>
               <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginTop: '3px' }}>
-                {databases === null ? 'connect or test first, then load the database list' : `${databases.length} databases`}
+                {databases === null ? t('connect or test first, then load the database list') : t('{n} databases', { n: databases.length })}
               </div>
             </Field>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <Field label="network protocol">
+              <Field label={t('network protocol')}>
                 <select value={form.protocol} onChange={(e) => set({ protocol: e.target.value as ConnectionForm['protocol'] })} style={inputStyle}>
-                  <option value="default">default</option>
+                  <option value="default">{t('default')}</option>
                   <option value="tcp">TCP/IP</option>
                   {isWindows && <option value="named-pipes">named pipes</option>}
-                  {!isWindows && form.protocol === 'named-pipes' && <option value="named-pipes">named pipes (solo Windows)</option>}
+                  {!isWindows && form.protocol === 'named-pipes' && <option value="named-pipes">{t('named pipes (Windows only)')}</option>}
                 </select>
                 {!isWindows && form.protocol === 'named-pipes' && (
                   <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--warning-color)', marginTop: '3px' }}>
-                    I named pipes non sono supportati su questo sistema: verrà usata la connessione TCP.
+                    {t('Named pipes are not supported on this system: the TCP connection will be used.')}
                   </div>
                 )}
               </Field>
-              <Field label="port (optional)">
+              <Field label={t('port (optional)')}>
                 <input value={form.port} onChange={(e) => set({ port: e.target.value })} placeholder="1433" spellCheck={false} style={inputStyle} />
               </Field>
-              <Field label="connection timeout (s)">
+              <Field label={t('connection timeout (s)')}>
                 <input value={form.connectTimeout} onChange={(e) => set({ connectTimeout: e.target.value })} spellCheck={false} style={inputStyle} />
               </Field>
-              <Field label="execution timeout (s)">
+              <Field label={t('execution timeout (s)')}>
                 <input value={form.requestTimeout} onChange={(e) => set({ requestTimeout: e.target.value })} spellCheck={false} style={inputStyle} />
               </Field>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
-              <Checkbox label="encrypt connection" checked={isLocalDb ? false : form.encrypt} disabled={isLocalDb} onChange={(v) => set({ encrypt: v })} />
-              <Checkbox label="trust server certificate" checked={form.trustServerCertificate} onChange={(v) => set({ trustServerCertificate: v })} />
+              <Checkbox label={t('encrypt connection')} checked={isLocalDb ? false : form.encrypt} disabled={isLocalDb} onChange={(v) => set({ encrypt: v })} />
+              <Checkbox label={t('trust server certificate')} checked={form.trustServerCertificate} onChange={(v) => set({ trustServerCertificate: v })} />
             </div>
           </>
         )}
@@ -380,8 +382,8 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
           <>
             <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               {stringMode === 'auto'
-                ? 'connection string derived from the form fields. edit it to override.'
-                : 'custom connection string: it will be parsed and used for the connection.'}
+                ? t('connection string derived from the form fields. edit it to override.')
+                : t('custom connection string: it will be parsed and used for the connection.')}
             </div>
             <textarea
               value={stringMode === 'auto' ? autoString : customString}
@@ -410,7 +412,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
               }}
             >
               <KeyRound size={12} />
-              {stringMode === 'custom' ? 'use this string' : 'edit connection string'}
+              {stringMode === 'custom' ? t('use this string') : t('edit connection string')}
             </button>
           </>
         )}
@@ -420,7 +422,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
         padding: '12px 20px', borderTop: '1px solid var(--border-subtle)',
         display: 'flex', justifyContent: 'flex-end', gap: '8px', flexShrink: 0
       }}>
-        <button onClick={onClose} style={ghostBtnStyle}>cancel</button>
+        <button onClick={onClose} style={ghostBtnStyle}>{t('cancel')}</button>
         <button onClick={handleConnect} disabled={!canConnect || connecting}
           style={{
             display: 'flex', alignItems: 'center', gap: '6px',
@@ -431,7 +433,7 @@ export function ConnectionDialog({ initial, recent, onClose, onTest, onListDatab
             cursor: canConnect && !connecting ? 'pointer' : 'not-allowed'
           }}>
           {connecting ? <Loader2 size={12} style={{ animation: 'spin 0.9s linear infinite' }} /> : <Link2 size={12} />}
-          {initial?.id ? 'save & connect' : 'connect'}
+          {initial?.id ? t('save & connect') : t('connect')}
         </button>
       </div>
     </Modal>

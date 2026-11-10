@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Loader2, GitBranch, Plus, Minus, Check, Download, Upload, RefreshCw, Diff, GitCommitHorizontal, Clock, GitMerge, X, FileCode } from '@/components/icons'
 import { useToastStore } from '../../store'
+import { useI18n } from '../../i18n'
 
 interface GitBarProps {
   repoPath: string
@@ -16,6 +17,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
   const [busy, setBusy] = useState<string | null>(null)
   const [branchB, setBranchB] = useState('develop')
   const showToast = useToastStore(s => s.showToast)
+  const t = useI18n()
 
   useEffect(() => {
     window.electronAPI.git.currentBranch(repoPath).then(setBranch).catch(() => {})
@@ -28,7 +30,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
       await fn()
       if (okMsg) showToast(okMsg)
     } catch (e) {
-      showToast((e as Error).message || 'operazione fallita', 'error')
+      showToast((e as Error).message || t('operation failed'), 'error')
     } finally {
       setBusy(null)
     }
@@ -37,13 +39,13 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
   const stageActive = () => {
     if (!activeFile) return
     const rel = activeFile.startsWith(repoPath) ? activeFile.slice(repoPath.length + 1) : activeFile
-    run('stage', async () => window.electronAPI.git.stage(repoPath, [rel]), 'staged')
+    run('stage', async () => window.electronAPI.git.stage(repoPath, [rel]), t('staged'))
   }
 
   const unstageActive = () => {
     if (!activeFile) return
     const rel = activeFile.startsWith(repoPath) ? activeFile.slice(repoPath.length + 1) : activeFile
-    run('unstage', async () => window.electronAPI.git.unstage(repoPath, [rel]), 'unstaged')
+    run('unstage', async () => window.electronAPI.git.unstage(repoPath, [rel]), t('unstaged'))
   }
 
   const commit = () => {
@@ -51,7 +53,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
     run('commit', async () => {
       await window.electronAPI.git.commit(repoPath, commitMsg.trim())
       setCommitMsg('')
-    }, 'committed')
+    }, t('committed'))
   }
 
   const showDiff = () => {
@@ -59,7 +61,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
     const rel = activeFile.startsWith(repoPath) ? activeFile.slice(repoPath.length + 1) : activeFile
     run('diff', async () => {
       const text = await window.electronAPI.git.diffFile(repoPath, rel)
-      onShowText(`git diff — ${rel}`, text || '(no diff)')
+      onShowText(`git diff — ${rel}`, text || t('(no diff)'))
     })
   }
 
@@ -84,23 +86,23 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
   const showMergeDiff = () => {
     run('mergeDiff', async () => {
       const text = await window.electronAPI.diff.branch(repoPath, branch || 'HEAD', branchB)
-      onShowText(`merge diff ${branch} → ${branchB}`, text || '(no diff)')
+      onShowText(t('merge diff {from} → {to}', { from: branch, to: branchB }), text || t('(no diff)'))
     })
   }
 
   const btn = (id: string, title: string, icon: React.ReactNode, onClick: () => void, disabled = false) => (
     <button onClick={onClick} disabled={disabled || busy === id} title={title}
       data-tip-desc={{
-        'stage file': 'stage the active file',
-        'unstage file': 'unstage the active file',
-        'diff file': 'open the diff of the active file',
-        'git blame': 'show who changed each line of the active file',
-        'git history': 'show the commit history of the active file',
-        'merge diff': 'show the diff between the current branch and the target branch',
-        'pull': 'pull the latest changes from the remote',
-        'push': 'push the local commits to the remote',
-        'fetch': 'fetch the latest changes from the remote'
-      }[title] || ''}
+        stage: t('stage the active file'),
+        unstage: t('unstage the active file'),
+        diff: t('open the diff of the active file'),
+        blame: t('show who changed each line of the active file'),
+        history: t('show the commit history of the active file'),
+        mergeDiff: t('show the diff between the current branch and the target branch'),
+        pull: t('pull the latest changes from the remote'),
+        push: t('push the local commits to the remote'),
+        fetch: t('fetch the latest changes from the remote')
+      }[id] || ''}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         width: '22px', height: '18px', padding: 0, background: 'transparent',
@@ -126,24 +128,24 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
       </span>
       <span style={{ width: '1px', height: '14px', background: 'var(--border-subtle)', margin: '0 4px', flexShrink: 0 }} />
 
-      {btn('stage', 'stage file', <Plus size={11} />, stageActive, !activeFile)}
-      {btn('unstage', 'unstage file', <Minus size={11} />, unstageActive, !activeFile)}
-      {btn('diff', 'diff file', <Diff size={11} />, showDiff, !activeFile)}
+      {btn('stage', t('stage file'), <Plus size={11} />, stageActive, !activeFile)}
+      {btn('unstage', t('unstage file'), <Minus size={11} />, unstageActive, !activeFile)}
+      {btn('diff', t('diff file'), <Diff size={11} />, showDiff, !activeFile)}
       {btn('blame', 'git blame', <GitCommitHorizontal size={11} />, showBlame, !activeFile)}
-      {btn('history', 'git history', <Clock size={11} />, showHistory, !activeFile)}
-      {btn('mergeDiff', 'merge diff', <GitMerge size={11} />, showMergeDiff)}
+      {btn('history', t('git history'), <Clock size={11} />, showHistory, !activeFile)}
+      {btn('mergeDiff', t('merge diff'), <GitMerge size={11} />, showMergeDiff)}
 
       <span style={{ width: '1px', height: '14px', background: 'var(--border-subtle)', margin: '0 4px', flexShrink: 0 }} />
 
-      {btn('pull', 'pull', <Download size={11} />, () => run('pull', async () => window.electronAPI.git.pull(repoPath), 'pulled'))}
-      {btn('push', 'push', <Upload size={11} />, () => run('push', async () => window.electronAPI.git.push(repoPath), 'pushed'))}
-      {btn('fetch', 'fetch', <RefreshCw size={11} />, () => run('fetch', async () => window.electronAPI.git.fetch(repoPath), 'fetched'))}
+      {btn('pull', 'pull', <Download size={11} />, () => run('pull', async () => window.electronAPI.git.pull(repoPath), t('pulled')))}
+      {btn('push', 'push', <Upload size={11} />, () => run('push', async () => window.electronAPI.git.push(repoPath), t('pushed')))}
+      {btn('fetch', 'fetch', <RefreshCw size={11} />, () => run('fetch', async () => window.electronAPI.git.fetch(repoPath), t('fetched')))}
 
       <span style={{ width: '1px', height: '14px', background: 'var(--border-subtle)', margin: '0 4px', flexShrink: 0 }} />
 
       <input value={commitMsg} onChange={(e) => setCommitMsg(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') commit() }}
-        placeholder="commit message"
+        placeholder={t('commit message')}
         spellCheck={false}
         style={{
           flex: 1, minWidth: '100px', padding: '2px 6px', fontSize: 'calc(10px * var(--ui-text-scale, 1))',
@@ -152,7 +154,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
           color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box'
         }}
       />
-      <button onClick={commit} disabled={!commitMsg.trim() || busy === 'commit'} title="commit" data-tip-desc="commit the staged changes"
+      <button onClick={commit} disabled={!commitMsg.trim() || busy === 'commit'} title="commit" data-tip-desc={t('commit the staged changes')}
         style={{
           display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 10px', height: '18px',
           background: commitMsg.trim() && busy !== 'commit' ? 'var(--accent-color)' : 'var(--bg-disabled)',
@@ -165,7 +167,7 @@ export function GitBar({ repoPath, activeFile, onShowText, onShowBlame, onShowHi
         commit
       </button>
 
-      <input value={branchB} onChange={(e) => setBranchB(e.target.value)} title="target branch for merge diff" data-tip-desc="compare the branches for the merge"
+      <input value={branchB} onChange={(e) => setBranchB(e.target.value)} title={t('target branch for merge diff')} data-tip-desc={t('compare the branches for the merge')}
         spellCheck={false}
         style={{
           width: '80px', padding: '2px 6px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)',

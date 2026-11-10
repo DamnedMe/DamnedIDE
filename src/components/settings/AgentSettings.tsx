@@ -3,7 +3,7 @@ import { Bot, Plus, Trash2, Loader2, Check, AlertCircle, RefreshCw, ExternalLink
 import { Modal } from '../layout/Modal'
 import { useAgentConfigStore, useClaudeStore, useToastStore, useTerminalStore, ALL_AGENT_PROVIDERS } from '../../store'
 import { ClaudeSettings } from '../mcp/ClaudeSettings'
-import { useI18n } from '../../i18n'
+import { tr, useI18n } from '../../i18n'
 
 // AI agents are CLI tools with their own subscription/login: this panel is where
 // they are added, signed in (the login runs in the IDE terminal) and removed.
@@ -31,7 +31,7 @@ export function AgentSettings() {
       setRefreshTick(t => t + 1)
       return list
     } catch {
-      showToast('impossibile leggere lo stato degli agenti', 'error')
+      showToast(tr('cannot read the agents status'), 'error')
       return []
     } finally {
       setLoading(false)
@@ -92,7 +92,7 @@ export function AgentSettings() {
     if (!p.loginCommand) return
     // the provider CLI runs its own OAuth/TUI: give it the IDE terminal
     useTerminalStore.getState().runCommand(p.loginCommand)
-    showToast(`completa l'accesso a ${p.label} nel terminale`, 'info')
+    showToast(t('complete the sign-in to {name} in the terminal', { name: p.label }), 'info')
     startLoginWatch()
   }
 
@@ -112,8 +112,8 @@ export function AgentSettings() {
       setResults(prev => ({
         ...prev,
         [p.id]: res.ok
-          ? { ok: true, msg: (res.text || '').trim().slice(0, 160) || 'connessione verificata' }
-          : { ok: false, msg: res.error || 'verifica fallita' }
+          ? { ok: true, msg: (res.text || '').trim().slice(0, 160) || tr('connection verified') }
+          : { ok: false, msg: res.error || tr('verification failed') }
       }))
       await load(true)
     } catch (e) {
@@ -130,7 +130,7 @@ export function AgentSettings() {
     if (removeTarget === 'claude') await window.electronAPI.ai.setApiKey(null).catch(() => {})
     removeAgent(removeTarget)
     setRemoveTarget(null)
-    showToast('agente rimosso dalla configurazione')
+    showToast(tr('agent removed from the configuration'))
   }
 
   const availableToAdd = ALL_AGENT_PROVIDERS.filter(id => !configured.includes(id))
@@ -163,10 +163,10 @@ export function AgentSettings() {
               {p?.label || id}
             </div>
             <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: statusColor, fontFamily: 'var(--font-mono)' }}>
-              {p ? p.detail : 'stato non disponibile'}
+              {p ? p.detail : t('status not available')}
             </div>
           </div>
-          <button onClick={() => setRemoveTarget(id)} title="rimuovi agente" data-tip-desc="remove this agent from the IDE configuration"
+          <button onClick={() => setRemoveTarget(id)} title={t('remove agent')} data-tip-desc={t('remove this agent from the IDE configuration')}
             style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error-color)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}>
@@ -177,11 +177,11 @@ export function AgentSettings() {
         {p && !p.available && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--warning-color)', fontFamily: 'var(--font-mono)' }}>
             <AlertCircle size={11} />
-            CLI non trovata. {p.installHint && <>installa con <span style={{ color: 'var(--text-secondary)' }}>{p.installHint}</span></>}
+            {t('CLI not found.')} {p.installHint && <>{t('install with')} <span style={{ color: 'var(--text-secondary)' }}>{p.installHint}</span></>}
             {p.docsUrl && (
               <button onClick={() => window.electronAPI.shell.openExternal(p.docsUrl!)}
                 style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'none', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', padding: 0 }}>
-                <ExternalLink size={10} /> docs
+                <ExternalLink size={10} /> {t('docs')}
               </button>
             )}
           </div>
@@ -189,17 +189,17 @@ export function AgentSettings() {
 
         {p?.available && p.loggedIn === false && (
           <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--warning-color)', fontFamily: 'var(--font-mono)' }}>
-            non configurato: accedi con {p.loginCommand}
+            {t('not configured: sign in with {cmd}', { cmd: p.loginCommand ?? '' })}
           </div>
         )}
 
         {p && providerModels(id).length > 0 && (
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            modello
+            {t('model')}
             <select
               value={selectedModel(id)}
               onChange={(e) => setModel(id, e.target.value)}
-              title="modello usato per la verifica e per le nuove chat" data-tip-desc="model used by 'verifica' and by new chats with this agent"
+              title={t('model used for verification and for new chats')} data-tip-desc={t('model used by «verify» and by new chats with this agent')}
               style={{
                 flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
@@ -212,21 +212,21 @@ export function AgentSettings() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <button onClick={() => signIn(p!)} disabled={!p?.available}
-            title={p?.loginCommand} data-tip-desc="apre il terminale con il comando di login del provider"
+            title={p?.loginCommand} data-tip-desc={t('opens the terminal with the provider login command')}
             style={actionBtn(!!p?.available, 'var(--accent-color)')}>
-            <TerminalSquare size={11} /> accedi
+            <TerminalSquare size={11} /> {t('sign in')}
           </button>
           <button onClick={() => test(p!)} disabled={!p?.available || testing === id}
-            title="prova un turno reale" data-tip-desc="manda un prompt minimo all'agente e riporta l'esito"
+            title={t('try a real turn')} data-tip-desc={t('sends a minimal prompt to the agent and reports the outcome')}
             style={actionBtn(!!p?.available && testing !== id, 'var(--text-secondary)')}>
             {testing === id ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={11} />}
-            {testing === id ? `verifica ${testElapsed}s` : 'verifica'}
+            {testing === id ? t('verify {s}s', { s: testElapsed }) : t('verify')}
           </button>
           {testing === id && (
             <button onClick={() => window.electronAPI.ai.cancel('__test__')}
-              title="annulla la verifica" data-tip-desc="interrompe il turno di prova (alcuni provider ritentano a lungo prima di rispondere)"
+              title={t('cancel the verification')} data-tip-desc={t('stops the test turn (some providers retry for a long time before answering)')}
               style={actionBtn(true, 'var(--error-color)')}>
-              <X size={11} /> stop
+              <X size={11} /> {t('stop')}
             </button>
           )}
         </div>
@@ -249,47 +249,46 @@ export function AgentSettings() {
           {t('AI agents')}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
-          <button onClick={() => load(true)} disabled={loading} title="aggiorna lo stato" data-tip-desc="ricontrolla CLI e credenziali dei provider"
+          <button onClick={() => load(true)} disabled={loading} title={t('refresh the status')} data-tip-desc={t("checks the providers' CLI and credentials again")}
             style={actionBtn(!loading, 'var(--text-secondary)')}>
             <RefreshCw size={11} style={loading ? { animation: 'spin 1s linear infinite' } : undefined} />
-            aggiorna
+            {t('refresh')}
           </button>
           <button onClick={() => setShowAdd(true)} disabled={availableToAdd.length === 0}
-            title="aggiungi agente" data-tip-desc="scegli un altro provider da configurare"
+            title={t('add agent')} data-tip-desc={t('pick another provider to configure')}
             style={actionBtn(availableToAdd.length > 0, 'var(--accent-color)')}>
-            <Plus size={11} /> aggiungi agente
+            <Plus size={11} /> {t('add agent')}
           </button>
         </div>
       </div>
 
       <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
-        ogni agente usa la CLI e l'abbonamento (o la API key) del provider: "accedi" apre il terminale con il comando di login,
-        "verifica" manda un turno reale per controllare che risponda. Gli agenti configurati compaiono nella chat AI.
+        {t('each agent uses the provider\'s CLI and subscription (or API key): "sign in" opens the terminal with the login command, "verify" sends a real turn to check that it answers. Configured agents show up in the AI chat.')}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {configured.length === 0 && (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-            nessun agente configurato — usa "aggiungi agente"
+            {t('no agent configured — use "add agent"')}
           </div>
         )}
         {configured.map(renderAgent)}
       </div>
 
       {showAdd && (
-        <Modal onClose={() => setShowAdd(false)} width={460} label="add agent">
+        <Modal onClose={() => setShowAdd(false)} width={460} label={t('add agent')}>
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
-              aggiungi agente
+              {t('add agent')}
             </div>
             <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
-              scegli il provider: potrai accedere con la sua CLI o inserire la API key.
+              {t('pick the provider: you can sign in with its CLI or enter the API key.')}
             </div>
             {availableToAdd.map(id => {
               const p = info(id)
               const ok = !!p?.available
               return (
-                <button key={id} onClick={() => { addAgent(id); setShowAdd(false); showToast(`${p?.label || id} aggiunto`) }}
+                <button key={id} onClick={() => { addAgent(id); setShowAdd(false); showToast(t('{name} added', { name: p?.label || id })) }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left',
                     padding: '10px 12px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
@@ -300,10 +299,10 @@ export function AgentSettings() {
                   <Bot size={13} style={{ color: ok ? 'var(--accent-color)' : 'var(--text-muted)', flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {p?.label || id} {id === 'claude' && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· anche Claude Code</span>}
+                      {p?.label || id} {id === 'claude' && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· {t('also Claude Code')}</span>}
                     </div>
                     <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: ok ? 'var(--text-muted)' : 'var(--warning-color)', fontFamily: 'var(--font-mono)' }}>
-                      {p ? p.detail : 'CLI non trovata'}
+                      {p ? p.detail : t('CLI not found')}
                     </div>
                   </div>
                   <Plus size={12} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
@@ -315,23 +314,23 @@ export function AgentSettings() {
       )}
 
       {removeTarget && (
-        <Modal onClose={() => setRemoveTarget(null)} width={440} label="remove agent">
+        <Modal onClose={() => setRemoveTarget(null)} width={440} label={t('remove agent')}>
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Trash2 size={15} style={{ color: 'var(--error-color)', flexShrink: 0 }} />
               <span style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
-                rimuovi {label(removeTarget)}
+                {t('remove {name}', { name: label(removeTarget) })}
               </span>
             </div>
             <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              l'agente non comparirà più nella chat AI.{removeTarget === 'claude' ? ' Verrà rimossa anche la API key Anthropic salvata nell\'IDE, se presente.' : ''}
-              {' '}Le credenziali restano sul sistema e sono gestite dalla CLI del provider: potrai riaggiungerlo quando vuoi.
+              {t('the agent will no longer show up in the AI chat.')}{removeTarget === 'claude' ? ` ${t('The Anthropic API key saved in the IDE is removed too, if present.')}` : ''}
+              {' '}{t('The credentials stay on the system and are managed by the provider CLI: you can add it back whenever you want.')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button onClick={() => setRemoveTarget(null)} style={actionBtn(true, 'var(--text-secondary)')}>annulla</button>
+              <button onClick={() => setRemoveTarget(null)} style={actionBtn(true, 'var(--text-secondary)')}>{t('cancel')}</button>
               <button onClick={confirmRemove}
                 style={{ ...actionBtn(true, 'var(--error-color)'), background: 'var(--error-color)', color: 'var(--text-inverse)', border: 'none' }}>
-                <Trash2 size={11} /> rimuovi
+                <Trash2 size={11} /> {t('remove')}
               </button>
             </div>
           </div>

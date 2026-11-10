@@ -8,6 +8,7 @@ import { hexToRgba } from '../../utils/color'
 import { TERMINAL_FONT_STACK } from '../../utils/fonts'
 import { nextTerminalFontSize, terminalZoomKey, type TerminalZoom } from './terminal-zoom'
 import { Monitor, ExternalLink, Plus, X, ChevronDown } from '@/components/icons'
+import { useI18n } from '../../i18n'
 
 type ShellType = 'cmd' | 'powershell' | 'pwsh' | 'npm'
 
@@ -77,6 +78,7 @@ interface TerminalPanelProps {
 }
 
 export function TerminalPanel({ repoPath }: TerminalPanelProps) {
+  const t = useI18n()
   const [tabs, setTabs] = useState<Tab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [showTypeMenu, setShowTypeMenu] = useState(false)
@@ -375,11 +377,11 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
           overflow: 'visible'
         }}>
           <div style={{ display: 'flex', overflow: 'auto', flex: 1, minWidth: 0 }}>
-            {tabs.map(t => {
-              const active = t.id === activeTabId
+            {tabs.map(tab => {
+              const active = tab.id === activeTabId
               return (
-                <div key={t.id}
-                  onClick={() => switchTab(t)}
+                <div key={tab.id}
+                  onClick={() => switchTab(tab)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px',
                     padding: '4px 10px', cursor: 'pointer',
@@ -395,8 +397,8 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = 'var(--text-muted)' }}
                 >
                   <Monitor size={9} />
-                  {t.title}
-                  <button onClick={(e) => { e.stopPropagation(); removeTab(t.id) }} title="close tab" data-tip-desc="close this terminal session"
+                  {tab.title}
+                  <button onClick={(e) => { e.stopPropagation(); removeTab(tab.id) }} title={t('close tab')} data-tip-desc={t('close this terminal session')}
                     style={{ display: 'flex', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>
                     <X size={9} />
                   </button>
@@ -409,7 +411,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowTypeMenu(!showTypeMenu)}
-                title="new terminal" data-tip-desc="open a new terminal tab and pick the shell"
+                title={t('new terminal')} data-tip-desc={t('open a new terminal tab and pick the shell')}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '2px',
                   padding: '3px 6px', background: 'var(--bg-card)',
@@ -446,7 +448,7 @@ export function TerminalPanel({ repoPath }: TerminalPanelProps) {
             </div>
             <button
               onClick={() => window.electronAPI.window.openDetached('terminal')}
-              title="open in new window" data-tip-desc="open this panel in a separate window"
+              title={t('open in new window')} data-tip-desc={t('open this panel in a separate window')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '24px', height: '22px', background: 'none',

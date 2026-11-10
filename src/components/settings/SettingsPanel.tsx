@@ -17,6 +17,7 @@ import { EditorPage, GitPage, TerminalPage } from './pages/ToolsPages'
 import { ConnectionsPage } from './ado/ConnectionsPage'
 import { FoldersPage } from './ado/FoldersPage'
 import { ReleasePage } from './ado/ReleasePage'
+import { useI18n } from '../../i18n'
 
 // under this panel width the navigation becomes a strip above the content
 const COMPACT_WIDTH = 640
@@ -34,6 +35,8 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
   const resetSettings = useSettingsStore(s => s.resetSettings)
   const showToast = useToastStore(s => s.showToast)
   const adoSettings = useAdoSettingsStore(s => s.settings)
+  const layoutMissing = useSettingsStore(s => s.settings.worktreeLayout === null)
+  const t = useI18n()
   // the terminal dock lives here too, so "accedi" (agent login) is visible without
   // switching panel; the login runs in the selected worktree/repo when available
   const dockWorktree = useWorktreeStore(s => s.selectedWorktree)
@@ -70,12 +73,13 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
 
   const badges = useMemo(() => {
     const out: Partial<Record<SettingsPageId, { tone: 'accent' | 'warning'; tip: string }>> = {}
-    if (update?.status === 'downloaded') out.updates = { tone: 'accent', tip: `versione ${update.version ?? ''} pronta da installare` }
-    else if (update?.status === 'available') out.updates = { tone: 'accent', tip: `nuova versione ${update.version ?? ''} disponibile` }
+    if (update?.status === 'downloaded') out.updates = { tone: 'accent', tip: t('version {version} ready to install', { version: update.version ?? '' }) }
+    else if (update?.status === 'available') out.updates = { tone: 'accent', tip: t('new version {version} available', { version: update.version ?? '' }) }
     const missing = (adoSettings?.connections ?? []).filter(c => !adoSettings?.tokens[c.id]).length
-    if (missing > 0) out['ado-connections'] = { tone: 'warning', tip: missing === 1 ? 'una connessione senza PAT' : `${missing} connessioni senza PAT` }
+    if (missing > 0) out['ado-connections'] = { tone: 'warning', tip: missing === 1 ? t('one connection without a PAT') : t('{n} connections without a PAT', { n: missing }) }
+    if (layoutMissing) out.git = { tone: 'warning', tip: t('worktree folder to set') }
     return out
-  }, [update, adoSettings])
+  }, [update, adoSettings, layoutMissing, t])
 
   const meta = pageMeta(page)
   const Icon = meta.icon
@@ -83,7 +87,7 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
   const doReset = () => {
     resetSettings()
     setConfirmReset(false)
-    showToast('impostazioni ripristinate ai valori predefiniti')
+    showToast(t('settings reset to defaults'))
   }
 
   let content: ReactNode
@@ -95,7 +99,7 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
     case 'colors': content = <ColorsPage />; break
     case 'editor': content = <EditorPage onOpenPage={setPage} />; break
     case 'terminal': content = <TerminalPage />; break
-    case 'git': content = <GitPage />; break
+    case 'git': content = <GitPage repoPath={repoPath} />; break
     case 'ado-connections': content = <ConnectionsPage onOpenPage={setPage} />; break
     case 'ado-folders': content = <FoldersPage repoPath={repoPath} onOpenPage={setPage} />; break
     case 'ado-release': content = <ReleasePage repoPath={repoPath} onOpenPage={setPage} />; break
@@ -105,8 +109,9 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
   }
 
   const description = page === 'colors'
-    ? `${meta.description} (${theme === 'dark' ? 'scuro' : 'chiaro'})`
-    : meta.description
+    ? `${t(meta.description)} (${theme === 'dark' ? t('dark') : t('light')})`
+    : t(meta.description)
+  const group = groupLabel(meta.group)
 
   return (
     <PanelContainer>
@@ -126,8 +131,8 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
               maxWidth: '860px', padding: compact ? '14px 12px 20px' : '18px 22px 24px',
               display: 'flex', flexDirection: 'column', gap: '10px', animation: 'fadeIn 160ms ease'
             }}>
-              <PageHeader icon={<Icon size={16} />} group={groupLabel(meta.group) !== meta.label ? groupLabel(meta.group) : undefined}
-                title={meta.label} description={description} />
+              <PageHeader icon={<Icon size={16} />} group={group !== meta.label ? t(group) : undefined}
+                title={t(meta.label)} description={description} />
               {content}
             </div>
           </div>
@@ -136,23 +141,23 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
       </div>
 
       {confirmReset && (
-        <Modal onClose={() => setConfirmReset(false)} width={440} label="ripristina predefiniti">
+        <Modal onClose={() => setConfirmReset(false)} width={440} label={t('reset defaults')}>
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <RotateCcw size={15} style={{ color: 'var(--error-color)', flexShrink: 0 }} />
               <span style={{ fontSize: px(13), fontWeight: 700, color: 'var(--text-primary)' }}>
-                ripristinare le impostazioni predefinite?
+                {t('reset the default settings?')}
               </span>
             </div>
             <div style={{ fontSize: px(11), color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              tema, colori, testo e icone, font aggiunti, editor, terminale, lingua, percorso di GitTree e lista changes tornano ai valori iniziali.
-              {' '}Non cambiano le connessioni Azure DevOps, gli agenti AI, i server MCP e i dispositivi associati.
+              {t('theme, colors, text and icons, added fonts, editor, terminal, language, GitTree path and changes list go back to their initial values.')}
+              {' '}{t('Azure DevOps connections, AI agents, MCP servers and paired devices do not change.')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <Btn onClick={() => setConfirmReset(false)}>annulla</Btn>
+              <Btn onClick={() => setConfirmReset(false)}>{t('cancel')}</Btn>
               <Btn variant="primary" onClick={doReset} style={{ background: 'var(--error-color)' }}
-                title="ripristina predefiniti" data-tip-desc="applies the default settings at once">
-                <RotateCcw size={11} /> ripristina
+                title={t('reset defaults')} data-tip-desc={t('applies the default settings at once')}>
+                <RotateCcw size={11} /> {t('reset')}
               </Btn>
             </div>
           </div>

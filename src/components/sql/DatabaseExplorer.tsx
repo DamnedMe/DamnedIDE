@@ -39,6 +39,7 @@ import type { QueryExecutionContext } from './QueryEditor'
 import { buildExplicitSelect } from './sqlQueryUtils'
 import { localSqlAssistant } from './sqlAssistant'
 import { useSqlSectionZoom } from './useSqlSectionZoom'
+import { useI18n } from '../../i18n'
 
 interface DatabaseExplorerProps {
   connections: SqlConnection[]
@@ -74,6 +75,16 @@ interface ContextMenuState {
   table?: string
 }
 
+// activity labels by cache-key kind (`<conn>:<kind>:…`), translated when used
+const LOADING_LABELS: Record<string, string> = {
+  databases: 'Loading databases',
+  tables: 'Loading tables',
+  views: 'Loading views',
+  procedures: 'Loading procedures',
+  functions: 'Loading functions',
+  columns: 'Loading columns'
+}
+
 interface ExplorerSearchResult {
   kind: 'connection' | 'database' | 'table' | 'view' | 'procedure' | 'function'
   name: string
@@ -88,6 +99,7 @@ export function DatabaseExplorer({
 }: DatabaseExplorerProps) {
   const { cache, setEntry, invalidate, invalidateConnection } = useSqlExplorerStore()
   const sectionZoom = useSqlSectionZoom<HTMLElement>('explorer')
+  const t = useI18n()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
   const [search, setSearch] = useState('')
@@ -116,7 +128,7 @@ export function DatabaseExplorer({
   const load = async (connId: string, key: string, fn: () => Promise<string[] | SqlColumnInfo[]>) => {
     setEntry(key, { loading: true, error: undefined })
     try {
-      const data = await trackOperation(`Loading ${key.split(':')[1] || 'database objects'}`, fn)
+      const data = await trackOperation(t(LOADING_LABELS[key.split(':')[1]] || 'Loading database objects'), fn)
       setEntry(key, { loading: false, loaded: true, data })
     } catch (e) {
       setEntry(key, { loading: false, loaded: true, error: (e as Error).message, data: null })
@@ -178,7 +190,7 @@ export function DatabaseExplorer({
     const existing = columnRequests.current.get(key)
     if (existing) return existing
     setEntry(key, { loading: true, error: undefined })
-    const request = trackOperation(`Loading columns for ${table}`, () => window.electronAPI.sql.columns(conn.id, database, table))
+    const request = trackOperation(t('Loading columns for {table}', { table }), () => window.electronAPI.sql.columns(conn.id, database, table))
     columnRequests.current.set(key, request)
     try {
       const columns = await request
@@ -394,58 +406,58 @@ export function DatabaseExplorer({
           }}>
             {kind === 'connection' && `${connectionLabel(conn.server, conn.database)} — ${AUTH_TYPES.find(a => a.value === (conn.authType || 'sql'))?.label || 'SQL Server Authentication'}`}
             {kind === 'database' && `${connectionLabel(conn.server)} · ${database}`}
-            {kind === 'table' && `table ${table}`}
-            {kind === 'view' && `view ${table}`}
-            {kind === 'procedure' && `procedure ${table}`}
-            {kind === 'function' && `function ${table}`}
+            {kind === 'table' && t('table {name}', { name: table })}
+            {kind === 'view' && t('view {name}', { name: table })}
+            {kind === 'procedure' && t('procedure {name}', { name: table })}
+            {kind === 'function' && t('function {name}', { name: table })}
           </div>
 
           {kind === 'connection' && (
             <>
-              {menuItem(conn.isConnected ? 'disconnect' : 'connect', <PlugZap size={12} />, () => conn.isConnected ? onDisconnect(conn.id) : onReconnect(conn.id))}
-              {menuItem('edit connection', <Pencil size={12} />, () => onEdit(conn))}
-              {conn.isConnected && menuItem('server info', <Info size={12} />, () => onServerInfo(conn))}
-              {menuItem('refresh all databases', <RefreshCw size={12} />, () => refreshDatabases(conn))}
-              {menuItem('remove', <Trash2 size={12} />, () => onRemove(conn.id), true)}
+              {menuItem(conn.isConnected ? t('disconnect') : t('connect'), <PlugZap size={12} />, () => conn.isConnected ? onDisconnect(conn.id) : onReconnect(conn.id))}
+              {menuItem(t('edit connection'), <Pencil size={12} />, () => onEdit(conn))}
+              {conn.isConnected && menuItem(t('server info'), <Info size={12} />, () => onServerInfo(conn))}
+              {menuItem(t('refresh all databases'), <RefreshCw size={12} />, () => refreshDatabases(conn))}
+              {menuItem(t('remove'), <Trash2 size={12} />, () => onRemove(conn.id), true)}
             </>
           )}
 
           {kind === 'database' && database && (
             <>
-              {menuItem('new query', <FileCode2 size={12} />, () => { onSetActiveDatabase(conn.id, database); onLoadQuery('', context) })}
-              {menuItem('use as query database', <MousePointerClick size={12} />, () => onSetActiveDatabase(conn.id, database))}
-              {menuItem('refresh', <RefreshCw size={12} />, () => refreshDatabase(conn, database))}
-              {menuSection('backup')}
-              {menuItem('backup .bak…', <HardDriveDownload size={12} />, () => onBackupDatabase(conn, database), false, !conn.isConnected)}
-              {menuItem('estrai applicazione a livello dati (.dacpac)…', <PackageOpen size={12} />, () => onDataTier(conn, database, 'extract'), false, !conn.isConnected)}
-              {menuItem('esporta applicazione a livello dati (.bacpac)…', <FileArchive size={12} />, () => onDataTier(conn, database, 'export'), false, !conn.isConnected)}
-              {menuSection('import')}
-              {menuItem('importa da backup .bak…', <HardDriveUpload size={12} />, () => onImportDatabase(conn, database, 'bak'), false, !conn.isConnected)}
-              {menuItem('importa applicazione a livello dati (.bacpac)…', <PackageOpen size={12} />, () => onImportDatabase(conn, database, 'bacpac'), false, !conn.isConnected)}
-              {menuSection('diagram')}
-              {menuItem('open diagram (all tables)', <Workflow size={12} />, () => onOpenDiagram(conn.id, database))}
+              {menuItem(t('new query'), <FileCode2 size={12} />, () => { onSetActiveDatabase(conn.id, database); onLoadQuery('', context) })}
+              {menuItem(t('use as query database'), <MousePointerClick size={12} />, () => onSetActiveDatabase(conn.id, database))}
+              {menuItem(t('refresh'), <RefreshCw size={12} />, () => refreshDatabase(conn, database))}
+              {menuSection(t('backup'))}
+              {menuItem(t('backup .bak…'), <HardDriveDownload size={12} />, () => onBackupDatabase(conn, database), false, !conn.isConnected)}
+              {menuItem(t('extract data-tier application (.dacpac)…'), <PackageOpen size={12} />, () => onDataTier(conn, database, 'extract'), false, !conn.isConnected)}
+              {menuItem(t('export data-tier application (.bacpac)…'), <FileArchive size={12} />, () => onDataTier(conn, database, 'export'), false, !conn.isConnected)}
+              {menuSection(t('import'))}
+              {menuItem(t('import from .bak backup…'), <HardDriveUpload size={12} />, () => onImportDatabase(conn, database, 'bak'), false, !conn.isConnected)}
+              {menuItem(t('import data-tier application (.bacpac)…'), <PackageOpen size={12} />, () => onImportDatabase(conn, database, 'bacpac'), false, !conn.isConnected)}
+              {menuSection(t('diagram'))}
+              {menuItem(t('open diagram (all tables)'), <Workflow size={12} />, () => onOpenDiagram(conn.id, database))}
             </>
           )}
 
           {kind === 'table' && table && (
             <>
-              {menuItem('new query', <FileCode2 size={12} />, async () => {
+              {menuItem(t('new query'), <FileCode2 size={12} />, async () => {
                 const columns = await resolveColumns(conn, database, table)
                 onLoadQuery(buildExplicitSelect(table, columns, 1000), context)
               })}
-              {menuItem('select top 1000 rows', <Play size={12} />, async () => {
+              {menuItem(t('select top 1000 rows'), <Play size={12} />, async () => {
                 const columns = await resolveColumns(conn, database, table)
                 onRunQuery(buildExplicitSelect(table, columns, 1000), context)
               })}
-              {menuItem('select top N rows…', <Play size={12} />, async () => {
+              {menuItem(t('select top N rows…'), <Play size={12} />, async () => {
                 const columns = await resolveColumns(conn, database, table)
                 onAskRowLimit(table, context, columns.map(column => column.name))
               })}
-              {menuItem('select all rows', <Play size={12} />, async () => {
+              {menuItem(t('select all rows'), <Play size={12} />, async () => {
                 const columns = await resolveColumns(conn, database, table)
                 onAskConfirmSelectAll(table, context, columns.map(column => column.name))
               })}
-              {menuSection('script table as')}
+              {menuSection(t('script table as'))}
               {menuItem('create', <FileCode2 size={12} />, () => onLoadQuery(scriptTable(table, 'create'), context))}
               {menuItem('select', <FileCode2 size={12} />, async () => {
                 const columns = await resolveColumns(conn, database, table)
@@ -454,23 +466,23 @@ export function DatabaseExplorer({
               {menuItem('insert', <FileCode2 size={12} />, () => onLoadQuery(scriptTable(table, 'insert'), context))}
               {menuItem('update', <FileCode2 size={12} />, () => onLoadQuery(scriptTable(table, 'update'), context))}
               {menuItem('delete', <FileCode2 size={12} />, () => onLoadQuery(scriptTable(table, 'delete'), context))}
-              {menuSection('diagram')}
-              {menuItem('open diagram (related tables)', <Workflow size={12} />, () => onOpenDiagram(conn.id, database, [table]))}
-              {menuItem('refresh columns', <RefreshCw size={12} />, () => { invalidate(columnKey(conn.id, database, table)); ensureColumns(conn, database, table) })}
+              {menuSection(t('diagram'))}
+              {menuItem(t('open diagram (related tables)'), <Workflow size={12} />, () => onOpenDiagram(conn.id, database, [table]))}
+              {menuItem(t('refresh columns'), <RefreshCw size={12} />, () => { invalidate(columnKey(conn.id, database, table)); ensureColumns(conn, database, table) })}
             </>
           )}
 
           {kind === 'view' && table && (
             <>
-              {menuItem('select top 1000 rows', <Play size={12} />, async () => {
+              {menuItem(t('select top 1000 rows'), <Play size={12} />, async () => {
                 const columns = await resolveColumns(conn, database, table)
                 onRunQuery(buildExplicitSelect(table, columns, 1000), context)
               })}
-              {menuItem('select all rows', <Play size={12} />, async () => {
+              {menuItem(t('select all rows'), <Play size={12} />, async () => {
                 const columns = await resolveColumns(conn, database, table)
                 onAskConfirmSelectAll(table, context, columns.map(column => column.name))
               })}
-              {menuSection('script view as')}
+              {menuSection(t('script view as'))}
               {menuItem('create', <FileCode2 size={12} />, () => {
                 window.electronAPI.sql.objectDefinition(conn.id, database, table)
                   .then(def => onLoadQuery(def, context))
@@ -486,7 +498,7 @@ export function DatabaseExplorer({
 
           {(kind === 'procedure' || kind === 'function') && table && (
             <>
-              {menuItem('script as execute', <Play size={12} />, () => onLoadQuery(`EXEC ${quote(table)}`, context))}
+              {menuItem(t('script as execute'), <Play size={12} />, () => onLoadQuery(`EXEC ${quote(table)}`, context))}
             </>
           )}
         </div>
@@ -523,7 +535,7 @@ export function DatabaseExplorer({
   )
 
   return (
-    <aside ref={sectionZoom.ref} className="sql-object-explorer sql-surface" aria-label="Object explorer" style={{
+    <aside ref={sectionZoom.ref} className="sql-object-explorer sql-surface" aria-label={t('Object explorer')} style={{
       ...sectionZoom.style,
       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', overflow: 'hidden', height: '100%',
@@ -537,13 +549,13 @@ export function DatabaseExplorer({
         display: 'flex', alignItems: 'center', justifyContent: 'space-between'
       }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Database size={13} /> Object explorer
+          <Database size={13} /> {t('Object explorer')}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
             onClick={toggleCompact}
-            title={compact ? 'show all database objects' : 'show only tables, diagram and programmability'} data-tip-desc="toggle the compact explorer mode"
-            aria-label="toggle essentials mode"
+            title={compact ? t('show all database objects') : t('show only tables, diagram and programmability')} data-tip-desc={t('toggle the compact explorer mode')}
+            aria-label={t('toggle essentials mode')}
             data-testid="sql-essentials-toggle"
             aria-pressed={compact}
             className="sql-object-explorer__mode"
@@ -557,9 +569,9 @@ export function DatabaseExplorer({
             onMouseLeave={(e) => { if (!compact) e.currentTarget.style.color = 'var(--text-secondary)' }}
           >
             <ListFilter size={11} />
-            <span>{compact ? 'essentials' : 'all'}</span>
+            <span>{compact ? t('essentials') : t('all')}</span>
           </button>
-          <button className="sql-icon-button sql-icon-button--small" onClick={refreshAll} title="refresh all connected databases" data-tip-desc="refresh the metadata of every connected database"
+          <button className="sql-icon-button sql-icon-button--small" onClick={refreshAll} title={t('refresh all connected databases')} data-tip-desc={t('refresh the metadata of every connected database')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '22px', height: '22px', background: 'transparent', border: 'none',
@@ -577,14 +589,14 @@ export function DatabaseExplorer({
       }}>
         <Search size={11} style={{ position: 'absolute', left: '16px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
         <input
-          aria-label="search object explorer"
+          aria-label={t('search object explorer')}
           value={search}
           onFocus={warmSearchIndex}
           onChange={(event) => {
             if (!search && event.target.value) warmSearchIndex()
             setSearch(event.target.value)
           }}
-          placeholder="Search tables, views, routines…"
+          placeholder={t('Search tables, views, routines…')}
           spellCheck={false}
           style={{
             width: '100%', height: '28px', boxSizing: 'border-box', padding: '0 28px 0 27px',
@@ -594,7 +606,7 @@ export function DatabaseExplorer({
           }}
         />
         {search && (
-          <button aria-label="clear object explorer search" title="clear search" data-tip-desc="clear the object explorer search" onClick={() => setSearch('')} style={{
+          <button aria-label={t('clear object explorer search')} title={t('clear search')} data-tip-desc={t('clear the object explorer search')} onClick={() => setSearch('')} style={{
             position: 'absolute', right: '13px', display: 'grid', placeItems: 'center', width: '20px', height: '20px',
             padding: 0, border: 0, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer'
           }}><X size={11} /></button>
@@ -611,7 +623,7 @@ export function DatabaseExplorer({
             return (
               <div key={`${result.kind}:${result.conn.id}:${result.database || ''}:${result.name}:${index}`}
                 role="button"
-                aria-label={`search result ${result.kind} ${result.name}`}
+                aria-label={t('search result {kind} {name}', { kind: t(result.kind), name: result.name })}
                 onClick={() => revealSearchResult(result)}
                 onContextMenu={(event) => {
                   event.preventDefault()
@@ -627,7 +639,7 @@ export function DatabaseExplorer({
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 'calc(10.5px * var(--ui-text-scale, 1))', color: 'var(--text-primary)' }}>{result.name}</span>
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 'calc(8.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {result.kind} · {result.database || result.conn.label}
+                    {t(result.kind)} · {result.database || result.conn.label}
                   </span>
                 </span>
               </div>
@@ -636,12 +648,12 @@ export function DatabaseExplorer({
           {searchResults.length === 0 && searchIndexLoading && (
             <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
               <Loader2 size={13} style={{ display: 'block', margin: '0 auto 7px', animation: 'spin 0.9s linear infinite' }} />
-              indexing database objects…
+              {t('indexing database objects…')}
             </div>
           )}
           {searchResults.length === 0 && !searchIndexLoading && (
             <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-              no objects match “{search.trim()}”
+              {t('no objects match “{term}”', { term: search.trim() })}
             </div>
           )}
         </div>
@@ -654,7 +666,7 @@ export function DatabaseExplorer({
             fontFamily: 'var(--font-mono)'
           }}>
             <Plug size={18} strokeWidth={1} style={{ display: 'block', margin: '0 auto 8px' }} />
-            no connections
+            {t('no connections')}
           </div>
         )}
 
@@ -666,7 +678,7 @@ export function DatabaseExplorer({
             <div key={conn.id}>
               <div
                 role="button"
-                aria-label={`connection ${conn.label}`}
+                aria-label={t('connection {name}', { name: conn.label })}
                 onClick={(e) => {
                   if (conn.id === activeConnection) return
                   handleRowClick(e, conn)
@@ -685,7 +697,7 @@ export function DatabaseExplorer({
               >
                 <span
                   role="button"
-                  aria-label={`expand connection ${conn.label}`}
+                  aria-label={t('expand connection {name}', { name: conn.label })}
                   onClick={(e) => { e.stopPropagation(); if (conn.isConnected) { toggle(connKey); if (open) {} else ensureDatabases(conn) } }}
                   style={{ display: 'inline-flex', alignItems: 'center' }}
                 >
@@ -699,7 +711,7 @@ export function DatabaseExplorer({
                   className={`sql-status-light sql-status-light--explorer ${conn.isConnected ? 'is-online' : 'is-offline'}`}
                   role="img"
                   aria-label={`${conn.label} ${conn.isConnected ? 'online' : 'offline'}`}
-                  title={conn.isConnected ? 'Connected' : 'Disconnected'} data-tip-desc="connection status of this server"
+                  title={conn.isConnected ? t('Connected') : t('Disconnected')} data-tip-desc={t('connection status of this server')}
                 />
               </div>
 
@@ -707,7 +719,7 @@ export function DatabaseExplorer({
                 <>
                   {dbs.loading && (
                     <div style={{ ...indent(1), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>
-                      loading databases…
+                      {t('loading databases…')}
                     </div>
                   )}
                   {dbs.error && (
@@ -746,7 +758,7 @@ export function DatabaseExplorer({
                           {chevron(dbOpen)}
                           {icon(<Database size={11} />, isActiveDb ? 'var(--accent-color)' : 'var(--text-secondary)')}
                           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{db}</span>
-                          {isActiveDb && <span className="sql-active-db-label">active</span>}
+                          {isActiveDb && <span className="sql-active-db-label">{t('active')}</span>}
                         </div>
 
                         {dbOpen && (
@@ -754,21 +766,21 @@ export function DatabaseExplorer({
                             <div
                               onClick={() => onOpenDiagram(conn.id, db)}
                               role="button"
-                              aria-label={`diagram ${db}`}
+                              aria-label={t('diagram {name}', { name: db })}
                               onContextMenu={(e) => {
                                 e.preventDefault(); e.stopPropagation()
                                 setMenu({ x: e.clientX, y: e.clientY, kind: 'database', conn, database: db })
                               }}
-                              title="open the database diagram" data-tip-desc="open the entity relationship diagram"
+                              title={t('open the database diagram')} data-tip-desc={t('open the entity relationship diagram')}
                               style={{ ...rowStyle, ...indent(2), color: 'var(--text-secondary)' }}
                             >
                               {icon(<Workflow size={11} />, 'var(--accent-color)')}
-                              diagram
+                              {t('diagram')}
                             </div>
 
                             <div
                               role="button"
-                              aria-label={`tables ${db}`}
+                              aria-label={t('tables {name}', { name: db })}
                               onClick={() => { toggle(`${dbKey}:tables`); if (!tables.loaded) ensureTables(conn, db) }}
                               onContextMenu={(e) => {
                                 e.preventDefault(); e.stopPropagation()
@@ -778,27 +790,27 @@ export function DatabaseExplorer({
                             >
                               {chevron(isOpen(`${dbKey}:tables`), tables.loading)}
                               {icon(<Table2 size={11} />)}
-                              tables
+                              {t('tables')}
                             </div>
-                            {isOpen(`${dbKey}:tables`) && tables.data && (tables.data as string[]).map(t => {
-                              const colKey = columnKey(conn.id, db, t)
+                            {isOpen(`${dbKey}:tables`) && tables.data && (tables.data as string[]).map(tbl => {
+                              const colKey = columnKey(conn.id, db, tbl)
                               const cols = entry(colKey)
                               const colOpen = isOpen(colKey)
                               return (
-                                <div key={t}>
+                                <div key={tbl}>
                                   <div
                                     role="button"
-                                    aria-label={`table ${t}`}
-                                    onClick={() => { toggle(colKey); if (!cols.loaded && !cols.loading) ensureColumns(conn, db, t) }}
+                                    aria-label={t('table {name}', { name: tbl })}
+                                    onClick={() => { toggle(colKey); if (!cols.loaded && !cols.loading) ensureColumns(conn, db, tbl) }}
                                     onContextMenu={(e) => {
                                       e.preventDefault(); e.stopPropagation()
-                                      setMenu({ x: e.clientX, y: e.clientY, kind: 'table', conn, database: db, table: t })
+                                      setMenu({ x: e.clientX, y: e.clientY, kind: 'table', conn, database: db, table: tbl })
                                     }}
                                     style={{ ...rowStyle, ...indent(3) }}
                                   >
                                     {chevron(colOpen, cols.loading)}
                                     {icon(<Table2 size={11} />, 'var(--accent-secondary)')}
-                                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</span>
+                                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tbl}</span>
                                   </div>
                                   {colOpen && cols.data && (cols.data as SqlColumnInfo[]).map(c => (
                                     <div key={c.name} style={{ ...rowStyle, ...indent(4), cursor: 'default' }}>
@@ -816,7 +828,7 @@ export function DatabaseExplorer({
                               )
                             })}
                             {isOpen(`${dbKey}:tables`) && tables.loading && (
-                              <div style={{ ...indent(3), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>loading…</div>
+                              <div style={{ ...indent(3), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('loading…')}</div>
                             )}
 
                             {!compact && (
@@ -831,7 +843,7 @@ export function DatabaseExplorer({
                                 >
                                   {chevron(isOpen(`${dbKey}:views`), views.loading)}
                                   {icon(<Eye size={11} />)}
-                                  views
+                                  {t('views')}
                                 </div>
                                 {isOpen(`${dbKey}:views`) && views.data && (views.data as string[]).map(v => (
                                   <div key={v}
@@ -861,7 +873,7 @@ export function DatabaseExplorer({
                             >
                               {chevron(isOpen(`${dbKey}:prog`), procs.loading || funcs.loading)}
                               {icon(<Settings2 size={11} />)}
-                              programmability
+                              {t('programmability')}
                             </div>
                             {isOpen(`${dbKey}:prog`) && (
                               <>
@@ -888,7 +900,7 @@ export function DatabaseExplorer({
                                   </div>
                                 ))}
                                 {procs.loading && (
-                                  <div style={{ ...indent(3), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>loading…</div>
+                                  <div style={{ ...indent(3), padding: '4px 8px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-muted)' }}>{t('loading…')}</div>
                                 )}
                               </>
                             )}

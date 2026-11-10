@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays, Clock, Check, X, Ban } from '@/components/icons'
 import { formatGridDate, parseDateText } from './sqlForm'
+import { useI18n } from '../../i18n'
 
 interface DateTimePickerProps {
   value: string
@@ -13,9 +14,10 @@ interface DateTimePickerProps {
   y?: number
 }
 
-const WEEKDAYS = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom']
-const MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
-  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre']
+// English labels, translated at render time
+const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december']
 
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate()
@@ -33,6 +35,7 @@ function sameDay(a: Date, b: Date): boolean {
 // Compact calendar + time picker; the value travels as the grid's text format so
 // a picked date looks exactly like the rest of the column.
 export function DateTimePicker({ value, onChange, onClose, allowNull, x, y }: DateTimePickerProps) {
+  const t = useI18n()
   const initial = useMemo(() => parseDateText(value) || new Date(), [value])
   const [date, setDate] = useState<Date>(initial)
   const [view, setView] = useState({ year: initial.getFullYear(), month: initial.getMonth() })
@@ -106,7 +109,7 @@ export function DateTimePicker({ value, onChange, onClose, allowNull, x, y }: Da
     <div
       ref={ref}
       role="dialog"
-      aria-label="date and time picker"
+      aria-label={t('date and time picker')}
       onMouseDown={(e) => e.stopPropagation()}
       style={{
         position: 'fixed', left, top, zIndex: 400, width: '270px',
@@ -118,19 +121,19 @@ export function DateTimePicker({ value, onChange, onClose, allowNull, x, y }: Da
       {/* header: month navigation */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '2px', padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
         <CalendarDays size={12} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
-        <button onClick={() => setView(v => ({ ...v, year: v.year - 1 }))} title="anno precedente" data-tip-desc="previous year" style={navBtn}>
+        <button onClick={() => setView(v => ({ ...v, year: v.year - 1 }))} title={t('previous year')} data-tip-desc={t('previous year')} style={navBtn}>
           <ChevronsLeft size={12} />
         </button>
-        <button onClick={() => moveMonth(-1)} title="mese precedente" data-tip-desc="previous month" style={navBtn}>
+        <button onClick={() => moveMonth(-1)} title={t('previous month')} data-tip-desc={t('previous month')} style={navBtn}>
           <ChevronLeft size={12} />
         </button>
         <span style={{ flex: 1, textAlign: 'center', fontSize: 'calc(10.5px * var(--ui-text-scale, 1))', color: 'var(--text-primary)', fontWeight: 600 }}>
-          {MONTHS[view.month]} {view.year}
+          {t(MONTHS[view.month])} {view.year}
         </span>
-        <button onClick={() => moveMonth(1)} title="mese successivo" data-tip-desc="next month" style={navBtn}>
+        <button onClick={() => moveMonth(1)} title={t('next month')} data-tip-desc={t('next month')} style={navBtn}>
           <ChevronRight size={12} />
         </button>
-        <button onClick={() => setView(v => ({ ...v, year: v.year + 1 }))} title="anno successivo" data-tip-desc="next year" style={navBtn}>
+        <button onClick={() => setView(v => ({ ...v, year: v.year + 1 }))} title={t('next year')} data-tip-desc={t('next year')} style={navBtn}>
           <ChevronsRight size={12} />
         </button>
       </div>
@@ -140,7 +143,7 @@ export function DateTimePicker({ value, onChange, onClose, allowNull, x, y }: Da
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
           {WEEKDAYS.map(d => (
             <span key={d} style={{ textAlign: 'center', fontSize: 'calc(8px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', padding: '1px 0' }}>
-              {d}
+              {t(d)}
             </span>
           ))}
         </div>
@@ -180,7 +183,7 @@ export function DateTimePicker({ value, onChange, onClose, allowNull, x, y }: Da
         {timeInput('s', date.getSeconds(), 59, (v) => setPart({ s: v }))}
         <button
           onClick={() => setDate(new Date())}
-          title="usa data e ora attuali" data-tip-desc="set the current date and time"
+          title={t('use the current date and time')} data-tip-desc={t('set the current date and time')}
           style={{
             padding: '2px 8px', height: '20px', background: 'var(--bg-card)',
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)',
@@ -188,7 +191,7 @@ export function DateTimePicker({ value, onChange, onClose, allowNull, x, y }: Da
             fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
           }}
         >
-          adesso
+          {t('now')}
         </button>
       </div>
 
@@ -197,19 +200,19 @@ export function DateTimePicker({ value, onChange, onClose, allowNull, x, y }: Da
         {allowNull && (
           <button
             onClick={() => { onChange('NULL'); onClose() }}
-            title="inserisci NULL" data-tip-desc="set the value to NULL"
+            title={t('insert NULL')} data-tip-desc={t('set the value to NULL')}
             style={{ ...actionBtn, color: 'var(--text-muted)' }}
           >
             <Ban size={10} /> null
           </button>
         )}
         <div style={{ flex: 1 }} />
-        <button onClick={onClose} title="annulla" data-tip-desc="close without changing the value" style={actionBtn}>
-          <X size={10} /> annulla
+        <button onClick={onClose} title={t('cancel')} data-tip-desc={t('close without changing the value')} style={actionBtn}>
+          <X size={10} /> {t('cancel')}
         </button>
         <button
           onClick={commit}
-          title="conferma" data-tip-desc="apply the picked date and time"
+          title={t('confirm')} data-tip-desc={t('apply the picked date and time')}
           style={{ ...actionBtn, background: 'var(--accent-color)', borderColor: 'var(--accent-color)', color: 'var(--text-inverse)', fontWeight: 700 }}
         >
           <Check size={10} /> ok

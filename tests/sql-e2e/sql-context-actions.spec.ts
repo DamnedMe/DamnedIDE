@@ -104,7 +104,7 @@ test('two foreign keys to the same table create distinct JOIN aliases', async ({
   }).toBe(true)
   await page.waitForTimeout(250)
   await page.locator('[data-result-column="UpdatedById"]').click()
-  await expect(page.getByText('join non aggiunta: questa relazione è già presente nella query')).toBeVisible()
+  await expect(page.getByText('join not added: this relation is already in the query')).toBeVisible()
 
   await expect.poll(async () => {
     const queries = await page.evaluate(() => (window as unknown as { __sqlMock: { queries: string[] } }).__sqlMock.queries)

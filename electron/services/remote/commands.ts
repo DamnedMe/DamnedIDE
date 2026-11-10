@@ -258,6 +258,10 @@ export class RemoteCommands {
       } catch {
         return
       }
+      // a subfolder listing `.git` is a nested worktree or repository (worktrees can live inside
+      // the checkout under any name, not only `.worktrees`): a copy of the sources, skip it.
+      // ponytail: no extra syscall, the readdir already lists it; the nested root is read once
+      if (dir !== rootPath && entries.some((e) => e.name === '.git')) return
       const sub: Promise<void>[] = []
       for (const e of entries) {
         if (e.name.startsWith('.') || skipDirs.has(e.name)) continue
@@ -285,6 +289,8 @@ export class RemoteCommands {
       } catch {
         return
       }
+      // nested worktree or repository (any folder name): same rule as listFiles
+      if (dir !== rootPath && entries.some((e) => e.name === '.git')) return
       const sub: Promise<void>[] = []
       for (const e of entries) {
         if (e.name.startsWith('.') || skipDirs.has(e.name)) continue

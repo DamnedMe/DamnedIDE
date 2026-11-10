@@ -22,6 +22,7 @@ import { normalizeSqlConnectionConfig } from '../../shared/sqlConnection'
 import type { BackupSource, DataTierAction } from '../../shared/sqlBackup'
 import { SqlBackupDialog, SqlDataTierDialog } from './SqlBackupDialogs'
 import { SqlImportDialog } from './SqlImportDialog'
+import { tr, useI18n } from '../../i18n'
 import '../../styles/sql-workbench.css'
 
 function escapeRe(s: string): string {
@@ -76,6 +77,7 @@ export function SqlPanel() {
   const recent = useSqlRecentStore(s => s.recent)
   const addRecent = useSqlRecentStore(s => s.addRecent)
   const showToast = useToastStore(s => s.showToast)
+  const t = useI18n()
   const queryEditorRef = useRef<QueryEditorHandle | null>(null)
   const [showConnect, setShowConnect] = useState(false)
   const [edit, setEdit] = useState<Partial<SqlConnection> | null>(null)
@@ -157,7 +159,7 @@ export function SqlPanel() {
       })
       queryEditorRef.current?.setQuery(query, true, { source: 'grid' })
     } catch (error) {
-      showToast((error as Error).message, 'info')
+      showToast(tr((error as Error).message), 'info')
     }
   }, [activeQueryTabId, queueWorkspaceSave, showToast])
 
@@ -172,7 +174,7 @@ export function SqlPanel() {
     try {
       const result = await operation()
       setActivities(current => current.map(item => item.id === id
-        ? { ...item, status: 'success', detail: `completed in ${Date.now() - startedAt} ms` }
+        ? { ...item, status: 'success', detail: tr('completed in {ms} ms', { ms: Date.now() - startedAt }) }
         : item))
       return result
     } catch (error) {
@@ -235,10 +237,10 @@ export function SqlPanel() {
     const result = appendRelatedJoin(q, fk)
     if (result.status !== 'added') {
       const messages = {
-        'no-base-table': 'join non aggiunta: la query non contiene una tabella base nel FROM',
-        unrelated: 'join non aggiunta: la relazione non coinvolge la tabella base',
-        'already-present': 'join non aggiunta: questa relazione è già presente nella query',
-        invalid: 'join non aggiunta: metadati della relazione non validi'
+        'no-base-table': tr('join not added: the query has no base table in FROM'),
+        unrelated: tr('join not added: the relation does not involve the base table'),
+        'already-present': tr('join not added: this relation is already in the query'),
+        invalid: tr('join not added: invalid relation metadata')
       }
       showToast(messages[result.status], 'info')
       return
@@ -248,11 +250,11 @@ export function SqlPanel() {
     const database = connectionId ? (activeDatabases[connectionId] || connections.find(connection => connection.id === connectionId)?.database || '') : ''
     if (connectionId && database && result.alias && result.targetTable) {
       try {
-        const columns = await trackOperation(`Loading columns for ${result.targetTable}`, () =>
+        const columns = await trackOperation(tr('Loading columns for {table}', { table: result.targetTable }), () =>
           window.electronAPI.sql.columns(connectionId, database, result.targetTable!))
         nextQuery = appendJoinedSelectColumns(nextQuery, result.alias, result.targetTable, columns)
       } catch {
-        showToast(`join aggiunta, ma non è stato possibile caricare le colonne di ${result.targetTable}`, 'info')
+        showToast(tr('join added, but the columns of {table} could not be loaded', { table: result.targetTable }), 'info')
       }
     }
     queryEditorRef.current?.setQuery(nextQuery, true, { source: 'foreign-key' })
@@ -262,7 +264,7 @@ export function SqlPanel() {
     const q = queryEditorRef.current?.getQuery() || ''
     const next = filterByPk(q, col, value)
     if (next === q) {
-      showToast(`where su ${col} già presente`, 'info')
+      showToast(tr('where on {col} already present', { col }), 'info')
       return
     }
     queryEditorRef.current?.setQuery(next)
@@ -294,14 +296,14 @@ export function SqlPanel() {
   })
 
   const handleConnect = async (config: SqlConnectionConfig): Promise<{ ok: boolean; error?: string }> => {
-    if (!config.server) return { ok: false, error: 'server name is required' }
+    if (!config.server) return { ok: false, error: tr('server name is required') }
     const normalized = normalizeSqlConnectionConfig(config)
     const connId = edit?.id ?? crypto.randomUUID()
     const label = connectionLabel(normalized.server, normalized.database)
     let ok = false
     let error = ''
     try {
-      await trackOperation(`Connecting to ${label}`, async () => {
+      await trackOperation(tr('Connecting to {label}', { label }), async () => {
         if (edit?.id) await window.electronAPI.sql.disconnect(edit.id).catch(() => {})
         await window.electronAPI.sql.connect({ ...normalized, connectionId: connId })
       })
@@ -316,23 +318,23 @@ export function SqlPanel() {
       setActiveConnection(connId)
       setActiveDatabase(connId, normalized.database || '')
       addRecent({ server: normalized.server, database: normalized.database, user: normalized.user, authType: normalized.authType, lastConnected: Date.now() })
-      showToast(`connesso a ${label}`)
+      showToast(tr('connected to {label}', { label }))
     } else {
-      showToast(`connessione fallita: ${error || 'server non raggiungibile'}`, 'error')
+      showToast(tr('connection failed: {error}', { error: error || tr('server unreachable') }), 'error')
     }
     if (ok) setShowConnect(false)
     return ok ? { ok: true } : { ok: false, error }
   }
 
   const handleTest = async (config: SqlConnectionConfig): Promise<SqlTestResult> =>
-    trackOperation(`Testing ${config.server}`, () => window.electronAPI.sql.testConnection(normalizeSqlConnectionConfig(config)))
+    trackOperation(tr('Testing {server}', { server: config.server }), () => window.electronAPI.sql.testConnection(normalizeSqlConnectionConfig(config)))
 
   const handleListDatabases = async (config: SqlConnectionConfig): Promise<string[]> => {
     config = normalizeSqlConnectionConfig(config)
     const tmpId = crypto.randomUUID()
-    await trackOperation(`Loading databases from ${config.server}`, () => window.electronAPI.sql.connect({ ...config, database: undefined, connectionId: tmpId }))
+    await trackOperation(tr('Loading databases from {server}', { server: config.server }), () => window.electronAPI.sql.connect({ ...config, database: undefined, connectionId: tmpId }))
     try {
-      return await trackOperation('Loading databases', () => window.electronAPI.sql.databases(tmpId))
+      return await trackOperation(tr('Loading databases'), () => window.electronAPI.sql.databases(tmpId))
     } finally {
       await window.electronAPI.sql.disconnect(tmpId).catch(() => {})
     }
@@ -343,23 +345,23 @@ export function SqlPanel() {
     if (!conn) return
     if (conn.isConnected) { setActiveConnection(id); return }
     try {
-      await trackOperation(`Reconnecting to ${conn.label}`, () => window.electronAPI.sql.connect({ ...conn, connectionId: conn.id }))
+      await trackOperation(tr('Reconnecting to {label}', { label: conn.label }), () => window.electronAPI.sql.connect({ ...conn, connectionId: conn.id }))
       updateConnection(conn.id, { isConnected: true, lastConnected: Date.now() })
       setActiveConnection(conn.id)
       setActiveDatabase(conn.id, conn.database || '')
     } catch (e) {
-      showToast(`connessione fallita per ${conn.label}: ${cleanError(e)}`, 'error')
+      showToast(tr('connection failed for {label}: {error}', { label: conn.label, error: cleanError(e) }), 'error')
     }
   }
 
   const handleDisconnect = async (id: string) => {
     const conn = connections.find(item => item.id === id)
-    await trackOperation(`Disconnecting ${conn?.label || 'server'}`, () => window.electronAPI.sql.disconnect(id)).catch(() => {})
+    await trackOperation(tr('Disconnecting {label}', { label: conn?.label || 'server' }), () => window.electronAPI.sql.disconnect(id)).catch(() => {})
     updateConnection(id, { isConnected: false })
   }
 
   const handleRemove = async (id: string) => {
-    await trackOperation('Removing connection', () => window.electronAPI.sql.disconnect(id)).catch(() => {})
+    await trackOperation(tr('Removing connection'), () => window.electronAPI.sql.disconnect(id)).catch(() => {})
     removeConnection(id)
     if (activeConnection === id) setActiveConnection(null)
   }
@@ -378,18 +380,18 @@ export function SqlPanel() {
     const database = context?.database ?? (connectionId ? (activeDatabases[connectionId] || connections.find(c => c.id === connectionId)?.database || '') : '')
     if (!connectionId || !query.trim()) {
       if (targetTabId) {
-        const text = !query.trim() ? 'Execution skipped: the query is empty.' : 'Execution blocked: select a connection before running the query.'
+        const text = !query.trim() ? tr('Execution skipped: the query is empty.') : tr('Execution blocked: select a connection before running the query.')
         setTabQueryMessages(current => ({ ...current, [targetTabId]: [{ id: crypto.randomUUID(), at: Date.now(), tone: 'error', text }] }))
         setTabOutputViews(current => ({ ...current, [targetTabId]: 'messages' }))
       }
-      showToast('seleziona una connessione prima di eseguire la query', 'info')
+      showToast(tr('select a connection before running the query'), 'info')
       return false
     }
 
     const mutationMatch = query.replace(/^\s*(?:--[^\r\n]*[\r\n]+|\/\*[\s\S]*?\*\/\s*)*/, '').match(/^\s*(UPDATE|DELETE)\b/i)
     if (mutationMatch && !skipConfirmation) {
       if (pendingMutation) {
-        showToast('completa prima la conferma già aperta', 'info')
+        showToast(tr('finish the confirmation already open first'), 'info')
         return false
       }
       return new Promise<boolean>(resolve => setPendingMutation({
@@ -412,7 +414,7 @@ export function SqlPanel() {
         ...current,
         [targetTabId]: [{
           id: `${queryId}:start`, at: startedAt, tone: 'running',
-          text: `Started executing query on ${database || 'server'}.`
+          text: tr('Started executing query on {database}.', { database: database || 'server' })
         }]
       }))
       setTabRunningQueries(current => ({ ...current, [targetTabId]: { queryId, verb, database, startedAt } }))
@@ -420,19 +422,19 @@ export function SqlPanel() {
     }
     setRunning(queryId)
     try {
-      const exec = await trackOperation(`Executing ${verb} on ${database || 'server'}`, () =>
+      const exec = await trackOperation(tr('Executing {verb} on {database}', { verb, database: database || 'server' }), () =>
         window.electronAPI.sql.query(connectionId, queryWithDb, queryId, undefined, database))
       if (targetTabId) setTabExecutions(current => ({ ...current, [targetTabId]: { ...exec, query } }))
       if (targetTabId) {
         const finishedAt = Date.now()
         const affected = exec.rowsAffected.reduce((sum, value) => sum + Math.max(0, value), 0)
         const completion: SqlQueryMessage[] = exec.canceled
-          ? [{ id: `${queryId}:canceled`, at: finishedAt, tone: 'error', text: 'Query canceled.' }]
+          ? [{ id: `${queryId}:canceled`, at: finishedAt, tone: 'error', text: tr('Query canceled.') }]
           : [
-              { id: `${queryId}:success`, at: finishedAt, tone: 'success', text: 'Commands completed successfully.' },
-              ...(exec.totalRowCount > 0 ? [{ id: `${queryId}:rows`, at: finishedAt, tone: 'info' as const, text: `${exec.totalRowCount} row${exec.totalRowCount === 1 ? '' : 's'} returned.` }] : []),
-              ...(affected > 0 ? [{ id: `${queryId}:affected`, at: finishedAt, tone: 'info' as const, text: `${affected} row${affected === 1 ? '' : 's'} affected.` }] : []),
-              { id: `${queryId}:time`, at: finishedAt, tone: 'info', text: `Completion time: ${new Date(finishedAt).toLocaleTimeString([], { hour12: false })} · ${exec.elapsedMs || finishedAt - startedAt} ms.` }
+              { id: `${queryId}:success`, at: finishedAt, tone: 'success', text: tr('Commands completed successfully.') },
+              ...(exec.totalRowCount > 0 ? [{ id: `${queryId}:rows`, at: finishedAt, tone: 'info' as const, text: exec.totalRowCount === 1 ? tr('1 row returned.') : tr('{n} rows returned.', { n: exec.totalRowCount }) }] : []),
+              ...(affected > 0 ? [{ id: `${queryId}:affected`, at: finishedAt, tone: 'info' as const, text: affected === 1 ? tr('1 row affected.') : tr('{n} rows affected.', { n: affected }) }] : []),
+              { id: `${queryId}:time`, at: finishedAt, tone: 'info', text: tr('Completion time: {time} · {ms} ms.', { time: new Date(finishedAt).toLocaleTimeString([], { hour12: false }), ms: exec.elapsedMs || finishedAt - startedAt }) }
             ]
         setTabQueryMessages(current => ({ ...current, [targetTabId]: [...(current[targetTabId] || []), ...completion] }))
       }
@@ -454,8 +456,8 @@ export function SqlPanel() {
           ...current,
           [targetTabId]: [
             ...(current[targetTabId] || []),
-            { id: `${queryId}:error`, at: finishedAt, tone: 'error', text: `Execution failed: ${message}` },
-            { id: `${queryId}:time`, at: finishedAt, tone: 'info', text: `Completion time: ${new Date(finishedAt).toLocaleTimeString([], { hour12: false })} · ${finishedAt - startedAt} ms.` }
+            { id: `${queryId}:error`, at: finishedAt, tone: 'error', text: tr('Execution failed: {message}', { message }) },
+            { id: `${queryId}:time`, at: finishedAt, tone: 'info', text: tr('Completion time: {time} · {ms} ms.', { time: new Date(finishedAt).toLocaleTimeString([], { hour12: false }), ms: finishedAt - startedAt }) }
           ]
         }))
         setTabOutputViews(current => ({ ...current, [targetTabId]: 'messages' }))
@@ -468,7 +470,7 @@ export function SqlPanel() {
         void window.electronAPI.sql.workspaceSave(next).catch(() => {})
         return next
       })
-      showToast(`query failed: ${message}`, 'error')
+      showToast(tr('query failed: {message}', { message }), 'error')
       return false
     } finally {
       if (targetTabId) setTabRunningQueries(current => {
@@ -492,7 +494,7 @@ export function SqlPanel() {
       void executeSql(shown.query)
     } else if (tabId) {
       setTabExecutions(current => ({ ...current, [tabId]: shown }))
-      showToast('modifica salvata · la query contiene altre modifiche ai dati: rieseguila per aggiornare la griglia', 'info')
+      showToast(tr('edit saved · the query contains other data changes: run it again to refresh the grid'), 'info')
     }
     return ok
   }
@@ -548,7 +550,7 @@ export function SqlPanel() {
 
   /** Runs a silent existence query for a FK value (never touches the grid). */
   const handleCheckExists = async (fk: SqlForeignKeyInfo, value: string, colType: string): Promise<boolean> => {
-    if (!activeConnection) throw new Error('nessuna connessione attiva')
+    if (!activeConnection) throw new Error(tr('no active connection'))
     const literal = sqlLiteralForType(fk.referencedColumn, value, { [fk.referencedColumn]: colType })
     const sql = `SELECT TOP 1 1 AS ok FROM ${quoteTable(fk.referencedTable)} WHERE ${quoteColumn(fk.referencedColumn)} = ${literal}`
     const res = await window.electronAPI.sql.query(activeConnection, sql, undefined, 1, activeDb)
@@ -557,10 +559,10 @@ export function SqlPanel() {
 
   const handleServerInfo = async (conn: SqlConnection) => {
     try {
-      const info = await trackOperation(`Loading server info for ${conn.label}`, () => window.electronAPI.sql.serverInfo(conn.id))
+      const info = await trackOperation(tr('Loading server info for {label}', { label: conn.label }), () => window.electronAPI.sql.serverInfo(conn.id))
       setServerInfo({ conn, info })
     } catch (e) {
-      showToast(`server info non disponibile: ${cleanError(e)}`, 'error')
+      showToast(tr('server info not available: {error}', { error: cleanError(e) }), 'error')
     }
   }
 
@@ -588,18 +590,18 @@ export function SqlPanel() {
           <span className="sql-page-title__icon"><Database size={16} /></span>
           <span className="sql-page-title__copy">
             <strong>SQL Server</strong>
-            <small>Query workspace</small>
+            <small>{t('Query workspace')}</small>
           </span>
           <span className={`sql-active-context ${activeConnectionInfo?.isConnected ? 'is-online' : 'is-offline'}`}>
-            <span className="sql-status-light" role="img" aria-label={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} title={activeConnectionInfo?.isConnected ? 'Connection online' : 'Connection offline'} data-tip-desc="status of the active SQL connection" />
+            <span className="sql-status-light" role="img" aria-label={activeConnectionInfo?.isConnected ? t('Connection online') : t('Connection offline')} title={activeConnectionInfo?.isConnected ? t('Connection online') : t('Connection offline')} data-tip-desc={t('status of the active SQL connection')} />
             <span className="sql-active-context__item">
-              <small>Active connection</small>
-              <strong>{activeConnectionInfo?.server || 'No connection'}</strong>
+              <small>{t('Active connection')}</small>
+              <strong>{activeConnectionInfo?.server || t('No connection')}</strong>
             </span>
             <span className="sql-active-context__divider" aria-hidden="true" />
             <span className="sql-active-context__item">
               <small>Database</small>
-              <strong>{activeDb || 'Not selected'}</strong>
+              <strong>{activeDb || t('Not selected')}</strong>
             </span>
           </span>
         </div>
@@ -607,7 +609,7 @@ export function SqlPanel() {
       actions={
         <div className="sql-page-actions">
           <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            title={sidebarCollapsed ? 'show connections' : 'collapse connections'} data-tip-desc="expand or collapse the connections sidebar"
+            title={sidebarCollapsed ? t('show connections') : t('collapse connections')} data-tip-desc={t('expand or collapse the connections sidebar')}
             className="sql-icon-button"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -622,8 +624,8 @@ export function SqlPanel() {
           </button>
           <button
             onClick={(e) => setPlusMenu({ x: e.currentTarget.getBoundingClientRect().right + 4, y: e.currentTarget.getBoundingClientRect().bottom + 4 })}
-            title="connection: new or recent" data-tip-desc="choose a new or recent connection"
-            aria-label="Connection"
+            title={t('connection: new or recent')} data-tip-desc={t('choose a new or recent connection')}
+            aria-label={t('Connection')}
             className="sql-primary-button"
             style={{
               display: 'flex', alignItems: 'center', gap: '5px',
@@ -636,7 +638,7 @@ export function SqlPanel() {
             onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)' }}
             onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
           >
-            <Plus size={13} /> New connection
+            <Plus size={13} /> {t('New connection')}
           </button>
         </div>
       }
@@ -848,10 +850,10 @@ export function SqlPanel() {
       )}
 
       {pendingMutation && (
-        <Modal onClose={closeMutationConfirmation} width={440} label={`confirm ${pendingMutation.kind}`}>
+        <Modal onClose={closeMutationConfirmation} width={440} label={pendingMutation.kind === 'delete' ? t('confirm delete') : t('confirm update')}>
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-              confirm {pendingMutation.kind}?
+              {pendingMutation.kind === 'delete' ? t('confirm delete?') : t('confirm update?')}
             </div>
             <pre style={{
               background: 'var(--bg-input)', border: '1px solid var(--border-color)',
@@ -861,7 +863,7 @@ export function SqlPanel() {
               margin: 0
             }}>{pendingMutation.query}</pre>
             <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--error-color)', fontFamily: 'var(--font-mono)' }}>
-              The statement will modify data. Review the SQL before continuing.
+              {t('The statement will modify data. Review the SQL before continuing.')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <button onClick={closeMutationConfirmation} style={{
@@ -869,13 +871,13 @@ export function SqlPanel() {
                 border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
                 color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
                 fontFamily: 'var(--font-mono)'
-              }}>cancel</button>
+              }}>{t('cancel')}</button>
               <button onClick={confirmMutation} style={{
                 padding: '7px 16px', background: pendingMutation.kind === 'delete' ? 'var(--error-color)' : 'var(--warning-color)', color: 'var(--text-inverse)',
                 border: 'none', borderRadius: 'var(--radius-md)',
                 cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
               }}>
-                run {pendingMutation.kind}
+                {pendingMutation.kind === 'delete' ? t('run delete') : t('run update')}
               </button>
             </div>
           </div>
@@ -883,44 +885,44 @@ export function SqlPanel() {
       )}
 
       {pendingConnectionRemoval && (
-        <Modal onClose={() => setPendingConnectionRemoval(null)} width={400} label="remove connection">
+        <Modal onClose={() => setPendingConnectionRemoval(null)} width={400} label={t('remove connection')}>
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-              remove saved connection?
+              {t('remove saved connection?')}
             </div>
             <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
               {pendingConnectionRemoval.label}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button onClick={() => setPendingConnectionRemoval(null)} style={{ padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>cancel</button>
+              <button onClick={() => setPendingConnectionRemoval(null)} style={{ padding: '7px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>{t('cancel')}</button>
               <button onClick={() => {
                 const id = pendingConnectionRemoval.id
                 setPendingConnectionRemoval(null)
                 void handleRemove(id)
-              }} style={{ padding: '7px 16px', background: 'var(--error-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>remove</button>
+              }} style={{ padding: '7px 16px', background: 'var(--error-color)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{t('remove')}</button>
             </div>
           </div>
         </Modal>
       )}
 
       {pendingHistoryClear && workspace && (
-        <Modal onClose={() => setPendingHistoryClear(false)} width={400} label="clear query history">
+        <Modal onClose={() => setPendingHistoryClear(false)} width={400} label={t('clear query history')}>
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px', fontFamily: 'var(--font-mono)' }}>
-            <strong style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>clear query history?</strong>
-            <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>Favorites and open query tabs will be preserved.</span>
+            <strong style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>{t('clear query history?')}</strong>
+            <span style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('Favorites and open query tabs will be preserved.')}</span>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={() => setPendingHistoryClear(false)} style={{ padding: '7px 14px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 4, color: 'var(--text-secondary)', cursor: 'pointer' }}>cancel</button>
-              <button onClick={() => { persistWorkspace({ ...workspace, history: [] }, true); setPendingHistoryClear(false) }} style={{ padding: '7px 14px', background: 'var(--error-color)', border: 0, borderRadius: 4, color: 'var(--text-inverse)', cursor: 'pointer' }}>clear</button>
+              <button onClick={() => setPendingHistoryClear(false)} style={{ padding: '7px 14px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 4, color: 'var(--text-secondary)', cursor: 'pointer' }}>{t('cancel')}</button>
+              <button onClick={() => { persistWorkspace({ ...workspace, history: [] }, true); setPendingHistoryClear(false) }} style={{ padding: '7px 14px', background: 'var(--error-color)', border: 0, borderRadius: 4, color: 'var(--text-inverse)', cursor: 'pointer' }}>{t('clear')}</button>
             </div>
           </div>
         </Modal>
       )}
 
       {serverInfo && (
-        <Modal onClose={() => setServerInfo(null)} width={460} label="server info">
+        <Modal onClose={() => setServerInfo(null)} width={460} label={t('server info')}>
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-              server info — {serverInfo.conn.label}
+              {t('server info')} — {serverInfo.conn.label}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
@@ -932,7 +934,7 @@ export function SqlPanel() {
                 <span style={{ color: 'var(--text-primary)' }}>{serverInfo.info.database}</span>
               </div>
               <div style={{ display: 'flex', gap: '8px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)' }}>
-                <span style={{ color: 'var(--text-muted)', width: '80px', flexShrink: 0 }}>version</span>
+                <span style={{ color: 'var(--text-muted)', width: '80px', flexShrink: 0 }}>{t('version')}</span>
                 <span style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{serverInfo.info.version}</span>
               </div>
             </div>
@@ -942,7 +944,7 @@ export function SqlPanel() {
                 border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
                 color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
                 fontFamily: 'var(--font-mono)'
-              }}>close</button>
+              }}>{t('close')}</button>
             </div>
           </div>
         </Modal>
@@ -952,6 +954,7 @@ export function SqlPanel() {
 }
 
 function SqlActivityStrip({ activities }: { activities: SqlActivity[] }) {
+  const t = useI18n()
   const [, setTick] = useState(0)
   const running = activities.filter(item => item.status === 'running')
   const visible = running.length > 0 ? running : activities.slice(-1)
@@ -969,7 +972,7 @@ function SqlActivityStrip({ activities }: { activities: SqlActivity[] }) {
     }}>
       {visible.length === 0 ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))' }}>
-          <Check size={10} style={{ color: 'var(--success-color)' }} /> Ready
+          <Check size={10} style={{ color: 'var(--success-color)' }} /> {t('Ready')}
         </div>
       ) : visible.map(item => (
         <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, fontFamily: 'var(--font-mono)', fontSize: 'calc(10px * var(--ui-text-scale, 1))' }}>
@@ -983,7 +986,7 @@ function SqlActivityStrip({ activities }: { activities: SqlActivity[] }) {
           </span>
         </div>
       ))}
-      {running.length > 1 && <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>{running.length} operations running</span>}
+      {running.length > 1 && <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: 'calc(9px * var(--ui-text-scale, 1))' }}>{t('{n} operations running', { n: running.length })}</span>}
     </footer>
   )
 }
@@ -993,17 +996,18 @@ function ConfirmSelectAllDialog({ table, onClose, onConfirm }: {
   onClose: () => void
   onConfirm: () => void
 }) {
+  const t = useI18n()
   return (
-    <Modal onClose={onClose} width={360} label="select all rows">
+    <Modal onClose={onClose} width={360} label={t('select all rows')}>
       <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-          select all rows?
+          {t('select all rows?')}
         </div>
         <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>
           <span style={{ wordBreak: 'break-all' }}>{table}</span>
           <br />
-          large tables can take a long time and the result is truncated at 250k rows.
-          consider <span style={{ color: 'var(--accent-color)' }}>select top N rows</span> instead.
+          {t('large tables can take a long time and the result is truncated at 250k rows.')}
+          {' '}{t('consider')} <span style={{ color: 'var(--accent-color)' }}>{t('select top N rows')}</span> {t('instead.')}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
           <button onClick={onClose} style={{
@@ -1011,13 +1015,13 @@ function ConfirmSelectAllDialog({ table, onClose, onConfirm }: {
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
             color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
             fontFamily: 'var(--font-mono)'
-          }}>cancel</button>
+          }}>{t('cancel')}</button>
           <button onClick={onConfirm} style={{
             padding: '7px 16px', background: 'var(--warning-color)', color: 'var(--text-inverse)',
             border: 'none', borderRadius: 'var(--radius-md)',
             cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', fontWeight: 600
           }}>
-            select all
+            {t('select all')}
           </button>
         </div>
       </div>
@@ -1030,13 +1034,14 @@ function RowLimitDialog({ table, onClose, onConfirm }: {
   onClose: () => void
   onConfirm: (n: number) => void
 }) {
+  const t = useI18n()
   const [n, setN] = useState('1000')
   const valid = /^\d+$/.test(n) && parseInt(n, 10) > 0
   return (
-    <Modal onClose={onClose} width={320} label="select top n rows">
+    <Modal onClose={onClose} width={320} label={t('select top n rows')}>
       <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-          select top N rows
+          {t('select top N rows')}
         </div>
         <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
           {table}
@@ -1060,7 +1065,7 @@ function RowLimitDialog({ table, onClose, onConfirm }: {
             border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
             color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
             fontFamily: 'var(--font-mono)'
-          }}>cancel</button>
+          }}>{t('cancel')}</button>
           <button onClick={() => valid && onConfirm(parseInt(n, 10))} disabled={!valid} style={{
             padding: '7px 16px', background: valid ? 'var(--accent-color)' : 'var(--bg-disabled)',
             color: valid ? 'var(--text-inverse)' : 'var(--text-muted)',
@@ -1068,7 +1073,7 @@ function RowLimitDialog({ table, onClose, onConfirm }: {
             cursor: valid ? 'pointer' : 'not-allowed', fontSize: 'calc(11px * var(--ui-text-scale, 1))',
             fontFamily: 'var(--font-mono)', fontWeight: 600
           }}>
-            run
+            {t('run')}
           </button>
         </div>
       </div>

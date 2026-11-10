@@ -5,6 +5,7 @@ import type { AdoFolderState } from '../../hooks/useAdoFolder'
 import type { AdoRepoList } from '../../shared/adoSettings'
 import { encodeRef } from '../settings/ado/adoUi'
 import { ipcMessage, px } from '../settings/ui'
+import { tr, useI18n } from '../../i18n'
 
 /**
  * Repositories of one connection from the shared catalog (cached by the main
@@ -30,6 +31,7 @@ export function useConnectionRepos(connectionId: string | null): AdoRepoList | u
  * `compact` is a one-line banner for the worktree view and the dialogs.
  */
 export function AdoRepoChooser({ state, compact = false }: { state: AdoFolderState; compact?: boolean }) {
+  const t = useI18n()
   const connections = useAdoSettingsStore(s => s.settings?.connections)
   const catalogLoading = useAdoSettingsStore(s => s.catalogLoading)
   const [pickKey, setPickKey] = useState('')
@@ -49,7 +51,7 @@ export function AdoRepoChooser({ state, compact = false }: { state: AdoFolderSta
     try {
       await state.choose(chosen)
     } catch (e) {
-      setError(ipcMessage(e, 'salvataggio non riuscito'))
+      setError(ipcMessage(e, tr('save failed')))
     } finally {
       setSaving(false)
     }
@@ -61,24 +63,29 @@ export function AdoRepoChooser({ state, compact = false }: { state: AdoFolderSta
     .filter(g => g.refs.length > 0)
 
   const name = <b style={{ color: compact ? 'inherit' : 'var(--text-primary)' }}>«{state.folderName}»</b>
+  // the folder name is bold inside the sentence: the translation keeps {name} where it goes
+  const withName = (text: string) => {
+    const [before, after = ''] = text.split('{name}')
+    return <>{before}{name}{after}</>
+  }
   let message: React.ReactNode
   switch (state.status) {
     case 'loading':
-      message = 'lettura da Azure DevOps...'
+      message = t('reading from Azure DevOps...')
       break
     case 'no-connections':
-      message = 'nessuna connessione Azure DevOps configurata'
+      message = t('no Azure DevOps connection configured')
       break
     case 'ambiguous':
-      message = <>più repository Azure DevOps si chiamano {name}: scegli quale usare per questa cartella</>
+      message = withName(t('several Azure DevOps repositories are named {name}: choose the one to use for this folder'))
       break
     case 'none':
       message = state.candidates.length > 0
-        ? <>nessuna repository Azure DevOps si chiama {name}: scegli quale usare per questa cartella</>
-        : <>nessuna repository Azure DevOps si chiama {name} e le connessioni non ne restituiscono altre</>
+        ? withName(t('no Azure DevOps repository is named {name}: choose the one to use for this folder'))
+        : withName(t('no Azure DevOps repository is named {name} and the connections return no other'))
       break
     case 'error':
-      message = 'le repository Azure DevOps non sono leggibili'
+      message = t('the Azure DevOps repositories cannot be read')
       break
   }
 
@@ -109,10 +116,10 @@ export function AdoRepoChooser({ state, compact = false }: { state: AdoFolderSta
       {canChoose && (
         <>
           <select value={chosen ? encodeRef(chosen) : ''} onChange={(e) => setPickKey(e.target.value)} disabled={saving}
-            aria-label="repository Azure DevOps" title="repository Azure DevOps"
-            data-tip-desc="repository Azure DevOps usata da questa cartella (lavori, PBI, pull request, rilascio)"
+            aria-label={t('Azure DevOps repository')} title={t('Azure DevOps repository')}
+            data-tip-desc={t('Azure DevOps repository used by this folder (work, PBI, pull requests, release)')}
             style={selectStyle}>
-            <option value="">scegli una repository…</option>
+            <option value="">{t('choose a repository…')}</option>
             {groups.map(({ c, refs }) => (
               <optgroup key={c.id} label={`${c.organization} / ${c.project}`}>
                 {refs.map(r => <option key={encodeRef(r)} value={encodeRef(r)}>{r.repository}</option>)}
@@ -120,25 +127,25 @@ export function AdoRepoChooser({ state, compact = false }: { state: AdoFolderSta
             ))}
           </select>
           <button onClick={() => void choose()} disabled={!chosen || saving}
-            title="usa e ricorda" data-tip-desc="usa questa repository per la cartella e ricordala (Impostazioni › Azure DevOps › Repository per cartella)"
+            title={t('use and remember')} data-tip-desc={t('use this repository for the folder and remember it (Settings › Azure DevOps › Repositories by folder)')}
             style={btnStyle(true, !!chosen && !saving)}>
             {saving && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} />}
-            usa e ricorda
+            {t('use and remember')}
           </button>
         </>
       )}
       {showRetry && (
-        <button onClick={retry} disabled={catalogLoading} title="riprova" data-tip-desc="leggi di nuovo le repository da Azure DevOps"
+        <button onClick={retry} disabled={catalogLoading} title={t('retry')} data-tip-desc={t('read the repositories from Azure DevOps again')}
           style={btnStyle(false, !catalogLoading)}>
           {catalogLoading ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : <RotateCw size={10} />}
-          riprova
+          {t('retry')}
         </button>
       )}
       {showSettings && (
         <button onClick={openConnections}
-          title="configura in Impostazioni" data-tip-desc="apri Impostazioni › Azure DevOps › Connessioni"
+          title={t('configure in Settings')} data-tip-desc={t('open Settings › Azure DevOps › Connections')}
           style={btnStyle(state.status === 'no-connections' && !compact)}>
-          <Settings size={10} /> configura in Impostazioni
+          <Settings size={10} /> {t('configure in Settings')}
         </button>
       )}
     </>
@@ -190,8 +197,7 @@ export function AdoRepoChooser({ state, compact = false }: { state: AdoFolderSta
         <div style={{ lineHeight: 1.5 }}>{message}</div>
         {state.status === 'no-connections' && (
           <div style={{ color: 'var(--text-muted)', fontSize: px(11), lineHeight: 1.5 }}>
-            organization, project e PAT si configurano una volta in Impostazioni › Azure DevOps; ogni cartella usa la
-            repository con il suo stesso nome
+            {t('organization, project and PAT are set once in Settings › Azure DevOps; each folder uses the repository with its own name')}
           </div>
         )}
         {errors}

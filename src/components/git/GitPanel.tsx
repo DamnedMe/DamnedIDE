@@ -8,12 +8,14 @@ import { useGitStore, useSettingsStore } from '../../store'
 import { FolderOpen, RefreshCw } from '@/components/icons'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { GitFileStatus } from '../../types/git'
+import { useI18n } from '../../i18n'
 
 interface GitPanelProps {
   repoPath: string | null
 }
 
 export function GitPanel({ repoPath }: GitPanelProps) {
+  const t = useI18n()
   // Settings › Tema: the side menu docked on the right
   const sidebarRight = useSettingsStore(s => s.settings.sidebarSide === 'right')
   const { status, setStatus, files, setFiles, branches, setBranches, isLoading, setLoading } = useGitStore()
@@ -67,7 +69,7 @@ export function GitPanel({ repoPath }: GitPanelProps) {
             }}>
               <FolderOpen size={28} strokeWidth={1} />
             </div>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>open a repo to view changes</p>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(13px * var(--ui-text-scale, 1))' }}>{t('open a repo to view changes')}</p>
           </div>
           <TerminalDock repoPath={null} />
         </div>
@@ -97,7 +99,7 @@ export function GitPanel({ repoPath }: GitPanelProps) {
   return (
     <PanelContainer
       actions={
-        <ActionBtn onClick={loadStatus} title="refresh" data-tip-desc="reload the current data from the repository">
+        <ActionBtn onClick={loadStatus} title={t('refresh')} data-tip-desc={t('reload the current data from the repository')}>
           <RefreshCw size={13} />
         </ActionBtn>
       }

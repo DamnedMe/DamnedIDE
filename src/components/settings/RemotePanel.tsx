@@ -14,7 +14,8 @@ import {
   AlertTriangle
 } from '@/components/icons'
 import { useToastStore } from '../../store'
-import { ALL_SCOPES, SCOPE_LABELS, type RemoteScope } from '../../shared/remote/protocol'
+import { tr, useI18n } from '../../i18n'
+import { ALL_SCOPES, type RemoteScope } from '../../shared/remote/protocol'
 
 type RemoteStatus = Awaited<ReturnType<typeof window.electronAPI.remote.status>>
 type DeviceInfo = Awaited<ReturnType<typeof window.electronAPI.remote.devices>>[number]
@@ -76,6 +77,7 @@ function GhostButton({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButto
 }
 
 export function RemotePanel() {
+  const t = useI18n()
   const showToast = useToastStore((s) => s.showToast)
   const [status, setStatus] = useState<RemoteStatus | null>(null)
   const [devices, setDevices] = useState<DeviceInfo[]>([])
@@ -99,7 +101,7 @@ export function RemotePanel() {
       setPending(pend)
       if (!statusRef.current) setPort(st.port)
     } catch (e) {
-      showToast((e as Error).message || 'stato accesso remoto non disponibile', 'error')
+      showToast((e as Error).message || tr('remote access status not available'), 'error')
     }
   }, [showToast])
 
@@ -125,14 +127,14 @@ export function RemotePanel() {
         const st = await window.electronAPI.remote.stop()
         setStatus(st)
         setPairing(null)
-        showToast('accesso remoto disattivato')
+        showToast(tr('remote access turned off'))
       } else {
         const st = await window.electronAPI.remote.start({ port })
         setStatus(st)
-        showToast(st.warning || `bridge attivo su ${st.host}:${st.port}`, st.warning ? 'info' : 'success')
+        showToast(st.warning || tr('bridge active on {host}:{port}', { host: st.host, port: st.port }), st.warning ? 'info' : 'success')
       }
     } catch (e) {
-      showToast((e as Error).message || 'operazione fallita', 'error')
+      showToast((e as Error).message || tr('operation failed'), 'error')
     } finally {
       setBusy(false)
     }
@@ -144,7 +146,7 @@ export function RemotePanel() {
       setPairing(await window.electronAPI.remote.beginPairing())
       setNow(Date.now())
     } catch (e) {
-      showToast((e as Error).message || 'generazione QR fallita', 'error')
+      showToast((e as Error).message || tr('QR generation failed'), 'error')
     } finally {
       setBusy(false)
     }
@@ -162,8 +164,18 @@ export function RemotePanel() {
 
   const revoke = async (id: string) => {
     setDevices(await window.electronAPI.remote.revoke(id))
-    showToast('dispositivo rimosso')
+    showToast(tr('device removed'))
   }
+
+  // SCOPE_LABELS (shared/remote/protocol) is Italian and node-checked: labels are translated here
+  const scopeLabel = (scope: RemoteScope): string => ({
+    view: t('Read only'),
+    edit: t('Edit files'),
+    git: t('Git operations'),
+    sql: t('SQL queries'),
+    sqlDestructive: t('Destructive SQL (backup/restore/mutations)'),
+    terminal: t('Terminal and processes')
+  })[scope]
 
   const secondsLeft = pairing ? Math.max(0, Math.round((pairing.expiresAt - now) / 1000)) : 0
   const ts = status?.tailscale
@@ -181,10 +193,10 @@ export function RemotePanel() {
             )}
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                {status?.listening ? `${status.host}:${status.port}` : 'non attivo'}
+                {status?.listening ? `${status.host}:${status.port}` : t('not active')}
               </div>
               <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                {ts?.running ? `Tailscale: ${ts.dnsName || ts.ipv4}` : ts?.available ? 'Tailscale non connesso' : 'Tailscale non rilevato'}
+                {ts?.running ? `Tailscale: ${ts.dnsName || ts.ipv4}` : ts?.available ? t('Tailscale not connected') : t('Tailscale not detected')}
               </div>
             </div>
           </div>
@@ -194,7 +206,7 @@ export function RemotePanel() {
                 type="number"
                 value={port}
                 onChange={(e) => setPort(parseInt(e.target.value) || 8765)}
-                title="porta del bridge"
+                title={t('bridge port')}
                 style={{
                   width: '72px',
                   height: '28px',
@@ -211,7 +223,7 @@ export function RemotePanel() {
             )}
             <PrimaryButton onClick={toggle} disabled={busy}>
               {busy ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Power size={11} />}
-              {status?.listening ? 'disattiva' : 'attiva'}
+              {status?.listening ? t('turn off') : t('turn on')}
             </PrimaryButton>
           </div>
         </div>
@@ -226,17 +238,17 @@ export function RemotePanel() {
       {pending.map((p) => (
         <div key={p.id} style={{ ...SURFACE, border: '1px solid var(--accent-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-            Richiesta di associazione da <strong>{p.name}</strong> ({p.platform})
+            {t('Pairing request from')} <strong>{p.name}</strong> ({p.platform})
           </div>
           <div style={{ fontSize: 'calc(20px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', letterSpacing: '4px', color: 'var(--accent-color)' }}>
             {p.code}
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <PrimaryButton onClick={() => void resolvePairing(p.id, true)}>
-              <Check size={11} /> accetta
+              <Check size={11} /> {t('accept')}
             </PrimaryButton>
             <GhostButton onClick={() => void resolvePairing(p.id, false)}>
-              <X size={11} /> rifiuta
+              <X size={11} /> {t('reject')}
             </GhostButton>
           </div>
         </div>
@@ -246,30 +258,30 @@ export function RemotePanel() {
       <div style={{ ...SURFACE, display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-            <QrCode size={12} /> Associa un dispositivo
+            <QrCode size={12} /> {t('Pair a device')}
           </div>
           <PrimaryButton onClick={generateQr} disabled={!status?.listening || busy}>
-            <QrCode size={11} /> genera QR
+            <QrCode size={11} /> {t('generate QR')}
           </PrimaryButton>
         </div>
         {pairing ? (
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <img src={pairing.qrDataUrl} alt="QR di associazione" width={148} height={148} style={{ borderRadius: 'var(--radius-sm)', background: '#fff', padding: '6px' }} />
+            <img src={pairing.qrDataUrl} alt={t('pairing QR')} width={148} height={148} style={{ borderRadius: 'var(--radius-sm)', background: '#fff', padding: '6px' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
               <div style={{ fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
                 {pairing.payload.host}:{pairing.payload.port} · {pairing.payload.tls ? 'wss' : 'ws'} (WireGuard)
               </div>
               <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: secondsLeft > 0 ? 'var(--accent-color)' : 'var(--error-color)' }}>
-                {secondsLeft > 0 ? `scade tra ${secondsLeft}s` : 'scaduto — rigenera'}
+                {secondsLeft > 0 ? t('expires in {s}s', { s: secondsLeft }) : t('expired — regenerate')}
               </div>
-              <GhostButton onClick={() => { void navigator.clipboard.writeText(pairing.url); showToast('link copiato') }}>
-                <Copy size={11} /> copia link
+              <GhostButton onClick={() => { void navigator.clipboard.writeText(pairing.url); showToast(t('link copied')) }}>
+                <Copy size={11} /> {t('copy link')}
               </GhostButton>
             </div>
           </div>
         ) : (
           <div style={{ fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-            Assicurati che il telefono abbia Tailscale attivo sulla stessa rete, poi scansiona il QR per scaricare DamnedCloud e associarlo.
+            {t('Make sure the phone has Tailscale active on the same network, then scan the QR to download DamnedCloud and pair it.')}
           </div>
         )}
       </div>
@@ -278,15 +290,15 @@ export function RemotePanel() {
       <div style={{ ...SURFACE, display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-            <ShieldCheck size={12} /> Dispositivi ({devices.length})
+            <ShieldCheck size={12} /> {t('Devices ({n})', { n: devices.length })}
           </div>
           <GhostButton onClick={() => void refresh()}>
-            <RefreshCw size={11} /> aggiorna
+            <RefreshCw size={11} /> {t('refresh')}
           </GhostButton>
         </div>
         {devices.length === 0 && (
           <div style={{ fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-            Nessun dispositivo associato.
+            {t('No paired devices.')}
           </div>
         )}
         {devices.map((d) => (
@@ -297,11 +309,11 @@ export function RemotePanel() {
                   {d.name} <span style={{ color: 'var(--text-muted)' }}>· {d.platform}</span>
                 </div>
                 <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                  ultimo accesso: {d.lastSeen ? new Date(d.lastSeen).toLocaleString() : 'mai'}
+                  {t('last seen: {when}', { when: d.lastSeen ? new Date(d.lastSeen).toLocaleString() : t('never') })}
                 </div>
               </div>
               <GhostButton onClick={() => void revoke(d.id)}>
-                <Trash2 size={11} /> revoca
+                <Trash2 size={11} /> {t('revoke')}
               </GhostButton>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -311,7 +323,7 @@ export function RemotePanel() {
                   <button
                     key={scope}
                     onClick={() => void setScopes(d.id, active ? d.scopes.filter((s) => s !== scope) : [...d.scopes, scope])}
-                    title={SCOPE_LABELS[scope]}
+                    title={scopeLabel(scope)}
                     style={{
                       padding: '3px 8px',
                       borderRadius: 'var(--radius-sm)',
@@ -323,7 +335,7 @@ export function RemotePanel() {
                       color: active ? 'var(--accent-color)' : 'var(--text-muted)'
                     }}
                   >
-                    {SCOPE_LABELS[scope]}
+                    {scopeLabel(scope)}
                   </button>
                 )
               })}
@@ -331,8 +343,8 @@ export function RemotePanel() {
           </div>
         ))}
         {devices.length > 0 && (
-          <GhostButton onClick={async () => { setDevices(await window.electronAPI.remote.revokeAll()); showToast('tutti i dispositivi rimossi') }}>
-            <Trash2 size={11} /> revoca tutti
+          <GhostButton onClick={async () => { setDevices(await window.electronAPI.remote.revokeAll()); showToast(tr('all devices removed')) }}>
+            <Trash2 size={11} /> {t('revoke all')}
           </GhostButton>
         )}
       </div>

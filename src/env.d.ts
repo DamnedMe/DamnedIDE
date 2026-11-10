@@ -193,7 +193,7 @@ interface Window {
     worktree: {
       list: (repoPath: string) => Promise<WorktreeEntry[]>
       add: (repoPath: string, branch: string, path: string, base?: string) => Promise<void>
-      remove: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; warning?: string; trashedPath?: string; error?: string }>
+      remove: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; skipped?: boolean; warning?: string; trashedPath?: string; error?: string }>
       removeSafe: (repoPath: string, worktreePath: string, force?: boolean) => Promise<{ ok: boolean; skipped?: boolean; warning?: string; trashedPath?: string; error?: string }>
       stack: (repoPath: string) => Promise<WorktreeStackInfo[]>
       overview: (repoPath: string, opts?: { paths?: string[]; localOnly?: boolean }) => Promise<WorktreeOverview[]>

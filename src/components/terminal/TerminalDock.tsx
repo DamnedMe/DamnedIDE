@@ -2,11 +2,13 @@ import { Terminal, ChevronDown } from '@/components/icons'
 import { TerminalPanel } from './TerminalPanel'
 import { AiChatPanel } from './AiChatPanel'
 import { useTerminalStore } from '../../store'
+import { useI18n } from '../../i18n'
 
 // Bottom dock: rendered INSIDE a panel's content, below its own internal sections
 // (changes inspector, file viewer, ...). It shows EITHER the terminal or the AI chat
 // (alternative modes) based on the shared dock store, toggled from the status bar.
 export function TerminalDock({ repoPath }: { repoPath?: string | null }) {
+  const t = useI18n()
   const open = useTerminalStore(s => s.open)
   const height = useTerminalStore(s => s.height)
   const mode = useTerminalStore(s => s.mode)
@@ -38,7 +40,7 @@ export function TerminalDock({ repoPath }: { repoPath?: string | null }) {
       background: 'var(--bg-card)', borderTop: '1px solid var(--border-color)',
       marginTop: '6px'
     }}>
-      <div onMouseDown={startResize} title="resize" data-tip-desc="drag to resize the panel"
+      <div onMouseDown={startResize} title={t('resize')} data-tip-desc={t('drag to resize the panel')}
         style={{ height: '4px', cursor: 'row-resize', flexShrink: 0 }} />
       {!isAi && (
       <div style={{
@@ -51,9 +53,9 @@ export function TerminalDock({ repoPath }: { repoPath?: string | null }) {
           color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px'
         }}>
           <Terminal size={10} style={{ color: 'var(--accent-color)' }} />
-          terminal
+          {t('terminal')}
         </span>
-        <button onClick={() => setOpen(false)} title="minimize" data-tip-desc="minimize the panel back to the status bar icon"
+        <button onClick={() => setOpen(false)} title={t('minimize')} data-tip-desc={t('minimize the panel back to the status bar icon')}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '20px', height: '18px', background: 'none', border: 'none',

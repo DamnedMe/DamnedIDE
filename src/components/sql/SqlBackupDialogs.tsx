@@ -4,6 +4,7 @@ import { Modal } from '../layout/Modal'
 import { SqlConnection } from '../../types/sql'
 import { buildBackupStatement, dataTierTargetName, defaultBackupFileName, joinServerPath, type DataTierAction } from '../../shared/sqlBackup'
 import { useToastStore } from '../../store'
+import { tr, useI18n } from '../../i18n'
 
 const label: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: '6px',
@@ -50,6 +51,7 @@ export function SqlBackupDialog({ conn, database, onClose }: { conn: SqlConnecti
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [loadingDir, setLoadingDir] = useState(true)
   const showToast = useToastStore(s => s.showToast)
+  const t = useI18n()
 
   const regenerate = (dir: string | null) => {
     const file = defaultBackupFileName(database)
@@ -71,8 +73,8 @@ export function SqlBackupDialog({ conn, database, onClose }: { conn: SqlConnecti
   }, [conn.id, database])
 
   const statement = useMemo(
-    () => buildBackupStatement(database, { path: path || '<percorso .bak>', compress, copyOnly, init }),
-    [database, path, compress, copyOnly, init]
+    () => buildBackupStatement(database, { path: path || t('<.bak path>'), compress, copyOnly, init }),
+    [database, path, compress, copyOnly, init, t]
   )
 
   const run = async () => {
@@ -82,9 +84,9 @@ export function SqlBackupDialog({ conn, database, onClose }: { conn: SqlConnecti
     try {
       const res = await window.electronAPI.sql.backup(conn.id, database, { path: path.trim(), compress, copyOnly, init })
       setResult(res.ok
-        ? { ok: true, message: `backup completato in ${((res.elapsedMs || 0) / 1000).toFixed(1)}s` }
-        : { ok: false, message: res.error || 'backup fallito' })
-      if (res.ok) showToast('backup completato')
+        ? { ok: true, message: tr('backup completed in {s}s', { s: ((res.elapsedMs || 0) / 1000).toFixed(1) }) }
+        : { ok: false, message: res.error || tr('backup failed') })
+      if (res.ok) showToast(tr('backup completed'))
     } catch (e) {
       setResult({ ok: false, message: (e as Error).message })
     } finally {
@@ -93,48 +95,48 @@ export function SqlBackupDialog({ conn, database, onClose }: { conn: SqlConnecti
   }
 
   return (
-    <Modal onClose={() => { if (!running) onClose() }} width={620} label="backup database">
+    <Modal onClose={() => { if (!running) onClose() }} width={620} label={t('backup database')}>
       <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <HardDriveDownload size={16} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Backup di {database}
+              {t('Backup of {database}', { database })}
             </div>
             <div style={{ fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              {conn.server} · file .bak completo (schema + dati)
+              {conn.server} · {t('full .bak file (schema + data)')}
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
           <span style={label}>
-            <FolderOpen size={11} /> percorso sul server SQL
+            <FolderOpen size={11} /> {t('path on the SQL server')}
             {loadingDir && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} />}
           </span>
           <div style={{ display: 'flex', gap: '6px' }}>
             <input value={path} onChange={(e) => setPath(e.target.value)} spellCheck={false} style={input}
               placeholder="C:\\Backup\\Database.bak" />
-            <button onClick={() => regenerate(directory)} title="rigenera il nome con data e ora" data-tip-desc="regenerate the file name with the current timestamp"
+            <button onClick={() => regenerate(directory)} title={t('regenerate the name with date and time')} data-tip-desc={t('regenerate the file name with the current timestamp')}
               style={btn(!!directory)} disabled={!directory}>
               <RefreshCw size={11} />
             </button>
           </div>
           <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            il backup viene scritto dal server su questo percorso (non sulla macchina locale)
-            {directory ? ` · default del server: ${directory}` : ''}
+            {t('the server writes the backup to this path (not on the local machine)')}
+            {directory ? ` · ${t('server default: {dir}', { dir: directory })}` : ''}
           </span>
         </div>
 
         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-          <Checkbox checked={compress} onChange={setCompress}>compressione</Checkbox>
-          <Checkbox checked={init} onChange={setInit}>sovrascrivi se esiste</Checkbox>
-          <Checkbox checked={copyOnly} onChange={setCopyOnly}>copy-only (non tocca la catena)</Checkbox>
+          <Checkbox checked={compress} onChange={setCompress}>{t('compression')}</Checkbox>
+          <Checkbox checked={init} onChange={setInit}>{t('overwrite if it exists')}</Checkbox>
+          <Checkbox checked={copyOnly} onChange={setCopyOnly}>{t('copy-only (does not touch the backup chain)')}</Checkbox>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <span style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            comando che verrà eseguito
+            {t('command that will be run')}
           </span>
           <pre style={{
             margin: 0, padding: '8px 10px', maxHeight: '120px', overflow: 'auto',
@@ -158,10 +160,10 @@ export function SqlBackupDialog({ conn, database, onClose }: { conn: SqlConnecti
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button onClick={onClose} disabled={running} style={btn(!running)}>chiudi</button>
+          <button onClick={onClose} disabled={running} style={btn(!running)}>{t('close')}</button>
           <button onClick={run} disabled={running || !path.trim()} style={btn(!running && !!path.trim(), true)}>
             {running ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Database size={11} />}
-            {running ? 'backup in corso…' : 'esegui backup'}
+            {running ? t('backing up…') : t('run backup')}
           </button>
         </div>
       </div>
@@ -185,10 +187,11 @@ export function SqlDataTierDialog({ conn, database, action, onClose }: {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
   const showToast = useToastStore(s => s.showToast)
+  const t = useI18n()
 
-  const title = action === 'extract' ? 'Estrai applicazione a livello dati' : 'Esporta applicazione a livello dati'
+  const title = action === 'extract' ? t('Extract data-tier application') : t('Export data-tier application')
   const ext = action === 'extract' ? 'dacpac' : 'bacpac'
-  const what = action === 'extract' ? 'solo schema, senza dati (.dacpac)' : 'schema e dati (.bacpac)'
+  const what = action === 'extract' ? t('schema only, no data (.dacpac)') : t('schema and data (.bacpac)')
   const suggested = dataTierTargetName(database, action)
 
   useEffect(() => {
@@ -207,7 +210,7 @@ export function SqlDataTierDialog({ conn, database, action, onClose }: {
   const pickFile = async () => {
     const chosen = await window.electronAPI.dialog.saveFile(suggested, [
       { name: ext.toUpperCase(), extensions: [ext] },
-      { name: 'Tutti i file', extensions: ['*'] }
+      { name: t('All files'), extensions: ['*'] }
     ])
     if (chosen) setTarget(chosen)
   }
@@ -220,9 +223,9 @@ export function SqlDataTierDialog({ conn, database, action, onClose }: {
     try {
       const res = await window.electronAPI.sql.dataTier(conn.id, database, action, target)
       setResult(res.ok
-        ? { ok: true, message: `completato: ${target}` }
-        : { ok: false, message: res.error || 'operazione fallita' })
-      if (res.ok) showToast('operazione completata')
+        ? { ok: true, message: tr('completed: {target}', { target }) }
+        : { ok: false, message: res.error || tr('operation failed') })
+      if (res.ok) showToast(tr('operation completed'))
     } catch (e) {
       setResult({ ok: false, message: (e as Error).message })
     } finally {
@@ -232,12 +235,12 @@ export function SqlDataTierDialog({ conn, database, action, onClose }: {
 
   const cancel = async () => {
     await window.electronAPI.sql.dataTierCancel().catch(() => {})
-    setResult({ ok: false, message: 'operazione annullata' })
+    setResult({ ok: false, message: tr('operation canceled') })
     setRunning(false)
   }
 
   return (
-    <Modal onClose={() => { if (!running) onClose() }} width={620} label="data-tier application">
+    <Modal onClose={() => { if (!running) onClose() }} width={620} label={t('data-tier application')}>
       <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {action === 'extract' ? <PackageOpen size={16} style={{ color: 'var(--accent-color)' }} /> : <FileArchive size={16} style={{ color: 'var(--accent-color)' }} />}
@@ -259,32 +262,32 @@ export function SqlDataTierDialog({ conn, database, action, onClose }: {
             fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', lineHeight: 1.6
           }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-              <AlertCircle size={12} /> SqlPackage non trovato
+              <AlertCircle size={12} /> {t('SqlPackage not found')}
             </span>
             <span>
-              Serve lo strumento <b>SqlPackage</b> (DacFx) per creare {ext === 'dacpac' ? 'un .dacpac' : 'un .bacpac'}.
-              Installalo con il .NET SDK, oppure usa il link di Microsoft:
+              {t('You need the {tool} tool (DacFx) to create a {file}. Install it with the .NET SDK, or use the Microsoft link:', { file: `.${ext}` })
+                .split('{tool}').flatMap((part, i) => i ? [<b key={i}>SqlPackage</b>, part] : [part])}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               <code style={{ background: 'var(--bg-primary)', padding: '2px 6px', borderRadius: 'var(--radius-sm)' }}>{info.hint}</code>
-              <button onClick={() => { window.electronAPI.clipboard.write(info.hint); showToast('comando copiato') }}
+              <button onClick={() => { window.electronAPI.clipboard.write(info.hint); showToast(t('command copied')) }}
                 style={btn(true)}>
-                <Copy size={10} /> copia
+                <Copy size={10} /> {t('copy')}
               </button>
               <button onClick={() => window.electronAPI.shell.openExternal('https://learn.microsoft.com/sql/tools/sqlpackage/sqlpackage-download')}
                 style={btn(true)}>
-                download
+                {t('download')}
               </button>
             </div>
           </div>
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <span style={label}><FolderOpen size={11} /> file di destinazione</span>
+          <span style={label}><FolderOpen size={11} /> {t('destination file')}</span>
           <div style={{ display: 'flex', gap: '6px' }}>
-            <input readOnly value={target || ''} placeholder={`${suggested} — scegli dove salvarlo`} style={input} />
+            <input readOnly value={target || ''} placeholder={t('{file} — choose where to save it', { file: suggested })} style={input} />
             <button onClick={pickFile} disabled={running} style={btn(!running)}>
-              sfoglia…
+              {t('browse…')}
             </button>
           </div>
         </div>
@@ -297,7 +300,7 @@ export function SqlDataTierDialog({ conn, database, action, onClose }: {
             fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)',
             display: 'flex', flexDirection: 'column', gap: '1px'
           }}>
-            {lines.length === 0 && <span style={{ color: 'var(--text-muted)' }}>avvio di SqlPackage…</span>}
+            {lines.length === 0 && <span style={{ color: 'var(--text-muted)' }}>{t('starting SqlPackage…')}</span>}
             {lines.map((line, i) => <span key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{line}</span>)}
           </div>
         )}
@@ -316,14 +319,14 @@ export function SqlDataTierDialog({ conn, database, action, onClose }: {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button onClick={onClose} disabled={running} style={btn(!running)}>chiudi</button>
+          <button onClick={onClose} disabled={running} style={btn(!running)}>{t('close')}</button>
           {running
             ? <button onClick={cancel} style={{ ...btn(true), color: 'var(--error-color)', borderColor: 'var(--error-color)' }}>
-                <X size={11} /> annulla operazione
+                <X size={11} /> {t('cancel operation')}
               </button>
             : <button onClick={run} disabled={!target || !info?.found} style={btn(!!target && !!info?.found, true)}>
                 {action === 'extract' ? <PackageOpen size={11} /> : <FileArchive size={11} />}
-                {action === 'extract' ? 'estrai' : 'esporta'}
+                {action === 'extract' ? t('extract') : t('export')}
               </button>}
         </div>
       </div>

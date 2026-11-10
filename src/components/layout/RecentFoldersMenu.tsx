@@ -48,7 +48,7 @@ export function RecentFoldersMenu({ anchor, currentPath, onOpen, onBrowse, onClo
   return (
     <>
       <div style={{ position: 'fixed', inset: 0, zIndex: 299 }} onClick={onClose} />
-      <div ref={panelRef} role="menu" aria-label="recent repositories" style={{
+      <div ref={panelRef} role="menu" aria-label={t('recent repositories')} style={{
         position: 'fixed', zIndex: 300, top,
         left: Math.max(8, Math.min(anchor.x, window.innerWidth - MENU_WIDTH - 8)),
         width: `${MENU_WIDTH}px`, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
@@ -103,7 +103,7 @@ export function RecentFoldersMenu({ anchor, currentPath, onOpen, onBrowse, onClo
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); removeRepo(p) }}
-                  title={t('remove from recents')} data-tip-desc="forget this folder (it stays on disk)"
+                  title={t('remove from recents')} data-tip-desc={t('forget this folder (it stays on disk)')}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                     padding: '3px', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)',

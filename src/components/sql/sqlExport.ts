@@ -2,6 +2,10 @@
 // the clipboard text of a cell or a column. React-free: used by ResultViewer
 // for one or many result sets, checked by scripts/sql-export.check.ts.
 
+/** UI text is English; ResultViewer passes `tr` (i18n) to get it translated. */
+export type Translate = (key: string, vars?: Record<string, string | number>) => string
+const en: Translate = (key, vars) => (vars ? key.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : key)
+
 export interface ExportSet {
   /** heading of the set in multi-set exports, e.g. "Result set 2" */
   title: string
@@ -119,10 +123,11 @@ export function toTextTable(set: ExportSet): string {
 }
 
 /** One block per set; several sets get a heading each. */
-export function toTextTables(sets: ExportSet[]): string {
+export function toTextTables(sets: ExportSet[], t: Translate = en): string {
   if (sets.length === 1) return toTextTable(sets[0])
   return sets.map(set => {
-    const heading = [set.title, set.table, `${set.rows.length} rig${set.rows.length === 1 ? 'a' : 'he'}`].filter(Boolean).join(' · ')
+    const count = set.rows.length === 1 ? t('1 row') : t('{n} rows', { n: set.rows.length })
+    const heading = [set.title, set.table, count].filter(Boolean).join(' · ')
     return `${heading}\n${toTextTable(set)}`
   }).join('\n\n')
 }

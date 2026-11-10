@@ -4,6 +4,7 @@ import { DiffViewer } from '../editor/DiffViewer'
 import { useToastStore } from '../../store'
 import { AdoPullRequestDetail, AdoPullRequestFile, AdoPullRequestThread } from '../../types/ado'
 import { isLongLivedBranch } from '../../shared/adoPromotion'
+import { tr, useI18n } from '../../i18n'
 
 interface PullRequestDetailProps {
   project: string
@@ -14,6 +15,7 @@ interface PullRequestDetailProps {
 }
 
 export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: PullRequestDetailProps) {
+  const t = useI18n()
   const [files, setFiles] = useState<AdoPullRequestFile[]>([])
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [original, setOriginal] = useState('')
@@ -67,22 +69,22 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
     try {
       let ok = false
       if (action === 'complete') {
-        if (!window.electronAPI.ado.completePr) throw new Error('API PR non disponibile: riavvia l\'app.')
+        if (!window.electronAPI.ado.completePr) throw new Error(tr('PR API not available: restart the app.'))
         // completing a promotion PR (develop → qa, qa → main) must never delete the source
         ok = await window.electronAPI.ado.completePr(project, repo, pr.id, pr.sourceCommitId, !isLongLivedBranch(pr.sourceBranch))
       } else {
-        if (!window.electronAPI.ado.setVote) throw new Error('API PR non disponibile: riavvia l\'app.')
+        if (!window.electronAPI.ado.setVote) throw new Error(tr('PR API not available: restart the app.'))
         ok = await window.electronAPI.ado.setVote(project, repo, pr.id, action === 'approve' ? 10 : -10)
       }
       if (!ok) {
-        setActionError(action === 'complete' ? 'Impossibile completare la PR (verifica permessi e policies).' : 'Impossibile aggiornare il voto (verifica di essere reviewer della PR).')
+        setActionError(action === 'complete' ? tr('Cannot complete the PR (check permissions and policies).') : tr('Cannot update the vote (check that you are a reviewer of the PR).'))
       } else {
-        if (action === 'complete') showToast(`PR #${pr.id} completata`)
-        else showToast(`PR #${pr.id} ${action === 'approve' ? 'approvata' : 'rejectata'}`)
+        if (action === 'complete') showToast(tr('PR #{id} completed', { id: pr.id }))
+        else showToast(action === 'approve' ? tr('PR #{id} approved', { id: pr.id }) : tr('PR #{id} rejected', { id: pr.id }))
         onChanged()
       }
     } catch (e) {
-      setActionError((e as Error).message || 'Errore durante l\'operazione.')
+      setActionError((e as Error).message || tr('Error during the operation.'))
     } finally {
       setIsAction(null)
     }
@@ -116,7 +118,7 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
         fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.5px'
       }}>
         <GitCompare size={11} />
-        files — {files.length}
+        {t('files')} — {files.length}
         {activeThreads.length > 0 && (
           <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--warning-color)' }}>
             <MessageSquare size={9} /> {activeThreads.length}
@@ -171,7 +173,7 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
         }}>
           <FileCode size={24} strokeWidth={1} />
           <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', textAlign: 'center' }}>
-            select a file to see its diff
+            {t('select a file to see its diff')}
           </div>
         </div>
       )}
@@ -201,11 +203,11 @@ export function PullRequestDetail({ project, repo, pr, onClose, onChanged }: Pul
           </div>
         </div>
         <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-          <ActionBtn label="approve" data-tip-desc="approve this pull request" color="var(--success-color)" icon={<Check size={10} />} busy={isAction === 'approve'} onClick={() => runAction('approve')} />
-          <ActionBtn label="reject" data-tip-desc="reject this pull request" color="var(--error-color)" icon={<ThumbsDown size={10} />} busy={isAction === 'reject'} onClick={() => runAction('reject')} />
-          <ActionBtn label="complete" data-tip-desc="complete and merge this pull request" color="var(--accent-color)" icon={<Merge size={10} />} busy={isAction === 'complete'} onClick={() => runAction('complete')} />
+          <ActionBtn label={t('approve')} data-tip-desc={t('approve this pull request')} color="var(--success-color)" icon={<Check size={10} />} busy={isAction === 'approve'} onClick={() => runAction('approve')} />
+          <ActionBtn label={t('reject')} data-tip-desc={t('reject this pull request')} color="var(--error-color)" icon={<ThumbsDown size={10} />} busy={isAction === 'reject'} onClick={() => runAction('reject')} />
+          <ActionBtn label={t('complete')} data-tip-desc={t('complete and merge this pull request')} color="var(--accent-color)" icon={<Merge size={10} />} busy={isAction === 'complete'} onClick={() => runAction('complete')} />
         </div>
-        <button onClick={onClose} title="close" data-tip-desc="close this panel or dialog"
+        <button onClick={onClose} title={t('close')} data-tip-desc={t('close this panel or dialog')}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '22px', height: '20px', background: 'transparent',

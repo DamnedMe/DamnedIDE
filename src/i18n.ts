@@ -1,113 +1,36 @@
 import { useMemo } from 'react'
 import { useSettingsStore } from './store'
+import { IT as base } from './locales/it/base'
+import { IT as shell } from './locales/it/shell-worktree'
+import { IT as worktree } from './locales/it/worktree-terminal'
+import { IT as editor } from './locales/it/editor'
+import { IT as sqlGrid } from './locales/it/sql-grid'
+import { IT as sqlTools } from './locales/it/sql-tools'
+import { IT as adoGit } from './locales/it/ado-git'
+import { IT as settings } from './locales/it/settings-layout'
 
 export type Lang = 'en' | 'it'
+export type Vars = Record<string, string | number>
 
-// Lightweight i18n: keys are the English labels (fallback), `it` provides the
-// Italian translation. Extend freely — missing keys fall back to English.
+// Keys are the English text (shown as is in English); `it` translates them, a missing key
+// falls back to English. Placeholders: t('{n} files', { n: 3 }). Italian lives in
+// src/locales/it/, one file per area; scripts/i18n.check.ts fails on a literal
+// t('…') / tr('…') key without an Italian entry or on a key translated two ways.
 export const dict: Record<Lang, Record<string, string>> = {
   en: {},
-  it: {
-    worktree: 'Worktree',
-    git: 'Git',
-    'GitTree not found': 'GitTree non trovato',
-    'the Git entry opens the repository in GitTree, which is not installed in the usual locations. Download it, or locate it if it is installed elsewhere: the choice is remembered.': 'la voce Git apre il repository in GitTree, che non è installato nei percorsi abituali. Scaricalo, oppure individualo se è installato altrove: la scelta viene ricordata.',
-    'download GitTree': 'scarica GitTree',
-    'locate GitTree…': 'individua GitTree…',
-    'select the GitTree executable': "seleziona l'eseguibile di GitTree",
-    ado: 'Azure DevOps',
-    release: 'Rilascio',
-    Release: 'Rilascio',
-    sql: 'SQL Server',
-    editor: 'Editor',
-    terminal: 'Terminale',
-    settings: 'Impostazioni',
-    'editor settings': 'impostazioni editor',
-    'editor colors': 'colori editor',
-    theme: 'tema',
-    dark: 'scuro',
-    light: 'chiaro',
-    'primary color': 'colore primario',
-    'font size': 'dimensione font',
-    'icon size': 'dimensione icone',
-    'interface font': 'font interfaccia',
-    'add font': 'aggiungi font',
-    'font family': 'famiglia font',
-    add: 'aggiungi',
-    default: 'predefinito',
-    current: 'attuale',
-    remove: 'rimuovi',
-    language: 'lingua',
-    english: 'English',
-    italian: 'Italiano',
-    minimap: 'minimap',
-    'tab size': 'dimensione tab',
-    'line numbers': 'numeri di riga',
-    'word wrap': 'a capo automatico',
-    'font ligatures': 'legature font',
-    'auto save': 'salvataggio automatico',
-    'navigation keybindings': 'scorciatoie navigazione',
-    on: 'on',
-    off: 'off',
-    relative: 'relativo',
-    '2 spaces': '2 spazi',
-    '4 spaces': '4 spazi',
-    '8 spaces': '8 spazi',
-    'VS Studio — Ctrl+- / Ctrl+Shift+-': 'VS Studio — Ctrl+- / Ctrl+Shift+-',
-    'VS Code — Alt+Left / Alt+Right': 'VS Code — Alt+FrecciaSx / Alt+FrecciaDx',
-    'reset colors': 'reimposta colori',
-    'reset to defaults': 'ripristina impostazioni',
-    'set current as standard theme': 'salva come tema standard',
-    'reset default theme settings': 'ripristina tema standard',
-    'new worktree': 'nuovo worktree',
-    'PBI id': 'ID PBI',
-    branch: 'branch',
-    path: 'percorso',
-    cancel: 'annulla',
-    create: 'crea',
-    feature: 'feature',
-    bugfix: 'bugfix',
-    'worktree type': 'tipo worktree',
-    'feature branch': 'branch feature (feature/{id})',
-    'bugfix branch': 'branch bugfix (bugfix/{id})',
-    'open a git repository': 'apri un repository git',
-    'to manage worktrees': 'per gestire i worktree',
-    'open repo': 'apri repo',
-    'recent repositories': 'repository recenti',
-    'no recent repositories': 'nessun repository recente',
-    'browse…': 'sfoglia…',
-    'remove from recents': 'rimuovi dai recenti',
-    'clear recents': 'svuota recenti',
-    worktrees: 'worktrees',
-    files: 'file',
-    Changes: 'Modifiche',
-    Files: 'File',
-    'select a worktree': 'seleziona un worktree',
-    'main': 'main',
-    detached: 'detached',
-    hidden: 'nascosto',
-    'all worktrees hidden': 'tutti i worktree nascosti',
-    'no worktrees': 'nessun worktree',
-    'hide from list': 'nascondi dalla lista',
-    unhide: 'mostra',
-    'unhide all': 'mostra tutti',
-    'remove worktree': 'rimuovi worktree',
-    'worktree cleanup': 'pulizia worktree',
-    'completa worktree': 'completa worktree',
-    'the worktree folder is locked (probably open in a terminal, Explorer or another program)': 'la cartella del worktree è bloccata (probabilmente aperta in un terminale, Explorer o un altro programma)',
-    'force removal unregisters the worktree from git; if the folder stays locked you will have to delete it manually': 'la rimozione forzata deregistra il worktree da git; se la cartella resta bloccata dovrai eliminarla a mano',
-    'force remove': 'rimuovi comunque',
-    'removing…': 'rimozione…',
-    'hide hidden': 'nascondi i nascosti',
-    'show hidden': 'mostra i nascosti',
-    'AI agents': 'Agenti AI'
-  }
+  it: { ...base, ...shell, ...worktree, ...editor, ...sqlGrid, ...sqlTools, ...adoGit, ...settings }
 }
+
+export const fill = (s: string, vars?: Vars): string =>
+  vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : s
+
+const lookup = (lang: Lang, key: string, vars?: Vars): string => fill(dict[lang]?.[key] ?? key, vars)
+
+/** Outside React (store actions, module helpers): the language at call time. */
+export const tr = (key: string, vars?: Vars): string =>
+  lookup(useSettingsStore.getState().settings.language || 'en', key, vars)
 
 export function useI18n() {
   const lang = useSettingsStore(s => s.settings.language || 'en')
-  return useMemo(() => {
-    const table = dict[lang]
-    return (key: string): string => table[key] ?? key
-  }, [lang])
+  return useMemo(() => (key: string, vars?: Vars): string => lookup(lang, key, vars), [lang])
 }

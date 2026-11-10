@@ -136,6 +136,7 @@ a:hover { text-decoration: underline; }
    selection mark at the strip edge */
 .wt-badge:not(.is-selected):hover { background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg-card) !important; }
 .wt-strip-list::-webkit-scrollbar { display: none; }
+.wt-edit-fab:hover { background: var(--accent-color) !important; color: var(--text-inverse) !important; }
 
 /* Rendered Markdown preview */
 .md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 {

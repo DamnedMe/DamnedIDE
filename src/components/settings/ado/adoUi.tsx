@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import type { CSSProperties } from 'react'
 import { useAdoSettingsStore } from '../../../store'
 import type { AdoConnectionConfig, AdoRepoList, AdoRepoRef } from '../../../shared/adoSettings'
+import { useI18n } from '../../../i18n'
 import { controlStyle } from '../ui'
 
 // Helpers shared by the Azure DevOps settings pages.
@@ -47,6 +48,7 @@ export function RepoRefSelect({ connections, catalog, refs, value, onChange, pla
   style?: CSSProperties
   disabled?: boolean
 }) {
+  const t = useI18n()
   const groups = connections.map(c => {
     const names = refs
       ? refs.filter(r => r.connectionId === c.id).map(r => r.repository)
@@ -68,14 +70,14 @@ export function RepoRefSelect({ connections, catalog, refs, value, onChange, pla
       disabled={disabled}
       style={{ ...controlStyle, padding: '0 6px', cursor: disabled ? 'not-allowed' : 'pointer', ...style }}
     >
-      {!value && <option value="" disabled>{placeholder ?? 'scegli la repository…'}</option>}
+      {!value && <option value="" disabled>{placeholder ?? t('choose the repository…')}</option>}
       {groups.map(({ c, list }) => (
         <optgroup key={c.id} label={connectionLabel(c)}>
           {list.map(name => {
             const ref = { connectionId: c.id, repository: name }
             return (
               <option key={name} value={encodeRef(ref)}>
-                {name}{known(ref) ? '' : ' (non trovata nel catalogo)'}
+                {name}{known(ref) ? '' : ` (${t('not found in the catalog')})`}
               </option>
             )
           })}
@@ -97,6 +99,7 @@ export function RepoNameSelect({ repos, catalogRead, value, onChange, special, t
   tip?: string
   style?: CSSProperties
 }) {
+  const t = useI18n()
   const isSpecial = special.some(s => s.value === value)
   const list = !isSpecial && value && !repos.some(r => r === value) ? [value, ...repos] : repos
   return (
@@ -106,7 +109,7 @@ export function RepoNameSelect({ repos, catalogRead, value, onChange, special, t
       {list.length > 0 && (
         <optgroup label="repository">
           {list.map(r => (
-            <option key={r} value={r}>{r}{catalogRead && !repos.includes(r) ? ' (non trovata nel catalogo)' : ''}</option>
+            <option key={r} value={r}>{r}{catalogRead && !repos.includes(r) ? ` (${t('not found in the catalog')})` : ''}</option>
           ))}
         </optgroup>
       )}

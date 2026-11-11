@@ -101,7 +101,7 @@ async function installElectronMock(page: Page) {
         importLegacy: async () => false,
         onChanged: unsub
       },
-      sql: {},
+      sql: { setQueryTimeout: async () => undefined },
       window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
       terminal: {},
       export: { xlsx: async () => null }

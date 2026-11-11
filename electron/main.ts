@@ -472,6 +472,7 @@ function registerIpcHandlers(
   ipcMain.handle('sql:query', ipc((connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) =>
     sql.executeQuery(connectionId, query, queryId, maxRows, database)))
   ipcMain.handle('sql:cancelQuery', ipc((queryId: string) => sql.cancelQuery(queryId)))
+  ipcMain.handle('sql:setQueryTimeout', ipc((seconds: number) => sql.setQueryTimeout(seconds)))
   ipcMain.handle('sql:testConnection', ipc((config: SqlConnectionConfig) => sql.testConnection(config)))
   ipcMain.handle('sql:serverInfo', ipc((connectionId: string) => sql.getServerInfo(connectionId)))
   ipcMain.handle('sql:databases', ipc((connectionId: string) => sql.listDatabases(connectionId)))

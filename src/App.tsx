@@ -50,6 +50,7 @@ export default function App() {
   const iconSize = useSettingsStore(s => s.settings.iconSize)
   const fontSize = useSettingsStore(s => s.settings.fontSize)
   const appFont = useSettingsStore(s => s.settings.appFont)
+  const sqlQueryTimeout = useSettingsStore(s => s.settings.sqlQueryTimeout)
   const updateSettings = useSettingsStore(s => s.updateSettings)
   const gitStatus = useGitStore(s => s.status)
   const gitFiles = useGitStore(s => s.files)
@@ -104,6 +105,12 @@ export default function App() {
   useEffect(() => {
     void migrateLegacyAdoStorage()
   }, [])
+
+  // Settings › SQL › query timeout: the main process opens (and reopens) its pools with it.
+  // Declared before the reconnect below, so the startup pools already get it.
+  useEffect(() => {
+    void window.electronAPI.sql.setQueryTimeout(sqlQueryTimeout)
+  }, [sqlQueryTimeout])
 
   // Reconnect persisted SQL connections on startup so they are available instantly.
   useEffect(() => {

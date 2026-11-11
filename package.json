@@ -51,6 +51,7 @@
     "test:sql-insert": "node --experimental-strip-types scripts/sql-insert.check.ts",
     "test:sql-zoom": "node --experimental-strip-types scripts/sql-zoom.check.ts",
     "test:sql-backup": "node --experimental-strip-types scripts/sql-backup.check.ts",
+    "test:sql-query-timeout": "node --experimental-strip-types scripts/sql-query-timeout.check.ts",
     "test:xlsx": "node --experimental-strip-types scripts/xlsx-export.check.ts",
     "test:sql-result-source": "node --experimental-strip-types scripts/sql-result-source.check.ts",
     "test:sql-export": "node --experimental-strip-types scripts/sql-export.check.ts",

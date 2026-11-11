@@ -257,6 +257,7 @@ interface Window {
       isConnected: (connectionId: string) => Promise<boolean>
       query: (connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) => Promise<import('./types/sql').SqlExecutionResult>
       cancelQuery: (queryId: string) => Promise<void>
+      setQueryTimeout: (seconds: number) => Promise<void>
       testConnection: (config: import('./types/sql').SqlConnectionConfig) => Promise<import('./types/sql').SqlTestResult>
       serverInfo: (connectionId: string) => Promise<import('./types/sql').SqlServerInfo>
       databases: (connectionId: string) => Promise<string[]>

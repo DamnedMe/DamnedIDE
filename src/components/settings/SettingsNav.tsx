@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
-  Bot, Cloud, FolderGit2, GitBranch, Languages, Palette, PenLine, PlugZap, RefreshCw, Rocket,
+  Bot, Cloud, Database, FolderGit2, GitBranch, Languages, Palette, PenLine, PlugZap, RefreshCw, Rocket,
   RotateCcw, Search, Smartphone, Sun, TerminalSquare, Type, X
 } from '@/components/icons'
 import type { AppIcon } from '@/components/icons'
@@ -32,6 +32,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   { id: 'editor', label: 'Editor' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'git', label: 'Git' },
+  { id: 'sql', label: 'SQL' },
   { id: 'ado', label: 'Azure DevOps' },
   { id: 'ai', label: 'AI' },
   { id: 'devices', label: 'Devices' }
@@ -78,6 +79,11 @@ export const SETTINGS_PAGE_META: SettingsPageMeta[] = [
     description: 'GitTree client opened by the Git entry and the changes list',
     // no « path »: words match by prefix, « pat » must find only the PAT page
     keywords: 'git gittree client eseguibile executable percorso scarica download changes modifiche file nome cartella folder gruppi raggruppa tipologia worktree'
+  },
+  {
+    id: 'sql', group: 'sql', label: 'SQL', icon: Database,
+    description: 'how long the queries of the SQL panel may run',
+    keywords: 'sql query timeout tempo massimo scadenza esecuzione execution database server minuti minutes secondi seconds'
   },
   {
     id: 'ado-connections', group: 'ado', label: 'Connections', icon: Cloud,
@@ -272,7 +278,7 @@ export function SettingsNav({ page, onSelect, query, onQuery, onReset, badges, c
   const resetBtn = (
     <button onClick={onReset}
       title={t('reset defaults')}
-      data-tip-desc={t('resets theme, colors, text, editor, terminal, language, GitTree and changes list to their initial values (asks for confirmation; Azure DevOps, agents and devices do not change)')}
+      data-tip-desc={t('resets theme, colors, text, editor, terminal, language, GitTree, changes list and SQL timeout to their initial values (asks for confirmation; Azure DevOps, agents and devices do not change)')}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexShrink: 0,
         width: compact ? undefined : '100%', padding: compact ? '0 8px' : '0 10px', minHeight: px(28),

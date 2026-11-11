@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { AlignLeft, Bug, ChevronLeft, ChevronRight, Download, Eraser, FolderSearch, FolderTree, GitBranch, GitCompare, Indent, Keyboard, LayoutGrid, MousePointer2, Palette, RotateCcw, Save, Sparkles, TerminalSquare, TextQuote, WrapText } from '@/components/icons'
-import { useSettingsStore, useToastStore, useWorktreeStore } from '../../../store'
+import { AlignLeft, Bug, ChevronLeft, ChevronRight, Download, Eraser, FolderSearch, FolderTree, GitBranch, GitCompare, Indent, Keyboard, LayoutGrid, MousePointer2, Palette, RotateCcw, Save, Sparkles, TerminalSquare, TextQuote, Timer, WrapText } from '@/components/icons'
+import { SQL_QUERY_TIMEOUTS, useSettingsStore, useToastStore, useWorktreeStore } from '../../../store'
 import type { SettingsPageId } from '../../../store'
 import { useI18n, tr } from '../../../i18n'
 import { TERMINAL_FONT_DEFAULT, TERMINAL_FONT_MAX, TERMINAL_FONT_MIN } from '../../terminal/terminal-zoom'
@@ -104,6 +104,25 @@ export function TerminalPage() {
         {t('also from the terminal:')} {kbd('Ctrl')} + {t('wheel')} <MousePointer2 size={10} style={{ verticalAlign: '-1px' }} />, {kbd('Ctrl')}{kbd('+')} {t('and')} {kbd('Ctrl')}{kbd('−')} {t('one px at a time')}, {kbd('Ctrl')}{kbd('0')} {t('back to {n}px', { n: TERMINAL_FONT_DEFAULT })}.
       </Notice>
     </>
+  )
+}
+
+// ─── SQL ───
+
+export function SqlPage() {
+  const timeout = useSettingsStore(st => st.settings.sqlQueryTimeout)
+  const updateSettings = useSettingsStore(st => st.updateSettings)
+  const t = useI18n()
+  const label = (s: number) => s < 60 ? t('{n} seconds', { n: s }) : s === 60 ? t('1 minute') : t('{n} minutes', { n: s / 60 })
+  return (
+    <Card>
+      <Row icon={<Timer size={13} />} label={t('query timeout')}
+        hint={t('after this time the query stops with an error; a connection whose own execution timeout is longer, or under 30 seconds, keeps it')}>
+        <SelectInput value={String(timeout)} onChange={(v) => updateSettings({ sqlQueryTimeout: Number(v) })}
+          options={SQL_QUERY_TIMEOUTS.map(s => ({ value: String(s), label: label(s) }))}
+          title={t('query timeout')} />
+      </Row>
+    </Card>
   )
 }
 

@@ -460,15 +460,54 @@ function authOptions(config: SqlConnectionConfig): { type: string; options?: Rec
 }
 
 export class SqlService {
-  private connections: Map<string, { pool: ConnectionPool; config: SqlConnectionConfig }> = new Map()
+  /** timeoutMs: the requestTimeout the pool was opened with */
+  private connections: Map<string, { pool: ConnectionPool; config: SqlConnectionConfig; timeoutMs: number }> = new Map()
   private counter: number = 0
   private activeRequests: Map<string, Request> = new Map()
   private dataTierRun: ChildProcess | null = null
+  /** Settings › SQL › query timeout */
+  private queryTimeoutMs = 30_000
 
   private getPool(connectionId: string): ConnectionPool {
     const entry = this.connections.get(connectionId)
     if (!entry) throw new Error('Connessione non trovata')
     return entry.pool
+  }
+
+  /**
+   * The connection's execution timeout raised to the IDE setting. A longer one is kept, and so is
+   * one under the 30 s default: that is a deliberate guard on the connection.
+   */
+  private requestTimeoutMs(config: SqlConnectionConfig): number {
+    const own = sqlTimeoutMilliseconds(normalizeSqlConnectionConfig(config).requestTimeout, 30_000)
+    return own < 30_000 ? own : Math.max(own, this.queryTimeoutMs)
+  }
+
+  /**
+   * mssql has no per-request timeout: the open pools are reopened with the new one.
+   * The old pool is not closed: closing it would cut the requests still on it (a query's
+   * result post-processing, queued acquires). With min 0 it drains on its own: tarn reaps
+   * each idle connection after idleTimeoutMillis.
+   */
+  async setQueryTimeout(seconds: number): Promise<void> {
+    this.queryTimeoutMs = sqlTimeoutMilliseconds(seconds, 30_000)
+    for (const [id, entry] of this.connections) {
+      const timeoutMs = this.requestTimeoutMs(entry.config)
+      if (entry.timeoutMs === timeoutMs) continue
+      let pool: ConnectionPool
+      try {
+        pool = await this.openPool(entry.config)
+      } catch {
+        continue // server unreachable: the old pool stays, the next connect applies the timeout
+      }
+      // reconnected, disconnected or the setting changed again meanwhile: the newer state wins
+      if (this.connections.get(id) !== entry || this.requestTimeoutMs(entry.config) !== timeoutMs) {
+        void pool.close().catch(() => {})
+        continue
+      }
+      entry.pool = pool
+      entry.timeoutMs = timeoutMs
+    }
   }
 
   private buildPoolConfig(config: SqlConnectionConfig): sqlConfig {
@@ -482,7 +521,7 @@ export class SqlService {
       password: normalized.password,
       port: normalized.port || target.port || 1433,
       connectionTimeout: sqlTimeoutMilliseconds(normalized.connectTimeout, 15_000),
-      requestTimeout: sqlTimeoutMilliseconds(normalized.requestTimeout, 30_000),
+      requestTimeout: this.requestTimeoutMs(normalized),
       pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
       options: {
         trustServerCertificate: normalized.trustServerCertificate ?? true,
@@ -535,8 +574,11 @@ export class SqlService {
       try { await existing.pool.close() } catch { /* ignore */ }
       this.connections.delete(id)
     }
+    const timeoutMs = this.requestTimeoutMs(normalized)
     const pool = await this.openPool(normalized)
-    this.connections.set(id, { pool, config: normalized })
+    this.connections.set(id, { pool, config: normalized, timeoutMs })
+    // the setting changed while this pool was opening
+    if (this.requestTimeoutMs(normalized) !== timeoutMs) void this.setQueryTimeout(this.queryTimeoutMs / 1000)
     return id
   }
 

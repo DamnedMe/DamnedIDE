@@ -1,5 +1,6 @@
 import { readdir, readFile, writeFile } from 'fs/promises'
-import { isAbsolute, relative, resolve, join, extname } from 'path'
+import { realpathSync } from 'fs'
+import { isAbsolute, relative, resolve, join, extname, sep } from 'path'
 import { randomBytes } from 'crypto'
 import type { DeviceInfo, RemoteScope, WorkspaceSnapshot, RemoteSqlConnection } from '../../../src/shared/remote/protocol'
 import { PRODUCT_NAME, PROTOCOL_VERSION } from '../../../src/shared/remote/protocol'
@@ -35,10 +36,29 @@ export interface RemoteDeps {
 
 const MUTATING_SQL = /\b(DROP|TRUNCATE|ALTER|DELETE|UPDATE|INSERT|MERGE|EXEC|EXECUTE|CREATE|GRANT|REVOKE|BACKUP|RESTORE|DBCC)\b/i
 
+/** Rows per result set sent to the phone (the desktop default, 250000, is far too much for it). */
+const REMOTE_MAX_ROWS = 10000
+
+/** Id the app picks for its query so `sql.cancel` can reach it; the `remote_` prefix keeps it off the desktop's own. */
+const REMOTE_QUERY_ID = /^remote_[\w-]{1,64}$/
+
 function isMutatingSql(query: string): boolean {
   // Strip line/block comments so a commented keyword does not trigger a prompt.
   const stripped = query.replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ')
   return MUTATING_SQL.test(stripped)
+}
+
+/** `target` is `root` or a path inside it, compared on disk (8.3 short names, junctions, case). */
+function isInside(root: string, target: string): boolean {
+  const real = (p: string): string => {
+    try {
+      return realpathSync.native(p)
+    } catch {
+      return resolve(p)
+    }
+  }
+  const rel = relative(real(root), real(target))
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
 /**
@@ -81,7 +101,10 @@ export class RemoteCommands {
         const repoPath = await this.repo(args)
         const worktreePath = String(args.worktreePath)
         this.confirm(cmd, args, `Rimuovere il worktree "${worktreePath}"?`, undefined, true)
-        return this.deps.worktree.remove(repoPath, worktreePath, !!args.force)
+        // removeSafe refuses (skipped + error, nothing touched) uncommitted changes, unpushed commits,
+        // the main checkout, bare and nested worktrees: the phone shows why
+        // ponytail: no forced retry from the phone; a locked folder is reported and forced from the desktop
+        return this.deps.worktree.removeSafe(repoPath, worktreePath)
       }
       case 'worktree.promote':
         return this.deps.worktree.retargetChildren(await this.repo(args), String(args.branch ?? args.worktreePath))
@@ -93,13 +116,17 @@ export class RemoteCommands {
         return this.deps.git.porcelain(await this.repo(args))
       case 'git.diff': {
         const repoPath = await this.repo(args)
-        const file = this.assertInsideWorkspace(String(args.file))
-        return args.staged ? this.deps.diff.staged(repoPath, file) : this.deps.diff.unstaged(repoPath, file)
+        // absolute: `git diff <path>` cannot mistake it for a branch named like the file
+        const { abs } = this.repoFile(repoPath, args.file)
+        return args.staged ? this.deps.diff.staged(repoPath, abs) : this.deps.diff.unstaged(repoPath, abs)
       }
       case 'git.file': {
         const repoPath = await this.repo(args)
-        const file = String(args.file)
-        const content = args.ref ? await this.deps.git.showRef(repoPath, file, String(args.ref)) : await this.deps.git.showFile(repoPath, file)
+        // `<ref>:<path>` only takes a path relative to the repository root
+        const { rel } = this.repoFile(repoPath, args.file)
+        // `git show -…` would read it as an option (--output=<file> writes anywhere)
+        if (args.ref && String(args.ref).startsWith('-')) throw new RemoteCommandError('invalid_args', `Riferimento git non valido: "${String(args.ref)}"`)
+        const content = args.ref ? await this.deps.git.showRef(repoPath, rel, String(args.ref)) : await this.deps.git.showFile(repoPath, rel)
         return { content }
       }
       case 'git.stage':
@@ -114,7 +141,9 @@ export class RemoteCommands {
         return this.deps.git.push(await this.repo(args))
       case 'git.discard': {
         const repoPath = await this.repo(args)
-        const file = String(args.file)
+        // checked before the prompt: with `untracked` the file is deleted from disk, and an
+        // unchecked "../x" would reach outside the workspace
+        const { rel: file } = this.repoFile(repoPath, args.file)
         this.confirm(cmd, args, `Scartare le modifiche a "${file}"?`, 'Le modifiche non recuperabili andranno perse.', true)
         return this.deps.git.discardChanges(repoPath, file, { staged: !!args.staged, untracked: !!args.untracked })
       }
@@ -160,13 +189,14 @@ export class RemoteCommands {
         if (isMutatingSql(query)) {
           this.confirm(cmd, args, 'Eseguire una query che modifica i dati?', query, true)
         }
-        return this.deps.sql.executeQuery(
-          String(args.connectionId),
-          query,
-          `remote_${randomBytes(6).toString('hex')}`,
-          args.maxRows ? Number(args.maxRows) : undefined,
-          args.database ? String(args.database) : undefined
-        )
+        const database = args.database ? String(args.database) : undefined
+        // executeQuery only labels the results with `database`: switch to it in the batch, as the SQL panel does
+        const batch = database ? `USE [${database.replace(/]/g, ']]')}];\n${query}` : query
+        const maxRows = typeof args.maxRows === 'number' && Number.isFinite(args.maxRows)
+          ? Math.min(REMOTE_MAX_ROWS, Math.max(1, Math.floor(args.maxRows)))
+          : REMOTE_MAX_ROWS
+        const queryId = typeof args.queryId === 'string' && REMOTE_QUERY_ID.test(args.queryId) ? args.queryId : `remote_${randomBytes(6).toString('hex')}`
+        return this.deps.sql.executeQuery(String(args.connectionId), batch, queryId, maxRows, database)
       }
       case 'sql.cancel':
         this.deps.sql.cancelQuery(String(args.queryId))
@@ -186,11 +216,14 @@ export class RemoteCommands {
   private scopeFor(cmd: string): RemoteScope {
     if (cmd.startsWith('sql.')) {
       if (cmd === 'sql.backup' || cmd === 'sql.restore' || cmd === 'sql.dataTier') return 'sqlDestructive'
-      if (cmd === 'sql.query') return 'sql'
+      // cancelling stops a running query: only who may run them
+      if (cmd === 'sql.query' || cmd === 'sql.cancel') return 'sql'
       return 'view'
     }
     if (cmd === 'fs.write' || cmd === 'editor.save') return 'edit'
-    if (cmd === 'worktree.remove' || cmd === 'git.discard') return 'git'
+    if (cmd === 'worktree.add' || cmd === 'worktree.remove' || cmd === 'worktree.promote' || cmd === 'git.discard') return 'git'
+    // reading changes is "view": a read-only phone must still list and diff them
+    if (cmd === 'git.status' || cmd === 'git.porcelain' || cmd === 'git.diff' || cmd === 'git.file') return 'view'
     if (cmd.startsWith('git.')) return 'git'
     return 'view'
   }
@@ -202,11 +235,19 @@ export class RemoteCommands {
     throw new RemoteCommandError('confirmation_required', summary, challenge)
   }
 
+  /**
+   * The repository a command runs on: the open one, or the `repoPath` the app sent when it is the
+   * open repository, one of its worktrees (the selected one) or a folder inside them.
+   */
   private async repo(args: Record<string, unknown>): Promise<string> {
-    const explicit = typeof args.repoPath === 'string' ? args.repoPath : null
-    const repoPath = explicit || this.deps.workspace.get().repoPath
-    if (!repoPath) throw new RemoteCommandError('no_repo', 'Nessun repository aperto sul desktop')
-    return repoPath
+    const open = this.deps.workspace.get().repoPath
+    if (!open) throw new RemoteCommandError('no_repo', 'Nessun repository aperto sul desktop')
+    const explicit = typeof args.repoPath === 'string' && args.repoPath ? args.repoPath : null
+    if (!explicit || isInside(open, explicit)) return explicit || open
+    // ponytail: a worktree outside the checkout costs one `git worktree list` per command, not cached
+    const worktrees = await this.deps.worktree.list(open).catch(() => [])
+    if (worktrees.some((w) => isInside(w.path, explicit))) return explicit
+    throw new RemoteCommandError('outside_workspace', 'Repository fuori dall\'area di lavoro aperta')
   }
 
   private async setRepo(args: Record<string, unknown>): Promise<WorkspaceSnapshot> {
@@ -217,8 +258,15 @@ export class RemoteCommands {
     return this.deps.workspace.update({ repoPath: root, selectedWorktree: null })
   }
 
-  private openWorktree(args: Record<string, unknown>): WorkspaceSnapshot {
+  private async openWorktree(args: Record<string, unknown>): Promise<WorkspaceSnapshot> {
     const path = String(args.path ?? '')
+    // the selected worktree becomes a sandbox root (allowedRoots): only a worktree of the open repository
+    const open = this.deps.workspace.get().repoPath
+    if (!open) throw new RemoteCommandError('no_repo', 'Nessun repository aperto sul desktop')
+    const worktrees = await this.deps.worktree.list(open).catch(() => [])
+    if (!worktrees.some((w) => !w.bare && isInside(w.path, path) && isInside(path, w.path))) {
+      throw new RemoteCommandError('outside_workspace', 'Non è un worktree del repository aperto')
+    }
     this.deps.workspace.apply({ type: 'workspace.openWorktree', path })
     return this.deps.workspace.update({ selectedWorktree: path })
   }
@@ -238,6 +286,15 @@ export class RemoteCommands {
       if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return abs
     }
     throw new RemoteCommandError('outside_workspace', 'Percorso fuori dall\'area di lavoro aperta')
+  }
+
+  /**
+   * A file of `repoPath` as the app sends it: relative to the repository (as git.porcelain lists
+   * it) or absolute. Resolved against the repository, not the process cwd, then sandboxed.
+   */
+  private repoFile(repoPath: string, file: unknown): { abs: string; rel: string } {
+    const abs = this.assertInsideWorkspace(resolve(repoPath, String(file ?? '')))
+    return { abs, rel: relative(resolve(repoPath), abs).split(sep).join('/') }
   }
 
   private async readDir(dirPath: string): Promise<{ name: string; isDirectory: boolean; isFile: boolean }[]> {

@@ -178,18 +178,22 @@ export class RemoteService extends EventEmitter {
     return this.registry.list()
   }
 
+  // a connected phone loses access (4401) or sees its new scopes right away, not at the next login
   revokeDevice(id: string): void {
     this.registry.revoke(id)
+    this.server?.disconnectDevice(id)
     this.emit('device-changed')
   }
 
   revokeAll(): void {
     this.registry.revokeAll()
+    this.server?.disconnectDevice()
     this.emit('device-changed')
   }
 
   updateScopes(id: string, scopes: RemoteScope[]): DeviceInfo | null {
     const device = this.registry.updateScopes(id, scopes)
+    if (device) this.server?.notifyDevice(device)
     this.emit('device-changed')
     return device
   }

@@ -317,7 +317,9 @@ export function RemotePanel() {
               </GhostButton>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-              {ALL_SCOPES.map((scope) => {
+              {/* ponytail: no remote command needs 'terminal' yet (P2), so granting it would do nothing;
+                  the scope stays in the protocol type, only its toggle is hidden */}
+              {ALL_SCOPES.filter((scope) => scope !== 'terminal').map((scope) => {
                 const active = d.scopes.includes(scope)
                 return (
                   <button

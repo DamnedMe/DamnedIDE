@@ -2,7 +2,7 @@ import { createServer, type Server as HttpServer, type IncomingMessage, type Ser
 import { createServer as createHttpsServer } from 'https'
 import { randomBytes } from 'crypto'
 import { WebSocketServer, WebSocket } from 'ws'
-import type { DeviceInfo, Envelope, HelloPayload, PairingResult, RemoteError, RemoteTopic } from '../../../../src/shared/remote/protocol'
+import type { DeviceInfo, Envelope, HelloPayload, PairingPendingEvent, PairingResult, RemoteError, RemoteTopic } from '../../../../src/shared/remote/protocol'
 import { PRODUCT_NAME, PROTOCOL_VERSION, REMOTE_PRODUCT_NAME } from '../../../../src/shared/remote/protocol'
 import { DeviceRegistry } from '../auth/device-registry'
 import { PairingService } from '../auth/pairing'
@@ -98,6 +98,9 @@ export class RemoteWsServer {
       }
       for (const p of this.pending.values()) p.resolve(null)
       this.pending.clear()
+      // ws 8 with an external http server: wss.close() leaves the clients connected and
+      // server.close() waits for them, so stop() would hang and the phone keep its access
+      for (const socket of [...(this.wss?.clients ?? [])]) socket.terminate()
       try {
         this.wss?.close()
       } catch {
@@ -106,8 +109,9 @@ export class RemoteWsServer {
       const server = this.httpServer
       this.wss = null
       this.httpServer = null
-      if (server) server.close(() => resolvePromise())
-      else resolvePromise()
+      if (!server) return resolvePromise()
+      server.closeAllConnections?.()
+      server.close(() => resolvePromise())
     })
   }
 
@@ -141,6 +145,10 @@ export class RemoteWsServer {
       return
     }
     const { device, token } = this.registry.add({ name: request.name, platform: request.platform })
+    // the socket that paired is authenticated right away; the app still sends 'auth' with the
+    // new token, which older bridges (0.1.0) need
+    const meta = this.meta.get(request.socket)
+    if (meta) meta.device = device
     request.resolve({ device, token })
     this.hooks.onDeviceChanged()
     this.hooks.onPairingResolved(id, true)
@@ -148,6 +156,25 @@ export class RemoteWsServer {
 
   listPending(): PendingPairing[] {
     return [...this.pending.values()].map(({ id, name, platform, code, requestedAt }) => ({ id, name, platform, code, requestedAt }))
+  }
+
+  /** Scopes changed on the desktop: the device's open sockets get the new DeviceInfo now. */
+  notifyDevice(device: DeviceInfo): void {
+    const envelope: Envelope = { v: PROTOCOL_VERSION, kind: 'evt', topic: 'device.changed', data: device }
+    for (const socket of this.wss?.clients ?? []) {
+      const meta = this.meta.get(socket)
+      if (meta?.device?.id !== device.id) continue
+      meta.device = device
+      this.send(socket, envelope)
+    }
+  }
+
+  /** Revoked on the desktop: close the device's sockets (every device's when `id` is omitted). */
+  disconnectDevice(id?: string): void {
+    for (const socket of [...(this.wss?.clients ?? [])]) {
+      const device = this.meta.get(socket)?.device
+      if (device && (!id || device.id === id)) this.closeRevoked(socket)
+    }
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────────
@@ -210,7 +237,37 @@ export class RemoteWsServer {
     }
     const meta = this.meta.get(socket)
     if (!meta?.device) throw new RemoteCommandError('unauthorized', 'Autenticazione richiesta')
-    return this.commands.execute(cmd, safeArgs, meta.device)
+    // read on every command: scopes edited or a revocation on the desktop apply to open sockets too
+    const device = this.registry.get(meta.device.id)
+    if (!device) {
+      meta.device = null
+      // after the reply: a close frame sent first would drop the error the app is waiting for
+      setImmediate(() => this.closeRevoked(socket))
+      throw new RemoteCommandError('unauthorized', 'Dispositivo revocato dal desktop')
+    }
+    meta.device = device
+    if (cmd === 'device.forget') {
+      // "disassocia" on the phone: the token stops working everywhere and every socket of the
+      // device gets 4401, this one after the reply (as on a revocation caught by a command)
+      meta.device = null
+      this.registry.revoke(device.id)
+      this.disconnectDevice(device.id)
+      setImmediate(() => this.closeRevoked(socket))
+      this.hooks.onDeviceChanged()
+      return { ok: true }
+    }
+    return this.commands.execute(cmd, safeArgs, device)
+  }
+
+  /** 4401 tells the app its token is no longer valid: it drops the session instead of reconnecting. */
+  private closeRevoked(socket: WebSocket): void {
+    const meta = this.meta.get(socket)
+    if (meta) meta.device = null
+    try {
+      socket.close(4401, 'Dispositivo revocato')
+    } catch {
+      /* already closing */
+    }
   }
 
   private buildHello(): HelloPayload & { requiresAuth: boolean } {
@@ -227,15 +284,23 @@ export class RemoteWsServer {
     const id = randomBytes(6).toString('hex')
     const code = String(Math.floor(100000 + Math.random() * 900000))
     return new Promise<PairingResult | null>((resolvePromise, reject) => {
-      const entry: PendingInternal = { id, token, name, platform, code, requestedAt: Date.now(), resolve: resolvePromise, socket }
-      this.pending.set(id, entry)
-      this.hooks.onPairingRequest({ id, name, platform, code, requestedAt: entry.requestedAt })
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (this.pending.delete(id)) {
           this.hooks.onPairingResolved(id, false)
           reject(new RemoteCommandError('pairing_timeout', 'Associazione scaduta'))
         }
       }, 2 * 60 * 1000)
+      // a decision (or stop()) clears the timer: it would keep the process alive for 2 minutes
+      const resolve = (result: PairingResult | null): void => {
+        clearTimeout(timer)
+        resolvePromise(result)
+      }
+      const entry: PendingInternal = { id, token, name, platform, code, requestedAt: Date.now(), resolve, socket }
+      this.pending.set(id, entry)
+      this.hooks.onPairingRequest({ id, name, platform, code, requestedAt: entry.requestedAt })
+      // the phone shows the code the desktop is showing, so the user knows which request to accept
+      const pendingEvent: PairingPendingEvent = { code }
+      this.send(socket, { v: PROTOCOL_VERSION, kind: 'evt', topic: 'pairing.pending', data: pendingEvent })
     })
   }
 

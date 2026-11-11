@@ -62,6 +62,14 @@ export class DeviceRegistry {
     return this.data.devices.length
   }
 
+  /** Current state of a device (scopes edited on the desktop), null once revoked. */
+  get(id: string): DeviceInfo | null {
+    const found = this.data.devices.find((d) => d.id === id)
+    if (!found) return null
+    const { tokenHash: _tokenHash, ...info } = found
+    return info
+  }
+
   /** Register a new device and return its plaintext token (only time it exists). */
   add(input: { name: string; platform: string; scopes?: RemoteScope[] }): { device: DeviceInfo; token: string } {
     const token = randomBytes(TOKEN_BYTES).toString('base64url')

@@ -41,6 +41,7 @@
     "test:open-target": "node --experimental-strip-types scripts/open-target.check.ts",
     "test:terminal": "node --experimental-strip-types scripts/terminal.check.ts",
     "test:remote-protocol": "node --experimental-strip-types scripts/remote-protocol.check.ts",
+    "test:remote-bridge": "node --experimental-strip-types scripts/remote-bridge.check.ts",
     "test:gittree": "node --experimental-strip-types scripts/gittree.check.ts",
     "test:shared-storage": "node --experimental-strip-types scripts/shared-storage.check.ts",
     "test:instance-lock": "node --experimental-strip-types scripts/instance-lock.check.ts",

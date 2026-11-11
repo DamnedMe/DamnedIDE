@@ -235,6 +235,7 @@ export const IT: Record<string, string> = {
   'syntax colors in the editor, for the active theme': "colori della sintassi nell'editor, per il tema attivo",
   'behavior of the code editor': "comportamento dell'editor di codice",
   'text size of the integrated terminals': 'dimensione del testo dei terminali integrati',
+  'how long the queries of the SQL panel may run': 'quanto possono durare le query del pannello SQL',
   'GitTree client opened by the Git entry and the changes list': 'client GitTree aperto dalla voce Git e lista delle modifiche',
   Connections: 'Connessioni',
   'Azure DevOps organization, project and PAT': 'organization, project e PAT di Azure DevOps',
@@ -255,7 +256,7 @@ export const IT: Record<string, string> = {
   'show all the pages again': 'mostra di nuovo tutte le pagine',
   'no page for «{query}»': 'nessuna pagina per «{query}»',
   'reset defaults': 'ripristina predefiniti',
-  'resets theme, colors, text, editor, terminal, language, GitTree and changes list to their initial values (asks for confirmation; Azure DevOps, agents and devices do not change)': 'riporta tema, colori, testo, editor, terminale, lingua, GitTree e lista changes ai valori iniziali (chiede conferma; Azure DevOps, agenti e dispositivi non cambiano)',
+  'resets theme, colors, text, editor, terminal, language, GitTree, changes list and SQL timeout to their initial values (asks for confirmation; Azure DevOps, agents and devices do not change)': 'riporta tema, colori, testo, editor, terminale, lingua, GitTree, lista changes e timeout SQL ai valori iniziali (chiede conferma; Azure DevOps, agenti e dispositivi non cambiano)',
 
   // ─── settings: panel ───
   'version {version} ready to install': 'versione {version} pronta da installare',
@@ -264,7 +265,7 @@ export const IT: Record<string, string> = {
   'worktree folder to set': 'cartella dei worktree da impostare',
   'settings reset to defaults': 'impostazioni ripristinate ai valori predefiniti',
   'reset the default settings?': 'ripristinare le impostazioni predefinite?',
-  'theme, colors, text and icons, added fonts, editor, terminal, language, GitTree path and changes list go back to their initial values.': 'tema, colori, testo e icone, font aggiunti, editor, terminale, lingua, percorso di GitTree e lista changes tornano ai valori iniziali.',
+  'theme, colors, text and icons, added fonts, editor, terminal, language, GitTree path, changes list and SQL query timeout go back to their initial values.': 'tema, colori, testo e icone, font aggiunti, editor, terminale, lingua, percorso di GitTree, lista changes e timeout delle query SQL tornano ai valori iniziali.',
   'Azure DevOps connections, AI agents, MCP servers and paired devices do not change.': 'Non cambiano le connessioni Azure DevOps, gli agenti AI, i server MCP e i dispositivi associati.',
   'applies the default settings at once': 'applica subito le impostazioni predefinite',
 
@@ -283,6 +284,11 @@ export const IT: Record<string, string> = {
   'text size': 'dimensione del testo',
   'the same for every terminal, from {min} to {max}px': 'uguale per tutti i terminali, da {min} a {max}px',
   'terminal text size': 'dimensione del testo del terminale',
+  'query timeout': 'timeout delle query',
+  'after this time the query stops with an error; a connection whose own execution timeout is longer, or under 30 seconds, keeps it': 'oltre questo tempo la query si ferma con un errore; una connessione con un proprio timeout di esecuzione più lungo, o sotto i 30 secondi, mantiene il suo',
+  '{n} seconds': '{n} secondi',
+  '1 minute': '1 minuto',
+  '{n} minutes': '{n} minuti',
   'xterm font size shared by every terminal': 'dimensione del font xterm, uguale per tutti i terminali',
   'back to {n}px': 'torna a {n}px',
   'restore the default terminal font size': 'ripristina la dimensione predefinita del font del terminale',

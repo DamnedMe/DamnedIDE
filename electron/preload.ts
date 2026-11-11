@@ -163,6 +163,7 @@ const electronAPI = {
     query: (connectionId: string, query: string, queryId?: string, maxRows?: number, database?: string) =>
       ipcRenderer.invoke('sql:query', connectionId, query, queryId, maxRows, database),
     cancelQuery: (queryId: string) => ipcRenderer.invoke('sql:cancelQuery', queryId),
+    setQueryTimeout: (seconds: number) => ipcRenderer.invoke('sql:setQueryTimeout', seconds),
     testConnection: (config: SqlConnectionConfig) => ipcRenderer.invoke('sql:testConnection', config),
     serverInfo: (connectionId: string) => ipcRenderer.invoke('sql:serverInfo', connectionId),
     databases: (connectionId: string) => ipcRenderer.invoke('sql:databases', connectionId),

@@ -63,11 +63,13 @@ test('settings: grouped navigation, search and the remembered page', async ({ pa
 
   await search.fill('font')
   await expect(navPage(page, 'Text and icons')).toBeVisible()
+  await search.fill('timeout')
+  await expect(settingsNav(page).getByRole('button')).toHaveText(['SQL'])
   await search.fill('zzzz')
   await expect(settingsNav(page)).toContainText('no page for «zzzz»')
   await search.press('Escape')
   await expect(search).toHaveValue('')
-  await expect(settingsNav(page).getByRole('button')).toHaveCount(14)
+  await expect(settingsNav(page).getByRole('button')).toHaveCount(15)
 
   expect(await page.evaluate(() => localStorage.getItem('damnedide_settings_page'))).toBe('ado-connections')
 })

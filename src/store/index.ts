@@ -324,7 +324,7 @@ export async function migrateLegacyAdoStorage(): Promise<void> {
 export const SETTINGS_PAGES = [
   'updates', 'language',
   'theme', 'text', 'colors',
-  'editor', 'terminal', 'git',
+  'editor', 'terminal', 'git', 'sql',
   'ado-connections', 'ado-folders', 'ado-release',
   'ai-agents', 'ai-mcp',
   'remote'
@@ -561,6 +561,8 @@ export interface AppSettings {
   // Settings › Git › worktree: where the worktrees live and the PBI/bug subfolders; null = never
   // set (DEFAULT_WORKTREE_LAYOUT applies and the Worktree panel asks to set it)
   worktreeLayout: WorktreeLayout | null
+  // Settings › SQL: seconds a query may run (one of SQL_QUERY_TIMEOUTS)
+  sqlQueryTimeout: number
   themeColors: {
     dark: ThemeColorConfig
     light: ThemeColorConfig
@@ -591,6 +593,9 @@ function saveThemeDefaults(d: ThemeDefaults) {
   try { localStorage.setItem(THEME_DEFAULTS_KEY, JSON.stringify(d)) } catch { /* ignore */ }
 }
 
+/** Settings › SQL › query timeout choices, in seconds */
+export const SQL_QUERY_TIMEOUTS: readonly number[] = [30, 60, 120, 300, 600]
+
 // First-install defaults: the configuration chosen as the IDE standard.
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
@@ -612,6 +617,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   changesShowPath: true,
   sidebarSide: 'left',
   worktreeLayout: null,
+  sqlQueryTimeout: 30,
   themeColors: {
     dark: { ...DEFAULT_DARK_COLORS },
     light: { ...DEFAULT_LIGHT_COLORS }
@@ -637,6 +643,7 @@ function loadSettings(): AppSettings {
         ...parsed,
         appFont: typeof parsed.appFont === 'string' && parsed.appFont.trim() ? parsed.appFont.trim() : DEFAULT_SETTINGS.appFont,
         terminalFontSize: typeof parsed.terminalFontSize === 'number' && Number.isFinite(parsed.terminalFontSize) ? parsed.terminalFontSize : DEFAULT_SETTINGS.terminalFontSize,
+        sqlQueryTimeout: SQL_QUERY_TIMEOUTS.includes(parsed.sqlQueryTimeout) ? parsed.sqlQueryTimeout : DEFAULT_SETTINGS.sqlQueryTimeout,
         customFonts: Array.isArray(parsed.customFonts)
           ? parsed.customFonts.filter((f: unknown): f is string => typeof f === 'string' && !!f.trim()).map((f: string) => f.trim())
           : [],

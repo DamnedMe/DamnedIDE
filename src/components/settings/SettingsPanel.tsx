@@ -13,7 +13,7 @@ import { SettingsNav, groupLabel, pageMeta } from './SettingsNav'
 import { Btn, PageHeader, px } from './ui'
 import { LanguagePage, UpdatesPage } from './pages/GeneralPages'
 import { ColorsPage, TextPage, ThemePage } from './pages/AppearancePages'
-import { EditorPage, GitPage, TerminalPage } from './pages/ToolsPages'
+import { EditorPage, GitPage, SqlPage, TerminalPage } from './pages/ToolsPages'
 import { ConnectionsPage } from './ado/ConnectionsPage'
 import { FoldersPage } from './ado/FoldersPage'
 import { ReleasePage } from './ado/ReleasePage'
@@ -100,6 +100,7 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
     case 'editor': content = <EditorPage onOpenPage={setPage} />; break
     case 'terminal': content = <TerminalPage />; break
     case 'git': content = <GitPage repoPath={repoPath} />; break
+    case 'sql': content = <SqlPage />; break
     case 'ado-connections': content = <ConnectionsPage onOpenPage={setPage} />; break
     case 'ado-folders': content = <FoldersPage repoPath={repoPath} onOpenPage={setPage} />; break
     case 'ado-release': content = <ReleasePage repoPath={repoPath} onOpenPage={setPage} />; break
@@ -150,7 +151,7 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
               </span>
             </div>
             <div style={{ fontSize: px(11), color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              {t('theme, colors, text and icons, added fonts, editor, terminal, language, GitTree path and changes list go back to their initial values.')}
+              {t('theme, colors, text and icons, added fonts, editor, terminal, language, GitTree path, changes list and SQL query timeout go back to their initial values.')}
               {' '}{t('Azure DevOps connections, AI agents, MCP servers and paired devices do not change.')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>

@@ -1,7 +1,6 @@
 import { EventEmitter } from 'events'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import QRCode from 'qrcode'
 import type { DeviceInfo, PairingPayload, PairingStart, RemoteSqlConnection, RemoteScope, WorkspaceSnapshot } from '../../../src/shared/remote/protocol'
 import { DEEP_LINK_SCHEME, PROTOCOL_VERSION, REMOTE_PRODUCT_NAME, toBase64Url } from '../../../src/shared/remote/protocol'
 import { GitService } from '../git/git.service'
@@ -166,9 +165,8 @@ export class RemoteService extends EventEmitter {
     }
     const encoded = toBase64Url(JSON.stringify(payload))
     const url = `${LANDING_BASE}#${encoded}`
-    const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 320 })
     const web = this.webBase()
-    return { payload, url, qrDataUrl, expiresAt, ...(web ? { webUrl: `${web}#${encoded}` } : {}) }
+    return { payload, url, pairLink: this.deepLink(payload), expiresAt, ...(web ? { webUrl: `${web}#${encoded}` } : {}) }
   }
 
   resolvePairing(id: string, accepted: boolean): void {

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  QrCode,
   Power,
   RefreshCw,
   Trash2,
@@ -10,7 +9,6 @@ import {
   X,
   Wifi,
   WifiOff,
-  Copy,
   AlertTriangle,
   Globe
 } from '@/components/icons'
@@ -18,65 +16,13 @@ import { useToastStore } from '../../store'
 import { tr, useI18n } from '../../i18n'
 import { ALL_SCOPES, type RemoteScope } from '../../shared/remote/protocol'
 import { TailscaleGuide } from './TailscaleGuide'
+import { PairingCard } from './PairingCard'
+import { SURFACE, PrimaryButton, GhostButton } from './remote-ui'
 
 type RemoteStatus = Awaited<ReturnType<typeof window.electronAPI.remote.status>>
 type DeviceInfo = Awaited<ReturnType<typeof window.electronAPI.remote.devices>>[number]
 type PairingStart = Awaited<ReturnType<typeof window.electronAPI.remote.beginPairing>>
 type PendingPairing = Awaited<ReturnType<typeof window.electronAPI.remote.pending>>[number]
-
-const SURFACE = {
-  background: 'var(--bg-card)',
-  border: '1px solid var(--border-color)',
-  borderRadius: 'var(--radius-md)',
-  padding: '10px 12px'
-} as const
-
-const BTN = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '5px',
-  padding: '5px 12px',
-  height: '28px',
-  borderRadius: 'var(--radius-sm)',
-  cursor: 'pointer',
-  fontSize: 'calc(10px * var(--ui-text-scale, 1))',
-  fontFamily: 'var(--font-mono)',
-  fontWeight: 600
-} as const
-
-function PrimaryButton({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...rest}
-      style={{
-        ...BTN,
-        background: rest.disabled ? 'var(--bg-subtle)' : 'var(--accent-color)',
-        border: 'none',
-        color: rest.disabled ? 'var(--text-muted)' : 'var(--text-inverse)',
-        cursor: rest.disabled ? 'not-allowed' : 'pointer'
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-function GhostButton({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...rest}
-      style={{
-        ...BTN,
-        background: 'var(--bg-subtle)',
-        border: '1px solid var(--border-color)',
-        color: 'var(--text-secondary)',
-        cursor: rest.disabled ? 'not-allowed' : 'pointer'
-      }}
-    >
-      {children}
-    </button>
-  )
-}
 
 export function RemotePanel() {
   const t = useI18n()
@@ -123,6 +69,25 @@ export function RemotePanel() {
     return () => clearInterval(t)
   }, [pairing])
 
+  // the bind address is fixed at start: with the bridge on, LAN restarts it (paired devices reconnect by themselves)
+  const changeLan = async (next: boolean) => {
+    setLan(next)
+    if (!status?.listening) return
+    setBusy(true)
+    try {
+      await window.electronAPI.remote.stop()
+      const st = await window.electronAPI.remote.start({ port: status.port, lan: next })
+      setStatus(st)
+      setPairing(null)
+      showToast(st.warning || tr('bridge active on {host}:{port}', { host: st.host, port: st.port }), st.warning ? 'info' : 'success')
+    } catch (e) {
+      showToast((e as Error).message || tr('operation failed'), 'error')
+      void refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const toggle = async () => {
     setBusy(true)
     try {
@@ -143,13 +108,16 @@ export function RemotePanel() {
     }
   }
 
-  const generateQr = async () => {
+  const generateQr = async (): Promise<PairingStart | null> => {
     setBusy(true)
     try {
-      setPairing(await window.electronAPI.remote.beginPairing())
+      const started = await window.electronAPI.remote.beginPairing()
+      setPairing(started)
       setNow(Date.now())
+      return started
     } catch (e) {
       showToast((e as Error).message || tr('QR generation failed'), 'error')
+      return null
     } finally {
       setBusy(false)
     }
@@ -209,15 +177,13 @@ export function RemotePanel() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {!status?.listening && (
-              <label
-                title={t('also reachable on the local network, for the browser webapp, even with Tailscale active')}
+            <label
+              title={t('also reachable on the local network, for the browser webapp, even with Tailscale active')}
                 style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', cursor: 'pointer' }}
               >
-                <input type="checkbox" checked={lan} onChange={(e) => setLan(e.target.checked)} />
+                <input type="checkbox" checked={lan} disabled={busy} onChange={(e) => void changeLan(e.target.checked)} />
                 {t('LAN')}
               </label>
-            )}
             {!status?.listening && (
               <input
                 type="number"
@@ -277,46 +243,8 @@ export function RemotePanel() {
         </div>
       ))}
 
-      {/* Pairing QR */}
-      <div style={{ ...SURFACE, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-            <QrCode size={12} /> {t('Pair a device')}
-          </div>
-          <PrimaryButton onClick={generateQr} disabled={!status?.listening || busy}>
-            <QrCode size={11} /> {t('generate QR')}
-          </PrimaryButton>
-        </div>
-        {pairing ? (
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <img src={pairing.qrDataUrl} alt={t('pairing QR')} width={148} height={148} style={{ borderRadius: 'var(--radius-sm)', background: '#fff', padding: '6px' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
-              <div style={{ fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
-                {pairing.payload.host}:{pairing.payload.port} · {pairing.payload.tls ? 'wss' : 'ws'} (WireGuard)
-              </div>
-              <div style={{ fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: secondsLeft > 0 ? 'var(--accent-color)' : 'var(--error-color)' }}>
-                {secondsLeft > 0 ? t('expires in {s}s', { s: secondsLeft }) : t('expired — regenerate')}
-              </div>
-              <GhostButton onClick={() => { void navigator.clipboard.writeText(pairing.url); showToast(t('link copied')) }}>
-                <Copy size={11} /> {t('copy link')}
-              </GhostButton>
-              {pairing.webUrl && (
-                <GhostButton
-                  title={t('opens DamnedCloud in a browser and pairs it: for those without the Android app')}
-                  onClick={() => { void navigator.clipboard.writeText(pairing.webUrl!); showToast(t('webapp link copied')) }}
-                >
-                  <Globe size={11} /> {t('copy webapp link')}
-                </GhostButton>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div style={{ fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-            {t('Make sure the phone has Tailscale active on the same network, then scan the QR to download DamnedCloud and pair it.')}{' '}
-            {t('Without an Android phone: copy the webapp link and open it in any browser that reaches this PC.')}
-          </div>
-        )}
-      </div>
+      {/* Pairing: Android app and browser webapp, each with its own steps */}
+      <PairingCard status={status} pairing={pairing} secondsLeft={secondsLeft} busy={busy} onGenerate={generateQr} />
 
       {/* Devices */}
       <div style={{ ...SURFACE, display: 'flex', flexDirection: 'column', gap: '8px' }}>

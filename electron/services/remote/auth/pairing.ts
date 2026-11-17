@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto'
 import type { ConfirmationChallenge } from '../../../../src/shared/remote/protocol'
 
-const PAIRING_TTL_MS = 2 * 60 * 1000
+const PAIRING_TTL_MS = 5 * 60 * 1000
 const CHALLENGE_TTL_MS = 2 * 60 * 1000
 
 interface PendingToken {

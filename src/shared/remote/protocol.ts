@@ -10,6 +10,11 @@
 // and the two must be kept in sync. Bump PROTOCOL_VERSION on any breaking change.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Latest DamnedCloud APK: the IDE's download QR and the app's update check point here. */
+export const APK_DOWNLOAD_URL = 'https://github.com/DamnedMe/DamnedCloud/releases/latest/download/DamnedCloud.apk'
+/** GitHub API for the latest DamnedCloud release (the app compares its tag with its own version). */
+export const APP_LATEST_RELEASE_API = 'https://api.github.com/repos/DamnedMe/DamnedCloud/releases/latest'
+
 export const PROTOCOL_VERSION = 1
 
 export const PRODUCT_NAME = 'DamnedIDE'
@@ -241,10 +246,10 @@ export interface PairingPayload {
 
 export interface PairingStart {
   payload: PairingPayload
-  /** Encoded deep-link / landing URL for QR generation. */
+  /** Landing URL (APK download + deep link) carrying the payload. */
   url: string
-  /** data:image/png;base64 QR of `url`. */
-  qrDataUrl: string
+  /** damnedcloud://pair?d=… : the pairing QR the app and the webapp scan (a phone camera opens the app with it). */
+  pairLink: string
   expiresAt: number
   /** The LAN webapp served by the bridge, with the payload in the hash (absent when the IDE ships no web build). */
   webUrl?: string

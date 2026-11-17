@@ -326,7 +326,7 @@ export const IT: Record<string, string> = {
   'integrated terminal (cmd, powershell, npm)': 'terminale integrato (cmd, powershell, npm)',
   'hide AI chat': 'nascondi chat AI',
   'open AI chat': 'apri chat AI',
-  'chat with the configured agents (and MCP tools)': 'chatta con gli agenti configurati (e gli strumenti MCP)',
+  'chat with the configured agents (they use the IDE through its MCP server)': "chatta con gli agenti configurati (usano l'IDE tramite il suo server MCP)",
   '{n} modified': '{n} modificati',
   clean: 'pulito',
   'no repository': 'nessun repository',

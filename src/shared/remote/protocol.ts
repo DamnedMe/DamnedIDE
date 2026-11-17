@@ -69,6 +69,16 @@ export interface WorkspaceSnapshot {
   selectedWorktree: string | null
   activePanel: string
   editorNav: EditorNavState | null
+  /** Repositories last opened on the desktop, newest first; absent on bridges up to IDE 0.1.2. */
+  recentRepos?: string[]
+  /** Desktop theme, so the app looks like the IDE; absent on bridges up to IDE 0.1.2. */
+  theme?: RemoteTheme
+}
+
+export interface RemoteTheme {
+  mode: 'dark' | 'light'
+  /** Settings › Theme › primary color (#rrggbb). */
+  accent: string
 }
 
 /**
@@ -82,6 +92,129 @@ export interface RemoteSqlConnection {
   server: string
   database?: string
   isConnected: boolean
+}
+
+// ─── Release (Azure DevOps promotion, as the desktop Release panel) ─────────
+// Wire shapes of src/shared/adoPromotion.ts and src/shared/adoChain.ts, repeated here so the app's
+// copy of this file stays import-free. Bridges up to IDE 0.1.2 answer `unknown_command`.
+
+export type ReleaseStage = 'dev-qa' | 'qa-prod' | 'dev-qa-prod'
+export type ReleaseScope = 'be' | 'fe' | 'both'
+export type ReleaseSide = 'BE' | 'FE'
+export type ReleaseRole = 'dev' | 'qa' | 'prod'
+
+export interface ReleasePr {
+  id: number
+  url: string
+}
+
+export interface ReleaseWorkItem {
+  id: number
+  title: string
+  type: string
+  state: string
+}
+
+export interface ReleaseCommit {
+  commitId: string
+  message: string
+  author: string
+}
+
+/** What one repository would promote, read from Azure DevOps when asked (release.preview). */
+export interface ReleaseRepoPreview {
+  side: ReleaseSide
+  repo: string
+  /** remote branches, for the pickers; empty when not read */
+  branches: string[]
+  /** null: not found on the remote (pick it: release.setConfig) */
+  source: string | null
+  target: string | null
+  /** develop → qa → prod only */
+  prod?: string | null
+  commits: ReleaseCommit[]
+  workItems: ReleaseWorkItem[]
+  /** an active PR source → target already exists: no new one is created */
+  existing: ReleasePr | null
+  /** develop → qa → prod, nothing for qa: commits qa → prod (the chain starts there) */
+  prodCommits?: number
+  /** develop → qa → prod, nothing for qa: the qa → prod PR already open */
+  prodExisting?: ReleasePr | null
+  /** develop → qa → prod: a chain of the project already follows this repository */
+  chainRunning?: boolean
+  warning?: string
+  error?: string
+}
+
+export type ReleaseChainStatus = 'waiting-qa' | 'creating-prod' | 'waiting-prod' | 'done' | 'failed' | 'cancelled'
+
+export interface ReleaseChainItem {
+  side: ReleaseSide
+  repo: string
+  branches: { dev: string; qa: string; prod: string }
+  qaPr?: ReleasePr
+  qaNoAutoComplete?: boolean
+  prodPr?: ReleasePr
+  prodReused?: boolean
+  prodNoAutoComplete?: boolean
+  prodDone?: boolean
+  status: ReleaseChainStatus
+  error?: string
+  lastError?: string
+  note?: string
+  updatedAt: number
+}
+
+export interface ReleaseChainView {
+  id: string
+  organization: string
+  project: string
+  autoComplete: boolean
+  createdAt: number
+  items: ReleaseChainItem[]
+}
+
+/** release.state: the open repository's Azure DevOps project and its release settings. */
+export interface ReleaseState {
+  /** why the release cannot run here (no repository, no connection, folder repository not clear) */
+  unavailable?: string
+  organization: string
+  project: string
+  /** the open folder's Azure DevOps repository (the default BE) */
+  folderRepo: string
+  /** BE / FE repositories (saved per project, '' = none) */
+  be: string
+  fe: string
+  /** the stage the desktop panel last used */
+  stage: ReleaseStage
+  /** the connection's repositories, for the BE / FE pickers */
+  repos: string[]
+  reposError?: string
+  /** the project's chains, newest first */
+  chains: ReleaseChainView[]
+}
+
+/** release.create / release.chainStart: what happened to each repository. */
+export interface ReleaseCreated {
+  side: ReleaseSide
+  repo: string
+  /** false: Azure DevOps refused the PR (branch policies, PAT permissions) */
+  ok: boolean
+  pr?: ReleasePr
+  mode?: 'autocomplete' | 'completed' | 'open'
+  /** auto-complete was asked for and Azure DevOps did not take it (the PR stays open) */
+  notArmed?: boolean
+}
+
+export interface ReleaseRunInput {
+  repoPath?: string
+  /** release.create: dev-qa or qa-prod (qa-prod asks to confirm) */
+  stage?: ReleaseStage
+  scope: ReleaseScope
+  autoComplete: boolean
+  /** unticked work items, as `${side}:${id}` */
+  excluded?: string[]
+  confirm?: string
 }
 
 // ─── Pairing ────────────────────────────────────────────────────────────────
@@ -200,6 +333,7 @@ export type RemoteTopic =
   | 'sql.execution'
   | 'device.changed' // data: DeviceInfo, pushed to that device's sockets when its scopes change
   | 'pairing.pending' // data: PairingPendingEvent
+  | 'release.changed' // data: null; release settings or chains changed (read release.state again)
 
 /**
  * Changes a remote device asks the desktop UI to apply. Sent main → renderer so
@@ -287,6 +421,21 @@ export interface RemoteCommandMap {
   'sql.query': { args: { connectionId: string; query: string; database?: string; maxRows?: number; queryId?: string }; result: unknown }
   'sql.cancel': { args: { queryId: string }; result: unknown }
   'sql.objectDefinition': { args: { connectionId: string; database: string; objectName: string }; result: unknown }
+
+  // Release (Azure DevOps): reads are "view", the rest "git"; `repoPath` as for git.*
+  'release.state': { args: { repoPath?: string }; result: ReleaseState }
+  'release.preview': { args: { repoPath?: string; stage: ReleaseStage; scope: ReleaseScope }; result: ReleaseRepoPreview[] }
+  // one PR per repository with new commits and no active promotion PR; qa-prod asks to confirm
+  'release.create': { args: ReleaseRunInput & { stage: 'dev-qa' | 'qa-prod' }; result: ReleaseCreated[] }
+  // develop → qa → prod, always confirmed: the develop → qa PRs now, each qa → prod one by the desktop when it is completed
+  'release.chainStart': { args: ReleaseRunInput; result: { created: ReleaseCreated[]; chain: ReleaseChainView | null } }
+  'release.chainCancel': { args: { id: string }; result: unknown }
+  'release.chainRemove': { args: { id: string }; result: unknown }
+  // saved per project, as from the desktop panel: beRepo / feRepo ('' = none), or one branch override
+  'release.setConfig': {
+    args: { repoPath?: string; beRepo?: string; feRepo?: string; branch?: { repo: string; role: ReleaseRole; name: string } }
+    result: ReleaseState
+  }
 
   /**
    * The calling device revokes itself ("disassocia"); `unknown_command` on bridges up to IDE 0.1.0.

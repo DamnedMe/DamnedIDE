@@ -10,12 +10,14 @@ import { DiffService } from './services/git/diff.service'
 import { AdoService, fetchRepositories } from './services/ado/ado.service'
 import { AdoSettingsStore } from './services/ado/ado-settings.store'
 import { PromotionChainService } from './services/ado/promotion-chain.service'
+import { ReleaseService } from './services/ado/release.service'
 import { SqlService, SqlConnectionConfig, buildConnectionString, parseConnectionString } from './services/sql/sql.service'
 import { SqlWorkspaceDocument, SqlWorkspaceService } from './services/sql/sql-workspace.service'
 import { RoslynService } from './services/roslyn/roslyn.service'
 import { createTerminal, writeToTerminal, resizeTerminal, destroyTerminal, destroyAllTerminals, destroyTerminalsUnderPath, TerminalType } from './services/terminal/terminal.service'
 import { startProcess, stopProcess, stopAllProcesses } from './services/process/process.service'
-import { McpService, McpServerConfig } from './services/mcp/mcp.service'
+import { McpServerService, MCP_SERVER_NAME } from './services/mcp/mcp-server.service'
+import type { RemoteScope as McpScope } from '../src/shared/remote/protocol'
 import { ClaudeService, setApiKey, hasApiKey } from './services/ai/claude.service'
 import { AgentService, AgentSendRequest, AgentProviderId } from './services/ai/agent.service'
 import { UpdateService } from './services/update/update.service'
@@ -32,7 +34,7 @@ import { chainConnection, type ChainStartInput } from '../src/shared/adoChain'
 
 let mainWindow: BrowserWindow | null = null
 let roslynService: RoslynService | null = null
-let mcpService: McpService | null = null
+let mcpServer: McpServerService | null = null
 let claudeService: ClaudeService | null = null
 let agentService: AgentService | null = null
 let remoteService: RemoteService | null = null
@@ -140,7 +142,15 @@ function registerSharedStorageIpc(): void {
 // Connections, repository per folder and release BE/FE live in userData, read
 // fresh on every call (several instances share them). PATs are encrypted with
 // safeStorage and only used here: the renderer picks a connection by id.
-function registerAdoSettingsIpc(ado: AdoService): AdoSettingsStore {
+interface AdoSettingsIpc {
+  store: AdoSettingsStore
+  /** repositories of a connection, cached per org/project */
+  repositoriesOf: (c: { id: string; organization: string; project: string }) => Promise<AdoRepoList>
+  /** the settings changed: the renderer and the DamnedCloud phones read them again */
+  changed: () => void
+}
+
+function registerAdoSettingsIpc(ado: AdoService): AdoSettingsIpc {
   const store = new AdoSettingsStore(app.getPath('userData'), {
     available: () => safeStorage.isEncryptionAvailable(),
     encrypt: (plain) => safeStorage.encryptString(plain),
@@ -168,7 +178,10 @@ function registerAdoSettingsIpc(ado: AdoService): AdoSettingsStore {
     catalog.set(key, pending)
     return pending
   }
-  const changed = () => sendToRenderer('adoSettings:changed', null)
+  const changed = () => {
+    sendToRenderer('adoSettings:changed', null)
+    remoteService?.broadcast('release.changed', null)
+  }
 
   ipcMain.handle('adoSettings:get', ipc(() => store.view()))
   // saved only when Azure DevOps answers with this org/project/PAT
@@ -228,7 +241,7 @@ function registerAdoSettingsIpc(ado: AdoService): AdoSettingsStore {
     ado.use(c.organization, token)
     return true
   }))
-  return store
+  return { store, repositoriesOf, changed }
 }
 
 // ─── Release chains develop → qa → prod (services/ado/promotion-chain.service.ts) ───
@@ -244,7 +257,10 @@ function registerAdoChainIpc(store: AdoSettingsStore): PromotionChainService {
       const token = store.token(c.id)
       return token ? { organization: c.organization, token } : ADO_MISSING_PAT
     },
-    changed: () => sendToRenderer('adoChain:changed', null),
+    changed: () => {
+      sendToRenderer('adoChain:changed', null)
+      remoteService?.broadcast('release.changed', null)
+    },
     notify: (title, body) => {
       try {
         if (Notification.isSupported()) new Notification({ title, body, icon: appIcon() }).show()
@@ -309,10 +325,11 @@ app.whenReady().then(() => {
   const adoService = new AdoService()
   const sqlService = new SqlService()
   const sqlWorkspaceService = new SqlWorkspaceService(app.getPath('userData'))
-  mcpService = new McpService()
   claudeService = new ClaudeService()
   agentService = new AgentService(claudeService)
   roslynService = new RoslynService()
+  const adoSettings = registerAdoSettingsIpc(adoService)
+  const chains = registerAdoChainIpc(adoSettings.store)
 
   remoteService = new RemoteService({
     userDataDir: app.getPath('userData'),
@@ -321,7 +338,15 @@ app.whenReady().then(() => {
     git: gitService,
     worktree: worktreeService,
     diff: diffService,
-    sql: sqlService
+    sql: sqlService,
+    // the Release panel for the phone, on its own AdoService per call
+    release: new ReleaseService({
+      settings: adoSettings.store,
+      repositories: adoSettings.repositoriesOf,
+      chains,
+      gitCommonDir: (repoPath) => gitService.gitCommonDir(repoPath),
+      changed: adoSettings.changed
+    })
   })
   // Mirror remote-originated UI changes back into the renderer.
   remoteService.setApplyHandler((change) => sendToRenderer('remote:apply', change))
@@ -329,10 +354,10 @@ app.whenReady().then(() => {
     remoteService.on(event, (payload: unknown) => sendToRenderer('remote:event', { event, payload }))
   }
 
-  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, mcpService, claudeService, agentService)
+  registerIpcHandlers(gitService, worktreeService, diffService, adoService, sqlService, sqlWorkspaceService, roslynService, claudeService, agentService)
   registerRemoteIpc(remoteService)
+  mcpServer = registerMcpServerIpc(remoteService, claudeService)
   registerSharedStorageIpc()
-  const chains = registerAdoChainIpc(registerAdoSettingsIpc(adoService))
   const fromArgv = argvOpenTarget(process.argv)
   if (fromArgv) pendingOpenTarget = fromArgv
   createWindow()
@@ -360,7 +385,7 @@ function runCleanup(): void {
     ['terminals', destroyAllTerminals],
     ['processes', stopAllProcesses],
     ['roslyn', () => roslynService?.stop()],
-    ['mcp', () => mcpService?.disconnectAll()],
+    ['mcp', () => { void mcpServer?.stop() }],
     ['agents', () => agentService?.cancelAll()],
     ['remote', () => { remoteService?.stop(); remoteService?.dispose() }],
     ['watchers', closeAllWatchers],
@@ -395,7 +420,6 @@ function registerIpcHandlers(
   sql: SqlService,
   sqlWorkspace: SqlWorkspaceService,
   roslyn: RoslynService,
-  mcp: McpService,
   claude: ClaudeService,
   agent: AgentService
 ): void {
@@ -884,12 +908,6 @@ function registerIpcHandlers(
   ipcMain.handle('roslyn:diagnostics', (_e, file: string, text?: string) => roslyn.diagnostics(file, text))
   ipcMain.handle('roslyn:hover', (_e, file: string, line: number, column: number, text?: string) => roslyn.hover(file, line, column, text))
 
-  // ─── MCP ─────────
-  ipcMain.handle('mcp:connect', (_e, config: McpServerConfig) => mcp.connect(config, mainWindow))
-  ipcMain.handle('mcp:disconnect', (_e, name: string) => { mcp.disconnect(name) })
-  ipcMain.handle('mcp:listTools', (_e, name: string) => mcp.listTools(name))
-  ipcMain.handle('mcp:callTool', (_e, name: string, tool: string, args: Record<string, unknown>) => mcp.callTool(name, tool, args, mainWindow))
-
   // ─── Claude (subscription CLI / Anthropic API) ─────
   ipcMain.handle('ai:status', () => claude.status())
   ipcMain.handle('ai:setApiKey', ipc((key: string | null) => { setApiKey(key); return hasApiKey() }))
@@ -905,6 +923,50 @@ function registerIpcHandlers(
   ipcMain.handle('ai:models', (_e, provider: AgentProviderId) => agent.listModels(provider))
   ipcMain.handle('ai:send', (_e, req: AgentSendRequest) => agent.send(req, mainWindow))
   ipcMain.handle('ai:cancel', (_e, chatKey: string) => { agent.cancel(chatKey) })
+}
+
+// ─── MCP server (services/mcp/mcp-server.service.ts) ─────────────────────────
+// Agents use the IDE through the remote command surface; what the phone confirms is
+// confirmed here with a native dialog. The chat's Claude CLI gets the server too.
+function registerMcpServerIpc(remote: RemoteService, claude: ClaudeService): McpServerService {
+  const commands = remote.createCommands()
+  const server = new McpServerService({
+    dir: app.getPath('userData'),
+    appVersion: app.getVersion(),
+    execute: (cmd, args, device) => commands.execute(cmd, args, device),
+    workspace: () => remote.workspace.get(),
+    confirm: async (challenge) => {
+      const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+      win?.flashFrame(true)
+      const options = {
+        type: 'warning' as const,
+        buttons: ['Annulla', 'Consenti'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+        title: 'DamnedIDE · agente MCP',
+        message: `Un agente chiede: ${challenge.summary}`,
+        detail: challenge.details
+      }
+      const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
+      win?.flashFrame(false)
+      return response === 1
+    },
+    changed: () => sendToRenderer('mcpServer:changed', null)
+  })
+  claude.useMcp(() => {
+    const config = server.agentConfig()
+    return config ? { config, allow: `mcp__${MCP_SERVER_NAME}` } : null
+  })
+  ipcMain.handle('mcpServer:status', ipc(() => server.status()))
+  ipcMain.handle('mcpServer:update', ipc((patch: { enabled?: unknown; port?: unknown; scopes?: unknown; newToken?: unknown }) => server.update({
+    ...(typeof patch?.enabled === 'boolean' ? { enabled: patch.enabled } : {}),
+    ...(typeof patch?.port === 'number' ? { port: patch.port } : {}),
+    ...(Array.isArray(patch?.scopes) ? { scopes: patch.scopes as McpScope[] } : {}),
+    ...(patch?.newToken === true ? { newToken: true } : {})
+  })))
+  void server.start()
+  return server
 }
 
 // ─── DamnedCloud remote bridge ───────────────────────────────────────────────

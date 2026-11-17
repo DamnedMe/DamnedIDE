@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Bot, Plus, Trash2, Loader2, Check, AlertCircle, RefreshCw, ExternalLink, TerminalSquare, X } from '@/components/icons'
 import { Modal } from '../layout/Modal'
 import { useAgentConfigStore, useClaudeStore, useToastStore, useTerminalStore, ALL_AGENT_PROVIDERS } from '../../store'
-import { ClaudeSettings } from '../mcp/ClaudeSettings'
+import { ClaudeSettings } from './ClaudeSettings'
 import { tr, useI18n } from '../../i18n'
 
 // AI agents are CLI tools with their own subscription/login: this panel is where

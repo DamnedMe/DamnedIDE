@@ -5,7 +5,7 @@ import { useSettingsStore, useToastStore, useWorktreeStore, useEditorStore, useS
 import type { SettingsPageId } from '../../store'
 import { PanelContainer } from '../layout/PanelContainer'
 import { Modal } from '../layout/Modal'
-import { McpPanel } from '../mcp/McpPanel'
+import { McpServerPanel } from './McpServerPanel'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { AgentSettings } from './AgentSettings'
 import { RemotePanel } from './RemotePanel'
@@ -105,7 +105,7 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
     case 'ado-folders': content = <FoldersPage repoPath={repoPath} onOpenPage={setPage} />; break
     case 'ado-release': content = <ReleasePage repoPath={repoPath} onOpenPage={setPage} />; break
     case 'ai-agents': content = <AgentSettings />; break
-    case 'ai-mcp': content = <McpPanel />; break
+    case 'ai-mcp': content = <McpServerPanel />; break
     case 'remote': content = <RemotePanel />; break
   }
 
@@ -152,7 +152,7 @@ export function SettingsPanel({ repoPath = null }: { repoPath?: string | null } 
             </div>
             <div style={{ fontSize: px(11), color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               {t('theme, colors, text and icons, added fonts, editor, terminal, language, GitTree path, changes list and SQL query timeout go back to their initial values.')}
-              {' '}{t('Azure DevOps connections, AI agents, MCP servers and paired devices do not change.')}
+              {' '}{t('Azure DevOps connections, AI agents, the MCP server and paired devices do not change.')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <Btn onClick={() => setConfirmReset(false)}>{t('cancel')}</Btn>

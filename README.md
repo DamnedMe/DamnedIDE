@@ -113,6 +113,7 @@
 | 🖥️ **Terminale a schede** | cmd / PowerShell / PowerShell 7, con finestra detached |
 | 🛠️ **Build & Run** | rileva `dotnet` / `node`, avvia, ferma e riavvia con output in pannello |
 | 🔌 **Git bar** | branch, stage/unstage, diff, blame, history, pull/push/fetch dall'editor |
+| 🤖 **Server MCP** | *Impostazioni › AI › Server MCP*: gli agenti AI usano l'IDE (workspace, worktree, git, file, connessioni SQL aperte, rilascio Azure DevOps) tramite un server MCP HTTP su `127.0.0.1` con token. Permessi scelti nelle impostazioni (di default sola lettura); discard, rimozione worktree, query che modificano dati e rilasci in produzione si confermano in una finestra dell'IDE. Claude nella chat AI lo riceve da solo; Claude Code o altri client si collegano con il comando `claude mcp add` mostrato nella pagina |
 
 </details>
 

@@ -1,6 +1,6 @@
 import { GitBranch, AlertCircle, CheckCircle2, Sun, Moon, TerminalSquare, Bot } from '@/components/icons'
 import logo from '../../assets/logo.png'
-import { useAgentConfigStore, useMcpStore } from '../../store'
+import { useAgentConfigStore } from '../../store'
 import { useI18n } from '../../i18n'
 
 interface StatusBarProps {
@@ -39,11 +39,8 @@ function DockToggle({ open, onClick, title, tipDesc, icon, label }: {
 
 export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, onToggleTheme, onToggleTerminal, terminalOpen, onToggleAi, aiOpen }: StatusBarProps) {
   const t = useI18n()
-  const hasMcp = useMcpStore(s => s.custom.length > 0 || Object.keys(s.connected).length > 0)
-  // the chat is not MCP-only anymore: it also hosts the configured AI agents,
-  // so the button must show up as soon as there is something to talk to
-  const hasAgents = useAgentConfigStore(s => s.configured.length > 0)
-  const canChat = hasMcp || hasAgents
+  // the button shows up as soon as there is an agent to talk to
+  const canChat = useAgentConfigStore(s => s.configured.length > 0)
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -63,7 +60,7 @@ export function StatusBar({ repoPath, currentBranch, modifiedCount = 0, theme, o
         )}
         {onToggleAi && canChat && (
           <DockToggle open={aiOpen} onClick={onToggleAi}
-            title={aiOpen ? t('hide AI chat') : t('open AI chat')} tipDesc={t('chat with the configured agents (and MCP tools)')}
+            title={aiOpen ? t('hide AI chat') : t('open AI chat')} tipDesc={t('chat with the configured agents (they use the IDE through its MCP server)')}
             icon={<Bot size={11} strokeWidth={1.6} />} label="AI" />
         )}
         {repoPath ? (

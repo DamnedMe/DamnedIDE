@@ -7,9 +7,11 @@ import { GitService } from '../git/git.service'
 import { WorktreeService } from '../git/worktree.service'
 import { DiffService } from '../git/diff.service'
 import { SqlService } from '../sql/sql.service'
+import type { ReleaseService } from '../ado/release.service'
 import { DeviceRegistry } from './auth/device-registry'
 import { PairingService } from './auth/pairing'
 import { WorkspaceState } from './workspace-state'
+import { RemoteCommands, type RemoteDeps } from './commands'
 import { RemoteWsServer, type PendingPairing, type WsServerOptions } from './transports/ws-server'
 import { getTailscaleStatus, getLanIp, type TailscaleStatus } from './tailscale'
 import { onFsChanged } from '../watch/watch.service'
@@ -37,6 +39,7 @@ export interface RemoteServiceDeps {
   worktree: WorktreeService
   diff: DiffService
   sql: SqlService
+  release?: ReleaseService
 }
 
 interface ActiveConnection {
@@ -82,15 +85,7 @@ export class RemoteService extends EventEmitter {
       this.registry,
       this.pairing,
       this.workspace,
-      {
-        git: this.deps.git,
-        worktree: this.deps.worktree,
-        diff: this.deps.diff,
-        sql: this.deps.sql,
-        appVersion: this.deps.appVersion,
-        platform: this.deps.platform,
-        getSqlConnections: () => this.sqlConnections
-      },
+      this.commandDeps(),
       {
         onPairingRequest: (request) => this.emit('pairing-request', request),
         onPairingResolved: (id, accepted) => this.emit('pairing-resolved', { id, accepted }),
@@ -216,7 +211,28 @@ export class RemoteService extends EventEmitter {
     this.server?.broadcast(topic, data)
   }
 
+  /**
+   * The same command surface for another client of this desktop (the IDE's MCP server): it shares
+   * the workspace mirror and the confirmation challenges, works with the bridge stopped too.
+   */
+  createCommands(): RemoteCommands {
+    return new RemoteCommands({ ...this.commandDeps(), pairing: this.pairing, workspace: this.workspace })
+  }
+
   // ─── Internals ────────────────────────────────────────────────────────────
+
+  private commandDeps(): Omit<RemoteDeps, 'pairing' | 'workspace'> {
+    return {
+      git: this.deps.git,
+      worktree: this.deps.worktree,
+      diff: this.deps.diff,
+      sql: this.deps.sql,
+      release: this.deps.release,
+      appVersion: this.deps.appVersion,
+      platform: this.deps.platform,
+      getSqlConnections: () => this.sqlConnections
+    }
+  }
 
   private async pickNetwork(): Promise<{ bind: string; advertise: string }> {
     const ts = await getTailscaleStatus()

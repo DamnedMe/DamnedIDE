@@ -8,6 +8,7 @@ import { GitService } from '../git/git.service'
 import { WorktreeService } from '../git/worktree.service'
 import { DiffService } from '../git/diff.service'
 import { SqlService } from '../sql/sql.service'
+import type { ReleaseService } from '../ado/release.service'
 import { WorkspaceState } from './workspace-state'
 import { PairingService } from './auth/pairing'
 
@@ -32,6 +33,8 @@ export interface RemoteDeps {
   platform: string
   /** Live SQL connections (sanitised) mirrored from the renderer. */
   getSqlConnections: () => RemoteSqlConnection[]
+  /** Azure DevOps release (absent: release.* answers `unavailable`). */
+  release?: ReleaseService
 }
 
 const MUTATING_SQL = /\b(DROP|TRUNCATE|ALTER|DELETE|UPDATE|INSERT|MERGE|EXEC|EXECUTE|CREATE|GRANT|REVOKE|BACKUP|RESTORE|DBCC)\b/i
@@ -61,6 +64,24 @@ function isInside(root: string, target: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
+/** Scope a paired device (or the IDE's MCP agent) needs for `cmd`. */
+export function remoteScopeFor(cmd: string): RemoteScope {
+  if (cmd.startsWith('sql.')) {
+    if (cmd === 'sql.backup' || cmd === 'sql.restore' || cmd === 'sql.dataTier') return 'sqlDestructive'
+    // cancelling stops a running query: only who may run them
+    if (cmd === 'sql.query' || cmd === 'sql.cancel') return 'sql'
+    return 'view'
+  }
+  // creating pull requests, chains and the saved release choices are git operations
+  if (cmd.startsWith('release.')) return cmd === 'release.state' || cmd === 'release.preview' ? 'view' : 'git'
+  if (cmd === 'fs.write' || cmd === 'editor.save') return 'edit'
+  if (cmd === 'worktree.add' || cmd === 'worktree.remove' || cmd === 'worktree.promote' || cmd === 'git.discard') return 'git'
+  // reading changes is "view": a read-only phone must still list and diff them
+  if (cmd === 'git.status' || cmd === 'git.porcelain' || cmd === 'git.diff' || cmd === 'git.file') return 'view'
+  if (cmd.startsWith('git.')) return 'git'
+  return 'view'
+}
+
 /**
  * Curated, scope-checked command surface exposed to paired devices. It composes
  * the existing IDE services instead of forwarding raw IPC channels.
@@ -69,7 +90,7 @@ export class RemoteCommands {
   constructor(private deps: RemoteDeps) {}
 
   async execute(cmd: string, args: Record<string, unknown>, device: DeviceInfo): Promise<unknown> {
-    if (!this.hasScope(device, this.scopeFor(cmd))) {
+    if (!this.hasScope(device, remoteScopeFor(cmd))) {
       throw new RemoteCommandError('forbidden', `Permesso mancante per "${cmd}"`)
     }
     switch (cmd) {
@@ -202,6 +223,28 @@ export class RemoteCommands {
         this.deps.sql.cancelQuery(String(args.queryId))
         return { ok: true }
 
+      // ─── Release (Azure DevOps, services/ado/release.service.ts) ───────────
+      case 'release.state':
+        return this.release().state(await this.repo(args))
+      case 'release.preview':
+        return this.release().preview(await this.repo(args), args.stage, args.scope)
+      case 'release.create':
+      case 'release.chainStart': {
+        // read again here, then confirmed on the phone: qa → prod and the chain (which reaches prod)
+        const chain = cmd === 'release.chainStart'
+        const plan = await this.release().plan(chain, await this.repo(args), args)
+        if (plan.confirm) this.confirm(cmd, args, plan.confirm.summary, plan.confirm.details, true)
+        return chain ? this.release().startChain(plan) : this.release().create(plan)
+      }
+      case 'release.chainCancel':
+        this.release().cancelChain(String(args.id))
+        return { ok: true }
+      case 'release.chainRemove':
+        this.release().removeChain(String(args.id))
+        return { ok: true }
+      case 'release.setConfig':
+        return this.release().setConfig(await this.repo(args), args)
+
       default:
         throw new RemoteCommandError('unknown_command', `Comando sconosciuto: ${cmd}`)
     }
@@ -213,19 +256,9 @@ export class RemoteCommands {
     return device.scopes.includes(scope)
   }
 
-  private scopeFor(cmd: string): RemoteScope {
-    if (cmd.startsWith('sql.')) {
-      if (cmd === 'sql.backup' || cmd === 'sql.restore' || cmd === 'sql.dataTier') return 'sqlDestructive'
-      // cancelling stops a running query: only who may run them
-      if (cmd === 'sql.query' || cmd === 'sql.cancel') return 'sql'
-      return 'view'
-    }
-    if (cmd === 'fs.write' || cmd === 'editor.save') return 'edit'
-    if (cmd === 'worktree.add' || cmd === 'worktree.remove' || cmd === 'worktree.promote' || cmd === 'git.discard') return 'git'
-    // reading changes is "view": a read-only phone must still list and diff them
-    if (cmd === 'git.status' || cmd === 'git.porcelain' || cmd === 'git.diff' || cmd === 'git.file') return 'view'
-    if (cmd.startsWith('git.')) return 'git'
-    return 'view'
+  private release(): ReleaseService {
+    if (!this.deps.release) throw new RemoteCommandError('unavailable', 'Rilascio non disponibile su questo desktop')
+    return this.deps.release
   }
 
   private confirm(cmd: string, args: Record<string, unknown>, summary: string, details: string | undefined, destructive: boolean): void {

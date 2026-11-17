@@ -34,7 +34,7 @@ export default function App() {
     if (detached) return detached[1] as PanelId
     try {
       const p = localStorage.getItem('damnedide_last_panel')
-      if (p && ['worktree', 'git', 'ado', 'release', 'sql', 'editor', 'settings', 'mcp'].includes(p)) return p as PanelId
+      if (p && ['worktree', 'git', 'ado', 'release', 'sql', 'editor', 'settings'].includes(p)) return p as PanelId
     } catch { /* ignore */ }
     return 'worktree'
   })
@@ -239,9 +239,11 @@ export default function App() {
       repoPath,
       selectedWorktree,
       activePanel,
-      editorNav
+      editorNav,
+      recentRepos,
+      theme: { mode: settingsTheme, accent: accentColor }
     }).catch(() => { /* bridge not active */ })
-  }, [repoPath, selectedWorktree, activePanel, editorNav])
+  }, [repoPath, selectedWorktree, activePanel, editorNav, recentRepos, settingsTheme, accentColor])
 
   // SQL connection metadata (sanitised) so paired devices can browse the
   // databases already open on the desktop without ever receiving credentials.

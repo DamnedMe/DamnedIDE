@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
+import { join } from 'path'
 import QRCode from 'qrcode'
 import type { DeviceInfo, PairingPayload, PairingStart, RemoteSqlConnection, RemoteScope, WorkspaceSnapshot } from '../../../src/shared/remote/protocol'
 import { DEEP_LINK_SCHEME, PROTOCOL_VERSION, REMOTE_PRODUCT_NAME, toBase64Url } from '../../../src/shared/remote/protocol'
@@ -28,6 +29,10 @@ export interface RemoteStatus {
   tls: boolean
   deviceCount: number
   tailscale: TailscaleStatus
+  /** Bound to every interface: the LAN reaches the bridge (and the webapp) even with Tailscale on. */
+  lan: boolean
+  /** Where a browser opens the webapp; null when off or when the IDE ships no web build. */
+  webUrl: string | null
   warning?: string
 }
 
@@ -40,12 +45,17 @@ export interface RemoteServiceDeps {
   diff: DiffService
   sql: SqlService
   release?: ReleaseService
+  /** DamnedCloud web build (resources/cloud-web), served by the bridge as the LAN webapp. */
+  webDir?: string
 }
 
 interface ActiveConnection {
   host: string
   port: number
   tls: boolean
+  lan: boolean
+  /** Host a browser uses for the webapp: the LAN address when `lan`, the advertised one otherwise. */
+  webHost: string
 }
 
 /**
@@ -70,11 +80,14 @@ export class RemoteService extends EventEmitter {
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
-  async start(options: { port?: number; host?: string; tls?: { certPath: string; keyPath: string } } = {}): Promise<RemoteStatus> {
+  async start(options: { port?: number; host?: string; lan?: boolean; tls?: { certPath: string; keyPath: string } } = {}): Promise<RemoteStatus> {
     await this.stop()
     const port = options.port || DEFAULT_PORT
     const net = await this.pickNetwork()
-    const host = options.host || net.bind
+    const lanIp = options.lan ? getLanIp() : null
+    // ponytail: 0.0.0.0 also opens the bridge on every other interface (VPNs, hotspots); the device
+    // token and the desktop-confirmed pairing still gate every command
+    const host = options.host || (options.lan ? '0.0.0.0' : net.bind)
     const advertised = options.host || net.advertise
     let tls: WsServerOptions['tls']
     if (options.tls) {
@@ -94,8 +107,9 @@ export class RemoteService extends EventEmitter {
       }
     )
 
-    await this.server.start({ host, port, tls })
-    this.connection = { host: advertised, port, tls: !!tls }
+    await this.server.start({ host, port, tls, webDir: this.webDir() })
+    const lan = !options.host && !!options.lan
+    this.connection = { host: advertised, port, tls: !!tls, lan, webHost: (lan && lanIp) || advertised }
 
     if (!this.unsubscribeFs) {
       this.unsubscribeFs = onFsChanged((root) => this.broadcast('fs.changed', { root }))
@@ -130,6 +144,8 @@ export class RemoteService extends EventEmitter {
       tls: this.connection?.tls ?? false,
       deviceCount: this.registry.count(),
       tailscale,
+      lan: this.connection?.lan ?? false,
+      webUrl: this.webBase(),
       warning: this.warning
     }
   }
@@ -151,7 +167,8 @@ export class RemoteService extends EventEmitter {
     const encoded = toBase64Url(JSON.stringify(payload))
     const url = `${LANDING_BASE}#${encoded}`
     const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 320 })
-    return { payload, url, qrDataUrl, expiresAt }
+    const web = this.webBase()
+    return { payload, url, qrDataUrl, expiresAt, ...(web ? { webUrl: `${web}#${encoded}` } : {}) }
   }
 
   resolvePairing(id: string, accepted: boolean): void {
@@ -220,6 +237,18 @@ export class RemoteService extends EventEmitter {
   }
 
   // ─── Internals ────────────────────────────────────────────────────────────
+
+  private webDir(): string | undefined {
+    const dir = this.deps.webDir
+    return dir && existsSync(join(dir, 'index.html')) ? dir : undefined
+  }
+
+  private webBase(): string | null {
+    const c = this.connection
+    if (!c || !this.webDir()) return null
+    const host = c.webHost.includes(':') ? `[${c.webHost}]` : c.webHost
+    return `${c.tls ? 'https' : 'http'}://${host}:${c.port}/`
+  }
 
   private commandDeps(): Omit<RemoteDeps, 'pairing' | 'workspace'> {
     return {

@@ -300,7 +300,7 @@ const electronAPI = {
   },
   remote: {
     status: (): Promise<RemoteStatus> => ipcRenderer.invoke('remote:status'),
-    start: (options: { port?: number; host?: string; tls?: { certPath: string; keyPath: string } }): Promise<RemoteStatus> =>
+    start: (options: { port?: number; host?: string; lan?: boolean; tls?: { certPath: string; keyPath: string } }): Promise<RemoteStatus> =>
       ipcRenderer.invoke('remote:start', options),
     stop: (): Promise<RemoteStatus> => ipcRenderer.invoke('remote:stop'),
     beginPairing: (): Promise<PairingStart> => ipcRenderer.invoke('remote:pairing:begin'),

@@ -366,7 +366,7 @@ interface Window {
     }
     remote: {
       status: () => Promise<import('./services/remote/remote.service').RemoteStatus>
-      start: (options: { port?: number; host?: string; tls?: { certPath: string; keyPath: string } }) => Promise<import('./services/remote/remote.service').RemoteStatus>
+      start: (options: { port?: number; host?: string; lan?: boolean; tls?: { certPath: string; keyPath: string } }) => Promise<import('./services/remote/remote.service').RemoteStatus>
       stop: () => Promise<import('./services/remote/remote.service').RemoteStatus>
       beginPairing: () => Promise<RemotePairingStart>
       pending: () => Promise<RemotePendingPairing[]>

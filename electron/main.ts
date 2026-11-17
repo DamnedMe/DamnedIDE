@@ -339,6 +339,8 @@ app.whenReady().then(() => {
     worktree: worktreeService,
     diff: diffService,
     sql: sqlService,
+    // DamnedCloud web build (scripts/build-cloud-web.mjs), next to app.asar once packaged
+    webDir: app.isPackaged ? join(process.resourcesPath, 'cloud-web') : join(app.getAppPath(), 'resources', 'cloud-web'),
     // the Release panel for the phone, on its own AdoService per call
     release: new ReleaseService({
       settings: adoSettings.store,
@@ -972,7 +974,7 @@ function registerMcpServerIpc(remote: RemoteService, claude: ClaudeService): Mcp
 // ─── DamnedCloud remote bridge ───────────────────────────────────────────────
 function registerRemoteIpc(remote: RemoteService): void {
   ipcMain.handle('remote:status', () => remote.status())
-  ipcMain.handle('remote:start', (_e, options: { port?: number; host?: string; tls?: { certPath: string; keyPath: string } }) => remote.start(options))
+  ipcMain.handle('remote:start', (_e, options: { port?: number; host?: string; lan?: boolean; tls?: { certPath: string; keyPath: string } }) => remote.start(options))
   ipcMain.handle('remote:stop', async () => {
     await remote.stop()
     return remote.status()

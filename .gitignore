@@ -14,3 +14,7 @@ graphify-out/
 
 # Claude Code: permessi per-sviluppatore (le skill in .claude/skills/ restano condivise)
 .claude/settings.local.json
+
+# DamnedCloud web build (scripts/build-cloud-web.mjs)
+resources/cloud-web/
+.damnedcloud/

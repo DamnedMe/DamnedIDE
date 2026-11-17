@@ -8,6 +8,7 @@ import { DeviceRegistry } from '../auth/device-registry'
 import { PairingService } from '../auth/pairing'
 import { RemoteCommands, RemoteCommandError, type RemoteDeps } from '../commands'
 import { WorkspaceState } from '../workspace-state'
+import { serveWebApp } from './web-static'
 
 interface SocketMeta {
   alive: boolean
@@ -26,6 +27,8 @@ export interface WsServerOptions {
   host: string
   port: number
   tls?: { cert: string; key: string; ca?: string }
+  /** DamnedCloud web build: the same port serves the LAN webapp, which talks back over this socket. */
+  webDir?: string
 }
 
 export interface WsServerHooks {
@@ -69,7 +72,8 @@ export class RemoteWsServer {
 
   start(options: WsServerOptions): Promise<void> {
     return new Promise((resolvePromise, reject) => {
-      const requestHandler = (_req: IncomingMessage, res: ServerResponse): void => {
+      const requestHandler = (req: IncomingMessage, res: ServerResponse): void => {
+        if (serveWebApp(options.webDir, req, res)) return
         res.writeHead(200, { 'content-type': 'text/plain' })
         res.end(`${REMOTE_PRODUCT_NAME} bridge online`)
       }

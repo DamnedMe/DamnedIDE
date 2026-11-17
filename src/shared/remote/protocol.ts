@@ -246,6 +246,8 @@ export interface PairingStart {
   /** data:image/png;base64 QR of `url`. */
   qrDataUrl: string
   expiresAt: number
+  /** The LAN webapp served by the bridge, with the payload in the hash (absent when the IDE ships no web build). */
+  webUrl?: string
 }
 
 export interface PairingProbe {

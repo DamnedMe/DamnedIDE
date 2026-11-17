@@ -11,11 +11,13 @@ import {
   Wifi,
   WifiOff,
   Copy,
-  AlertTriangle
+  AlertTriangle,
+  Globe
 } from '@/components/icons'
 import { useToastStore } from '../../store'
 import { tr, useI18n } from '../../i18n'
 import { ALL_SCOPES, type RemoteScope } from '../../shared/remote/protocol'
+import { TailscaleGuide } from './TailscaleGuide'
 
 type RemoteStatus = Awaited<ReturnType<typeof window.electronAPI.remote.status>>
 type DeviceInfo = Awaited<ReturnType<typeof window.electronAPI.remote.devices>>[number]
@@ -85,6 +87,7 @@ export function RemotePanel() {
   const [pending, setPending] = useState<PendingPairing[]>([])
   const [busy, setBusy] = useState(false)
   const [port, setPort] = useState(8765)
+  const [lan, setLan] = useState(false)
   const [now, setNow] = useState(Date.now())
   const statusRef = useRef<RemoteStatus | null>(null)
   statusRef.current = status
@@ -99,7 +102,7 @@ export function RemotePanel() {
       setStatus(st)
       setDevices(devs)
       setPending(pend)
-      if (!statusRef.current) setPort(st.port)
+      if (!statusRef.current) { setPort(st.port); setLan(st.lan) }
     } catch (e) {
       showToast((e as Error).message || tr('remote access status not available'), 'error')
     }
@@ -129,7 +132,7 @@ export function RemotePanel() {
         setPairing(null)
         showToast(tr('remote access turned off'))
       } else {
-        const st = await window.electronAPI.remote.start({ port })
+        const st = await window.electronAPI.remote.start({ port, lan })
         setStatus(st)
         showToast(st.warning || tr('bridge active on {host}:{port}', { host: st.host, port: st.port }), st.warning ? 'info' : 'success')
       }
@@ -198,9 +201,23 @@ export function RemotePanel() {
               <div style={{ fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
                 {ts?.running ? `Tailscale: ${ts.dnsName || ts.ipv4}` : ts?.available ? t('Tailscale not connected') : t('Tailscale not detected')}
               </div>
+              {status?.webUrl && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(9px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                  <Globe size={10} /> {t('webapp: {url}', { url: status.webUrl })}
+                </div>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {!status?.listening && (
+              <label
+                title={t('also reachable on the local network, for the browser webapp, even with Tailscale active')}
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'calc(10px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                <input type="checkbox" checked={lan} onChange={(e) => setLan(e.target.checked)} />
+                {t('LAN')}
+              </label>
+            )}
             {!status?.listening && (
               <input
                 type="number"
@@ -233,6 +250,12 @@ export function RemotePanel() {
           </div>
         )}
       </div>
+
+      {status && (
+        <div style={SURFACE}>
+          <TailscaleGuide open={!status.tailscale.running} />
+        </div>
+      )}
 
       {/* Pending pairing confirmations */}
       {pending.map((p) => (
@@ -277,11 +300,20 @@ export function RemotePanel() {
               <GhostButton onClick={() => { void navigator.clipboard.writeText(pairing.url); showToast(t('link copied')) }}>
                 <Copy size={11} /> {t('copy link')}
               </GhostButton>
+              {pairing.webUrl && (
+                <GhostButton
+                  title={t('opens DamnedCloud in a browser and pairs it: for those without the Android app')}
+                  onClick={() => { void navigator.clipboard.writeText(pairing.webUrl!); showToast(t('webapp link copied')) }}
+                >
+                  <Globe size={11} /> {t('copy webapp link')}
+                </GhostButton>
+              )}
             </div>
           </div>
         ) : (
           <div style={{ fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-            {t('Make sure the phone has Tailscale active on the same network, then scan the QR to download DamnedCloud and pair it.')}
+            {t('Make sure the phone has Tailscale active on the same network, then scan the QR to download DamnedCloud and pair it.')}{' '}
+            {t('Without an Android phone: copy the webapp link and open it in any browser that reaches this PC.')}
           </div>
         )}
       </div>

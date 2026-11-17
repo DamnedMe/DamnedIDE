@@ -16,6 +16,9 @@ files:
 extraResources:
   - from: resources/licenses
     to: licenses
+  # DamnedCloud LAN webapp (scripts/build-cloud-web.mjs), served by the remote bridge
+  - from: resources/cloud-web
+    to: cloud-web
 # afterPack hook: labels the package for electron-updater (only when the
 # DAMNED_PACKAGE_TYPE env var is set — used for the pacman-only build)
 afterPack: scripts/after-pack.cjs

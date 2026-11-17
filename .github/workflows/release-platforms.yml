@@ -110,6 +110,19 @@ jobs:
         # no dotnet => the script exits 0 and the sidecar is simply not shipped
         run: node scripts/build-roslyn-bridge.mjs
 
+      # the LAN webapp the remote bridge serves: DamnedCloud's main, built into resources/cloud-web
+      - name: Checkout DamnedCloud
+        uses: actions/checkout@v4
+        with:
+          repository: DamnedMe/DamnedCloud
+          ref: main
+          path: .damnedcloud
+
+      - name: Build DamnedCloud webapp
+        env:
+          DAMNEDCLOUD_DIR: .damnedcloud
+        run: node scripts/build-cloud-web.mjs
+
       - name: Build and publish Linux packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -149,6 +162,19 @@ jobs:
         # no dotnet => the script exits 0 and the sidecar is simply not shipped
         run: node scripts/build-roslyn-bridge.mjs
 
+      # the LAN webapp the remote bridge serves: DamnedCloud's main, built into resources/cloud-web
+      - name: Checkout DamnedCloud
+        uses: actions/checkout@v4
+        with:
+          repository: DamnedMe/DamnedCloud
+          ref: main
+          path: .damnedcloud
+
+      - name: Build DamnedCloud webapp
+        env:
+          DAMNEDCLOUD_DIR: .damnedcloud
+        run: node scripts/build-cloud-web.mjs
+
       - name: Build and publish macOS packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -179,6 +205,19 @@ jobs:
       - name: Build Roslyn bridge
         # no dotnet => the script exits 0 and the sidecar is simply not shipped
         run: node scripts/build-roslyn-bridge.mjs
+
+      # the LAN webapp the remote bridge serves: DamnedCloud's main, built into resources/cloud-web
+      - name: Checkout DamnedCloud
+        uses: actions/checkout@v4
+        with:
+          repository: DamnedMe/DamnedCloud
+          ref: main
+          path: .damnedcloud
+
+      - name: Build DamnedCloud webapp
+        env:
+          DAMNEDCLOUD_DIR: .damnedcloud
+        run: node scripts/build-cloud-web.mjs
 
       - name: Build and publish Windows package
         env:

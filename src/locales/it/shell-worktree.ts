@@ -244,8 +244,6 @@ export const IT: Record<string, string> = {
   'BE and FE repositories promoted from the Release panel': 'repository BE e FE promosse dal pannello Rilascio',
   Agents: 'Agenti',
   'chat AI agents: access, check and model': 'agenti AI della chat: accesso, verifica e modello',
-  'MCP servers': 'Server MCP',
-  'MCP tool servers (stdio) used by the agents': 'server di strumenti MCP (stdio) usati dagli agenti',
   'Remote access': 'Accesso remoto',
   'DamnedCloud: pair a phone and control the IDE remotely': "DamnedCloud: associa un telefono e controlla l'IDE da remoto",
   'settings pages': 'pagine delle impostazioni',
@@ -266,7 +264,7 @@ export const IT: Record<string, string> = {
   'settings reset to defaults': 'impostazioni ripristinate ai valori predefiniti',
   'reset the default settings?': 'ripristinare le impostazioni predefinite?',
   'theme, colors, text and icons, added fonts, editor, terminal, language, GitTree path, changes list and SQL query timeout go back to their initial values.': 'tema, colori, testo e icone, font aggiunti, editor, terminale, lingua, percorso di GitTree, lista changes e timeout delle query SQL tornano ai valori iniziali.',
-  'Azure DevOps connections, AI agents, MCP servers and paired devices do not change.': 'Non cambiano le connessioni Azure DevOps, gli agenti AI, i server MCP e i dispositivi associati.',
+  'Azure DevOps connections, AI agents, the MCP server and paired devices do not change.': 'Non cambiano le connessioni Azure DevOps, gli agenti AI, il server MCP e i dispositivi associati.',
   'applies the default settings at once': 'applica subito le impostazioni predefinite',
 
   // ─── settings: Editor and Terminal pages ───

@@ -753,31 +753,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   }
 }))
 
-// ─── MCP servers (config + connection state, persisted) ───────────────────────
-export interface McpServerConfig {
-  name: string
-  command: string
-  args: string[]
-  env?: Record<string, string>
-}
-
-export const MCP_PRESETS: { label: string; config: McpServerConfig }[] = [
-  // No agent presets: agent CLIs (Claude, opencode, Codex, Cursor) are now
-  // first-class chat providers (see useAgentChatStore / AgentService), not MCP
-  // chat servers. This panel is a generic MCP *client*: add any MCP server
-  // (e.g. `npx -y @modelcontextprotocol/server-filesystem .`) and call its tools.
-]
-
-const MCP_CUSTOM_KEY = 'damnedide_mcp_servers'
-const MCP_CONNECTED_KEY = 'damnedide_mcp_connected'
-const MCP_CHATSEL_KEY = 'damnedide_mcp_chatsel'
-
-export interface McpChatSelection {
-  mode?: string
-  model?: string
-  effort?: string
-}
-
+// ─── localStorage JSON helpers (AI chat, agents) ──────────────────────────────
 function loadJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key)
@@ -788,92 +764,6 @@ function loadJson<T>(key: string, fallback: T): T {
 function saveJson(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)) } catch { /* ignore */ }
 }
-
-interface McpState {
-  custom: McpServerConfig[]
-  connected: Record<string, boolean>
-  status: Record<string, 'idle' | 'connecting' | 'connected' | 'error'>
-  errors: Record<string, string>
-  tools: Record<string, McpTool[]>
-  addServer: (c: McpServerConfig) => void
-  removeServer: (name: string) => void
-  updateServer: (name: string, patch: Partial<McpServerConfig>) => void
-  setConnected: (name: string, v: boolean) => void
-  setStatus: (name: string, s: 'idle' | 'connecting' | 'connected' | 'error') => void
-  setError: (name: string, e?: string) => void
-  setTools: (name: string, tools: McpTool[]) => void
-  chatSel: Record<string, McpChatSelection>
-  setChatSel: (name: string, sel: McpChatSelection) => void
-}
-
-// The connected map is persisted by name, so a server that no longer exists
-// (removed preset, deleted custom entry) would keep showing up in the chat
-// provider list. Drop anything that is not a configured server any more.
-function loadConnected(custom: McpServerConfig[]): Record<string, boolean> {
-  const known = new Set([...MCP_PRESETS.map(p => p.config.name), ...custom.map(c => c.name)])
-  const stored = loadJson<Record<string, boolean>>(MCP_CONNECTED_KEY, {})
-  const pruned = Object.fromEntries(Object.entries(stored).filter(([name]) => known.has(name)))
-  if (Object.keys(pruned).length !== Object.keys(stored).length) saveJson(MCP_CONNECTED_KEY, pruned)
-  return pruned
-}
-
-const mcpCustom = loadJson<McpServerConfig[]>(MCP_CUSTOM_KEY, [])
-
-export const useMcpStore = create<McpState>((set) => ({
-  custom: mcpCustom,
-  connected: loadConnected(mcpCustom),
-  status: {},
-  errors: {},
-  tools: {},
-  chatSel: loadJson<Record<string, McpChatSelection>>(MCP_CHATSEL_KEY, {}),
-  addServer: (c) => set((s) => {
-    const custom = [...s.custom, c]
-    saveJson(MCP_CUSTOM_KEY, custom)
-    return { custom }
-  }),
-  removeServer: (name) => set((s) => {
-    const custom = s.custom.filter(c => c.name !== name)
-    saveJson(MCP_CUSTOM_KEY, custom)
-    const connected = { ...s.connected }
-    delete connected[name]
-    saveJson(MCP_CONNECTED_KEY, connected)
-    return { custom, connected }
-  }),
-  updateServer: (name, patch) => set((s) => {
-    const idx = s.custom.findIndex(c => c.name === name)
-    if (idx < 0) return {}
-    const next = { ...s.custom[idx], ...patch }
-    const custom = s.custom.map((c, i) => i === idx ? next : c)
-    saveJson(MCP_CUSTOM_KEY, custom)
-    const connected = { ...s.connected }
-    // a rename must move the persisted "connected" flag with the server
-    if (next.name !== name) {
-      const wasConnected = connected[name]
-      delete connected[name]
-      if (wasConnected) connected[next.name] = true
-      saveJson(MCP_CONNECTED_KEY, connected)
-    }
-    return { custom, connected }
-  }),
-  setConnected: (name, v) => set((s) => {
-    const connected = { ...s.connected, [name]: v }
-    saveJson(MCP_CONNECTED_KEY, connected)
-    return { connected }
-  }),
-  setStatus: (name, status) => set((s) => ({ status: { ...s.status, [name]: status } })),
-  setError: (name, e) => set((s) => {
-    const errors = { ...s.errors }
-    if (e) errors[name] = e
-    else delete errors[name]
-    return { errors }
-  }),
-  setTools: (name, tools) => set((s) => ({ tools: { ...s.tools, [name]: tools } })),
-  setChatSel: (name, sel) => set((s) => {
-    const chatSel = { ...s.chatSel, [name]: sel }
-    saveJson(MCP_CHATSEL_KEY, chatSel)
-    return { chatSel }
-  })
-}))
 
 // ─── Claude nativo (subscription CLI / API Anthropic) ────────────────────────
 export const CLAUDE_MODELS: { id: string; label: string }[] = [

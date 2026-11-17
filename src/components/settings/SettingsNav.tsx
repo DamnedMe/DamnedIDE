@@ -106,9 +106,9 @@ export const SETTINGS_PAGE_META: SettingsPageMeta[] = [
     keywords: 'ai agenti agents claude codex cursor opencode api key login modello model chat'
   },
   {
-    id: 'ai-mcp', group: 'ai', label: 'MCP servers', icon: PlugZap,
-    description: 'MCP tool servers (stdio) used by the agents',
-    keywords: 'mcp server strumenti tools stdio plugin'
+    id: 'ai-mcp', group: 'ai', label: 'MCP server', icon: PlugZap,
+    description: 'let AI agents use the IDE: git, files, SQL, worktrees and release',
+    keywords: 'mcp server strumenti tools agenti agents claude code permessi token porta'
   },
   {
     id: 'remote', group: 'devices', label: 'Remote access', icon: Smartphone,

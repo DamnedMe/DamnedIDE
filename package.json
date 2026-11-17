@@ -42,6 +42,8 @@
     "test:terminal": "node --experimental-strip-types scripts/terminal.check.ts",
     "test:remote-protocol": "node --experimental-strip-types scripts/remote-protocol.check.ts",
     "test:remote-bridge": "node --experimental-strip-types scripts/remote-bridge.check.ts",
+    "test:release-remote": "node --experimental-strip-types scripts/release-remote.check.ts",
+    "test:mcp-server": "node --experimental-strip-types scripts/mcp-server.check.ts",
     "test:gittree": "node --experimental-strip-types scripts/gittree.check.ts",
     "test:shared-storage": "node --experimental-strip-types scripts/shared-storage.check.ts",
     "test:instance-lock": "node --experimental-strip-types scripts/instance-lock.check.ts",

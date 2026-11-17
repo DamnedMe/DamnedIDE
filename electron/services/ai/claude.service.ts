@@ -109,6 +109,12 @@ interface Run {
 //  • api — the Anthropic SDK with a stored key, for a plain chat without tools.
 export class ClaudeService {
   private runs = new Map<string, Run>()
+  private mcp: (() => { config: string; allow: string } | null) | null = null
+
+  /** The IDE's MCP server for the CLI turns: its `--mcp-config` file and the rule allowing its tools. */
+  useMcp(get: () => { config: string; allow: string } | null): void {
+    this.mcp = get
+  }
 
   private emit(win: BrowserWindow | null, channel: string, payload: unknown): void {
     const targets = win ? [win] : BrowserWindow.getAllWindows()
@@ -180,6 +186,10 @@ export class ClaudeService {
         req.resume ? '--resume' : '--session-id', sessionId
       ]
       if (req.system) args.push('--append-system-prompt', req.system)
+      // the IDE's tools: allowed up front (a -p turn cannot ask), the IDE scopes and its
+      // confirmation dialog still decide what they may do
+      const mcp = this.mcp?.()
+      if (mcp) args.push('--mcp-config', mcp.config, '--allowedTools', mcp.allow)
 
       let proc: ChildProcess
       try {

@@ -1,9 +1,16 @@
 /// <reference types="vite/client" />
 
-interface McpTool {
-  name: string
-  description: string
-  inputSchema?: unknown
+/** Settings › AI › MCP server (electron/services/mcp/mcp-server.service.ts). */
+interface McpServerStatus {
+  enabled: boolean
+  listening: boolean
+  port: number
+  url: string
+  token: string
+  scopes: import('./shared/remote/protocol').RemoteScope[]
+  error?: string
+  tools: { name: string; description: string; allowed: boolean }[]
+  calls: { at: number; tool: string; ok: boolean; message?: string }[]
 }
 
 type ClaudeBackend = 'subscription' | 'api'
@@ -156,13 +163,10 @@ interface Window {
       onChunk: (cb: (p: { chatKey: string; text: string }) => void) => () => void
       onTool: (cb: (p: { chatKey: string; name: string }) => void) => () => void
     }
-    mcp: {
-      connect: (config: { name: string; command: string; args: string[]; env?: Record<string, string> }) => Promise<{ ok: boolean; error?: string; tools: McpTool[] }>
-      disconnect: (name: string) => Promise<void>
-      listTools: (name: string) => Promise<McpTool[]>
-      callTool: (name: string, tool: string, args: Record<string, unknown>) => Promise<string>
-      onTools: (cb: (payload: { name: string; tools: McpTool[] }) => void) => () => void
-      onLog: (cb: (payload: { name: string; message: string }) => void) => () => void
+    mcpServer: {
+      status: () => Promise<McpServerStatus>
+      update: (patch: { enabled?: boolean; port?: number; scopes?: import('./shared/remote/protocol').RemoteScope[]; newToken?: boolean }) => Promise<McpServerStatus>
+      onChanged: (cb: () => void) => () => void
     }
     git: {
       status: (repoPath: string) => Promise<import('./types/git').GitStatus>

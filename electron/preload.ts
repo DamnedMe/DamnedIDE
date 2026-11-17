@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { SqlConnectionConfig } from './services/sql/sql.service'
 import type { TerminalType } from './services/terminal/terminal.service'
-import type { McpServerConfig, McpTool } from './services/mcp/mcp.service'
+import type { McpServerStatus } from './services/mcp/mcp-server.service'
 import type { ClaudeResult, ClaudeAuthStatus } from './services/ai/claude.service'
 import type { AgentSendRequest, AgentProviderInfo } from './services/ai/agent.service'
 import type { UpdateState } from './services/update/update.service'
@@ -44,20 +44,14 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('ai:tool', l)
     }
   },
-  mcp: {
-    connect: (config: McpServerConfig) => ipcRenderer.invoke('mcp:connect', config),
-    disconnect: (name: string) => ipcRenderer.invoke('mcp:disconnect', name),
-    listTools: (name: string): Promise<McpTool[]> => ipcRenderer.invoke('mcp:listTools', name),
-    callTool: (name: string, tool: string, args: Record<string, unknown>) => ipcRenderer.invoke('mcp:callTool', name, tool, args),
-    onTools: (cb: (payload: { name: string; tools: McpTool[] }) => void) => {
-      const l = (_e: unknown, p: { name: string; tools: McpTool[] }) => cb(p)
-      ipcRenderer.on('mcp:tools', l)
-      return () => ipcRenderer.removeListener('mcp:tools', l)
-    },
-    onLog: (cb: (payload: { name: string; message: string }) => void) => {
-      const l = (_e: unknown, p: { name: string; message: string }) => cb(p)
-      ipcRenderer.on('mcp:log', l)
-      return () => ipcRenderer.removeListener('mcp:log', l)
+  mcpServer: {
+    status: (): Promise<McpServerStatus> => ipcRenderer.invoke('mcpServer:status'),
+    update: (patch: { enabled?: boolean; port?: number; scopes?: RemoteScope[]; newToken?: boolean }): Promise<McpServerStatus> =>
+      ipcRenderer.invoke('mcpServer:update', patch),
+    onChanged: (cb: () => void) => {
+      const l = () => cb()
+      ipcRenderer.on('mcpServer:changed', l)
+      return () => ipcRenderer.removeListener('mcpServer:changed', l)
     }
   },
   git: {

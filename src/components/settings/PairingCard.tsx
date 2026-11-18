@@ -158,7 +158,8 @@ export function PairingCard({ status, pairing, secondsLeft, busy, onGenerate }: 
           )}
           {step === 1 && mode === 'web' && (
             <Step n={1} title={firstTitle} qr={status!.webUrl} qrLabel={t('webapp QR')}>
-              <div style={TEXT}>{t('Frame it with the camera of the phone or tablet, or type the address in any browser. Save it in your bookmarks: the browser stays paired.')}</div>
+              <div style={TEXT}>{t('Frame it with the camera of the phone or tablet, or type the address in any browser.')}</div>
+              <div style={TEXT}>{t('Want it as an app? Add it to the home screen now and pair from there: on iPhone the home-screen app keeps its own pairing, apart from Safari.')}</div>
               <div style={{ ...TEXT, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{status!.webUrl}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                 <GhostButton onClick={() => copy(status!.webUrl!, t('address copied'))}>
@@ -175,7 +176,7 @@ export function PairingCard({ status, pairing, secondsLeft, busy, onGenerate }: 
           )}
           {step === 2 && (mode === 'app'
             ? pairStep(2, t('In DamnedCloud tap «Scan QR» and frame this code. With the camera app it opens DamnedCloud and pairs directly.'), pairing?.pairLink, t('copy code'))
-            : pairStep(2, t('Frame this code with the phone camera app: it opens the webapp already paired. From a computer: copy the link and open it in the browser.'), pairing?.webUrl, t('copy webapp link with pairing')))}
+            : pairStep(2, t('Frame this code with the phone camera app: it opens the webapp already paired in the browser. From the home-screen app: «Scan QR» and take a photo of it. From a computer: copy the link and open it in the browser.'), pairing?.webUrl, t('copy webapp link with pairing')))}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             {step === 1 ? (

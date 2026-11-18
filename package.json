@@ -49,6 +49,7 @@
     "test:shared-storage": "node --experimental-strip-types scripts/shared-storage.check.ts",
     "test:instance-lock": "node --experimental-strip-types scripts/instance-lock.check.ts",
     "test:i18n": "node --experimental-strip-types scripts/i18n.check.ts",
+    "test:before-pack": "node --experimental-strip-types scripts/before-pack.check.ts",
     "test:sql-ui": "node --experimental-strip-types scripts/sql-ui-regression.mjs",
     "test:sql-guards": "node --experimental-strip-types scripts/sql-linux-guards.check.ts",
     "test:sql-insert": "node --experimental-strip-types scripts/sql-insert.check.ts",

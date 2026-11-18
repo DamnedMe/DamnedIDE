@@ -31,8 +31,10 @@ import {
   HardDriveDownload,
   HardDriveUpload,
   FileArchive,
-  PackageOpen
+  PackageOpen,
+  ShieldCheck
 } from '@/components/icons'
+import { azureSqlServerRef } from '../../shared/sqlAzureFirewall'
 import { AUTH_TYPES, connectionLabel } from './sqlForm'
 import type { BackupSource, DataTierAction } from '../../shared/sqlBackup'
 import type { QueryExecutionContext } from './QueryEditor'
@@ -57,6 +59,8 @@ interface DatabaseExplorerProps {
   onOpenDiagram: (connId: string, database: string, tables?: string[]) => void
   onAskRowLimit: (table: string, context?: QueryExecutionContext, columns?: string[]) => void
   onServerInfo: (conn: SqlConnection) => void
+  /** Azure SQL only: adds a server firewall rule for this computer's IP */
+  onAzureFirewall: (conn: SqlConnection) => void
   /** opens the .bak backup dialog for a database */
   onBackupDatabase: (conn: SqlConnection, database: string) => void
   /** opens the data-tier extract/export dialog for a database */
@@ -95,7 +99,7 @@ interface ExplorerSearchResult {
 export function DatabaseExplorer({
   connections, activeConnection, activeDatabases,
   onSelect, onReconnect, onDisconnect, onEdit, onRemove,
-  onRunQuery, onLoadQuery, onAskConfirmSelectAll, onSetActiveDatabase, onOpenDiagram, onAskRowLimit, onServerInfo, onBackupDatabase, onDataTier, onImportDatabase, trackOperation
+  onRunQuery, onLoadQuery, onAskConfirmSelectAll, onSetActiveDatabase, onOpenDiagram, onAskRowLimit, onServerInfo, onAzureFirewall, onBackupDatabase, onDataTier, onImportDatabase, trackOperation
 }: DatabaseExplorerProps) {
   const { cache, setEntry, invalidate, invalidateConnection } = useSqlExplorerStore()
   const sectionZoom = useSqlSectionZoom<HTMLElement>('explorer')
@@ -417,6 +421,7 @@ export function DatabaseExplorer({
               {menuItem(conn.isConnected ? t('disconnect') : t('connect'), <PlugZap size={12} />, () => conn.isConnected ? onDisconnect(conn.id) : onReconnect(conn.id))}
               {menuItem(t('edit connection'), <Pencil size={12} />, () => onEdit(conn))}
               {conn.isConnected && menuItem(t('server info'), <Info size={12} />, () => onServerInfo(conn))}
+              {azureSqlServerRef(conn.server) && menuItem(t('authorize my IP on the Azure firewall…'), <ShieldCheck size={12} />, () => onAzureFirewall(conn))}
               {menuItem(t('refresh all databases'), <RefreshCw size={12} />, () => refreshDatabases(conn))}
               {menuItem(t('remove'), <Trash2 size={12} />, () => onRemove(conn.id), true)}
             </>

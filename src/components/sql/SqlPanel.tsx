@@ -22,6 +22,8 @@ import { normalizeSqlConnectionConfig } from '../../shared/sqlConnection'
 import type { BackupSource, DataTierAction } from '../../shared/sqlBackup'
 import { SqlBackupDialog, SqlDataTierDialog } from './SqlBackupDialogs'
 import { SqlImportDialog } from './SqlImportDialog'
+import { AzureFirewallDialog, type AzureFirewallRequest } from './AzureFirewallDialog'
+import { azureSqlServerRef, parseAzureFirewallError } from '../../shared/sqlAzureFirewall'
 import { tr, useI18n } from '../../i18n'
 import '../../styles/sql-workbench.css'
 
@@ -85,6 +87,7 @@ export function SqlPanel() {
   const [plusMenu, setPlusMenu] = useState<{ x: number; y: number } | null>(null)
   const [resultColumnInfo, setResultColumnInfo] = useState<Record<string, SqlColumnInfo> | null>(null)
   const [backupTarget, setBackupTarget] = useState<{ conn: SqlConnection; database: string } | null>(null)
+  const [firewallRequest, setFirewallRequest] = useState<AzureFirewallRequest | null>(null)
   const [dataTierTarget, setDataTierTarget] = useState<{ conn: SqlConnection; database: string; action: DataTierAction } | null>(null)
   const [importTarget, setImportTarget] = useState<{ conn: SqlConnection; database: string; source: BackupSource } | null>(null)
   const [diagram, setDiagram] = useState<DiagramTarget | null>(null)
@@ -295,6 +298,31 @@ export function SqlPanel() {
     lastConnected: ok ? Date.now() : undefined
   })
 
+  /**
+   * Azure SQL refused the login because of the server firewall (error 40615): opens the dialog that
+   * authorizes this computer's IP instead of leaving only the error. True when it did.
+   */
+  const offerFirewallRule = (error: string | undefined, config: SqlConnectionConfig, onAuthorized?: () => void | Promise<void>): boolean => {
+    const block = parseAzureFirewallError(error)
+    if (!block || !azureSqlServerRef(config.server)) return false
+    setFirewallRequest({ server: config.server, block, config: normalizeSqlConnectionConfig({ ...config, connectionId: undefined }), onAuthorized })
+    return true
+  }
+
+  /** Connection menu › authorize this IP: asks Azure which IP it sees by trying to log in. */
+  const handleAzureFirewall = async (conn: SqlConnection) => {
+    const test = await trackOperation(tr('Checking the Azure firewall of {label}', { label: conn.label }), () =>
+      window.electronAPI.sql.testConnection(normalizeSqlConnectionConfig({ ...conn, connectionId: undefined })))
+      .catch(e => ({ ok: false, error: cleanError(e) }) as SqlTestResult)
+    if (test.ok) {
+      showToast(tr('the Azure firewall of {label} already lets this computer in', { label: conn.label }))
+      return
+    }
+    if (!offerFirewallRule(test.error, conn, conn.isConnected ? undefined : () => handleReconnect(conn.id))) {
+      showToast(tr('connection failed for {label}: {error}', { label: conn.label, error: test.error || tr('server unreachable') }), 'error')
+    }
+  }
+
   const handleConnect = async (config: SqlConnectionConfig): Promise<{ ok: boolean; error?: string }> => {
     if (!config.server) return { ok: false, error: tr('server name is required') }
     const normalized = normalizeSqlConnectionConfig(config)
@@ -319,20 +347,42 @@ export function SqlPanel() {
       setActiveDatabase(connId, normalized.database || '')
       addRecent({ server: normalized.server, database: normalized.database, user: normalized.user, authType: normalized.authType, lastConnected: Date.now() })
       showToast(tr('connected to {label}', { label }))
-    } else {
+    } else if (!offerFirewallRule(error, normalized, async () => {
+      // the failed connection is already in the list: it is the one that connects now
+      try {
+        await trackOperation(tr('Connecting to {label}', { label }), () => window.electronAPI.sql.connect({ ...normalized, connectionId: connId }))
+      } catch (e) {
+        showToast(tr('connection failed: {error}', { error: cleanError(e) }), 'error')
+        return
+      }
+      updateConnection(connId, { isConnected: true, lastConnected: Date.now() })
+      setActiveConnection(connId)
+      setActiveDatabase(connId, normalized.database || '')
+      addRecent({ server: normalized.server, database: normalized.database, user: normalized.user, authType: normalized.authType, lastConnected: Date.now() })
+      setShowConnect(false)
+      showToast(tr('connected to {label}', { label }))
+    })) {
       showToast(tr('connection failed: {error}', { error: error || tr('server unreachable') }), 'error')
     }
     if (ok) setShowConnect(false)
     return ok ? { ok: true } : { ok: false, error }
   }
 
-  const handleTest = async (config: SqlConnectionConfig): Promise<SqlTestResult> =>
-    trackOperation(tr('Testing {server}', { server: config.server }), () => window.electronAPI.sql.testConnection(normalizeSqlConnectionConfig(config)))
+  const handleTest = async (config: SqlConnectionConfig): Promise<SqlTestResult> => {
+    const result = await trackOperation(tr('Testing {server}', { server: config.server }), () => window.electronAPI.sql.testConnection(normalizeSqlConnectionConfig(config)))
+    if (!result.ok) offerFirewallRule(result.error, config)
+    return result
+  }
 
   const handleListDatabases = async (config: SqlConnectionConfig): Promise<string[]> => {
     config = normalizeSqlConnectionConfig(config)
     const tmpId = crypto.randomUUID()
-    await trackOperation(tr('Loading databases from {server}', { server: config.server }), () => window.electronAPI.sql.connect({ ...config, database: undefined, connectionId: tmpId }))
+    try {
+      await trackOperation(tr('Loading databases from {server}', { server: config.server }), () => window.electronAPI.sql.connect({ ...config, database: undefined, connectionId: tmpId }))
+    } catch (e) {
+      offerFirewallRule(cleanError(e), config)
+      throw e
+    }
     try {
       return await trackOperation(tr('Loading databases'), () => window.electronAPI.sql.databases(tmpId))
     } finally {
@@ -350,7 +400,10 @@ export function SqlPanel() {
       setActiveConnection(conn.id)
       setActiveDatabase(conn.id, conn.database || '')
     } catch (e) {
-      showToast(tr('connection failed for {label}: {error}', { label: conn.label, error: cleanError(e) }), 'error')
+      const error = cleanError(e)
+      if (!offerFirewallRule(error, conn, () => handleReconnect(id))) {
+        showToast(tr('connection failed for {label}: {error}', { label: conn.label, error }), 'error')
+      }
     }
   }
 
@@ -470,7 +523,11 @@ export function SqlPanel() {
         void window.electronAPI.sql.workspaceSave(next).catch(() => {})
         return next
       })
-      showToast(tr('query failed: {message}', { message }), 'error')
+      const failedConn = connections.find(c => c.id === connectionId)
+      // the query is not run again on its own: it may change data
+      const offered = !!failedConn && offerFirewallRule(message, { ...failedConn, database: database || failedConn.database },
+        () => showToast(tr('IP authorized: run the query again')))
+      if (!offered) showToast(tr('query failed: {message}', { message }), 'error')
       return false
     } finally {
       if (targetTabId) setTabRunningQueries(current => {
@@ -662,6 +719,7 @@ export function SqlPanel() {
               onOpenDiagram={(connId, database, tables) => setDiagram({ connId, database, tables })}
               onAskRowLimit={(table, context, columns = []) => setRowLimitTable({ table, context, columns })}
               onServerInfo={handleServerInfo}
+              onAzureFirewall={(conn) => void handleAzureFirewall(conn)}
               onBackupDatabase={(conn, database) => setBackupTarget({ conn, database })}
               onDataTier={(conn, database, action) => setDataTierTarget({ conn, database, action })}
               onImportDatabase={(conn, database, source) => setImportTarget({ conn, database, source })}
@@ -825,6 +883,10 @@ export function SqlPanel() {
             setConfirmSelectAll(null)
           }}
         />
+      )}
+
+      {firewallRequest && (
+        <AzureFirewallDialog request={firewallRequest} onClose={() => setFirewallRequest(null)} />
       )}
 
       {backupTarget && (

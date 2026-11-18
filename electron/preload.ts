@@ -187,6 +187,9 @@ const electronAPI = {
     dataTier: (connectionId: string, database: string, action: 'extract' | 'export' | 'import', targetFile: string): Promise<{ ok: boolean; error?: string; output?: string }> =>
       ipcRenderer.invoke('sql:dataTier', connectionId, database, action, targetFile),
     dataTierCancel: (): Promise<void> => ipcRenderer.invoke('sql:dataTierCancel'),
+    azureFirewallAllow: (server: string, ip: string): Promise<import('./services/sql/azure-firewall.service').AzureFirewallAllowResult> =>
+      ipcRenderer.invoke('sql:azureFirewallAllow', server, ip),
+    azureFirewallCancel: (): Promise<void> => ipcRenderer.invoke('sql:azureFirewallCancel'),
     onDataTierLog: (cb: (payload: { action: string; line: string }) => void) => {
       const l = (_e: unknown, p: { action: string; line: string }) => cb(p)
       ipcRenderer.on('sql:datatier:log', l)

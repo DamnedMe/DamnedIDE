@@ -288,6 +288,10 @@ interface Window {
       dataTier: (connectionId: string, database: string, action: 'extract' | 'export' | 'import', targetFile: string) =>
         Promise<{ ok: boolean; error?: string; output?: string }>
       dataTierCancel: () => Promise<void>
+      azureFirewallAllow: (server: string, ip: string) => Promise<{
+        ruleName: string; serverName: string; subscriptionId: string; resourceGroup: string; portalUrl: string; via: 'cli' | 'browser'
+      }>
+      azureFirewallCancel: () => Promise<void>
       onDataTierLog: (cb: (payload: { action: string; line: string }) => void) => () => void
     }
     roslyn: {

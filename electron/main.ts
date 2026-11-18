@@ -13,6 +13,7 @@ import { PromotionChainService } from './services/ado/promotion-chain.service'
 import { ReleaseService } from './services/ado/release.service'
 import { SqlService, SqlConnectionConfig, buildConnectionString, parseConnectionString } from './services/sql/sql.service'
 import { SqlWorkspaceDocument, SqlWorkspaceService } from './services/sql/sql-workspace.service'
+import { AzureFirewallService } from './services/sql/azure-firewall.service'
 import { RoslynService } from './services/roslyn/roslyn.service'
 import { createTerminal, writeToTerminal, resizeTerminal, destroyTerminal, destroyAllTerminals, destroyTerminalsUnderPath, TerminalType } from './services/terminal/terminal.service'
 import { startProcess, stopProcess, stopAllProcesses } from './services/process/process.service'
@@ -530,6 +531,10 @@ function registerIpcHandlers(
   ipcMain.handle('sql:dataTier', (e, connectionId: string, database: string, action: 'extract' | 'export', targetFile: string) =>
     ipc(() => sql.dataTier(connectionId, database, action, targetFile, senderWindow(e)))(e))
   ipcMain.handle('sql:dataTierCancel', () => { sql.cancelDataTier() })
+  // Azure SQL firewall (error 40615): a rule for this computer's IP, through Azure Resource Manager
+  const azureFirewall = new AzureFirewallService()
+  ipcMain.handle('sql:azureFirewallAllow', ipc((server: string, ip: string) => azureFirewall.allowIp(server, ip)))
+  ipcMain.handle('sql:azureFirewallCancel', () => { azureFirewall.cancel() })
 
   // ─── Dialog ────────────────────────────────────────
   ipcMain.handle('dialog:openFolder', async (e) => {

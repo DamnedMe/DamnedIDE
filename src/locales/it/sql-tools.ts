@@ -368,5 +368,21 @@ export const IT: Record<string, string> = {
   'remove the chosen file': 'rimuovi il file scelto',
   reset: 'reimposta',
   'importing…': 'import in corso…',
-  restore: 'ripristina'
+  restore: 'ripristina',
+  // ─── Azure SQL firewall (error 40615) ───
+  'Azure SQL firewall': 'Firewall Azure SQL',
+  'Authorize this IP on the Azure SQL firewall': "Autorizza questo IP sul firewall di Azure SQL",
+  'The firewall of {server} does not let in the IP {ip} this computer has on this network. DamnedIDE can add a rule for it with your Azure account (the Azure CLI or PowerShell login if there is one, otherwise a sign-in in the browser). The account needs the SQL Server Contributor or Contributor role on the server; the rule keeps one name per computer, so a new IP replaces the previous one.': "Il firewall di {server} non fa entrare l'IP {ip} che questo computer ha su questa rete. DamnedIDE può aggiungere una regola con il tuo account Azure (il login di Azure CLI o PowerShell se c'è, altrimenti un accesso nel browser). L'account deve avere il ruolo SQL Server Contributor o Contributor sul server; la regola ha un solo nome per computer, quindi un nuovo IP sostituisce il precedente.",
+  'Signing in to Azure and saving the rule… if a browser page opens, sign in there.': "Accesso ad Azure e salvataggio della regola… se si apre una pagina nel browser, accedi lì.",
+  'Rule {rule} saved. Waiting for Azure to apply it (attempt {n})…': 'Regola {rule} salvata. In attesa che Azure la applichi (tentativo {n})…',
+  'Rule {rule} saved for {ip}.': 'Regola {rule} salvata per {ip}.',
+  'Azure has not applied the rule yet: it can take up to five minutes. Try connecting again shortly.': 'Azure non ha ancora applicato la regola: può richiedere fino a cinque minuti. Riprova a connetterti tra poco.',
+  'Alternatively, an administrator can run this on the master database from a network the firewall already allows:': 'In alternativa, un amministratore può eseguire questo comando sul database master da una rete già autorizzata dal firewall:',
+  'open in the Azure portal': 'apri nel portale Azure',
+  'authorize IP': 'autorizza IP',
+  'firewall rule {rule} saved on {server}': 'regola firewall {rule} salvata su {server}',
+  'Checking the Azure firewall of {label}': 'Verifica del firewall Azure di {label}',
+  'the Azure firewall of {label} already lets this computer in': 'il firewall Azure di {label} lascia già entrare questo computer',
+  'IP authorized: run the query again': 'IP autorizzato: esegui di nuovo la query',
+  'authorize my IP on the Azure firewall…': 'autorizza il mio IP sul firewall Azure…',
 }

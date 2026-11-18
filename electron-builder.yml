@@ -22,6 +22,10 @@ extraResources:
 # afterPack hook: labels the package for electron-updater (only when the
 # DAMNED_PACKAGE_TYPE env var is set — used for the pacman-only build)
 afterPack: scripts/after-pack.cjs
+# beforePack hook: node-pty's Linux prebuilds are named node.abi*.node only; it copies them to the
+# electron.abi<N>.node name node-pty looks for inside Electron (N-API binaries), before app.asar is
+# written. Without it the Linux IDE died at startup, before opening a window.
+beforePack: scripts/before-pack.cjs
 publish:
   provider: github
   owner: DamnedMe

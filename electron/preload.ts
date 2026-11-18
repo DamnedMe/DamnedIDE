@@ -93,7 +93,8 @@ const electronAPI = {
     retargetChildren: (repoPath: string, parentBranch: string) => ipcRenderer.invoke('worktree:retargetChildren', repoPath, parentBranch),
     clearLink: (repoPath: string, branch: string) => ipcRenderer.invoke('worktree:clearLink', repoPath, branch),
     promote: (repoPath: string, worktreePath: string) => ipcRenderer.invoke('worktree:promote', repoPath, worktreePath),
-    prune: (repoPath: string) => ipcRenderer.invoke('worktree:prune', repoPath)
+    prune: (repoPath: string) => ipcRenderer.invoke('worktree:prune', repoPath),
+    baseDiff: (worktreePath: string, base?: string) => ipcRenderer.invoke('worktree:baseDiff', worktreePath, base)
   },
   diff: {
     unstaged: (repoPath: string, file: string) => ipcRenderer.invoke('diff:unstaged', repoPath, file),

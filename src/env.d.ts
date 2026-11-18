@@ -205,6 +205,8 @@ interface Window {
       clearLink: (repoPath: string, branch: string) => Promise<void>
       promote: (repoPath: string, worktreePath: string) => Promise<{ ok: boolean; error?: string; conflicts?: string[] }>
       prune: (repoPath: string) => Promise<void>
+      /** changes since the branch left base (default develop): commits + pending, per file */
+      baseDiff: (worktreePath: string, base?: string) => Promise<{ base: string; mergeBase: string; files: { path: string; status: 'A' | 'M' | 'D' | 'R'; oldPath?: string }[] }>
     }
     diff: {
       unstaged: (repoPath: string, file: string) => Promise<string>

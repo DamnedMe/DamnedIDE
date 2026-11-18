@@ -803,4 +803,55 @@ export class WorktreeService {
     const git = this.getGit(repoPath)
     await git.raw(['worktree', 'prune'])
   }
+
+  /**
+   * What the worktree changes compared with the point where its branch left `base`
+   * (the PR view): commits, pushed or not, plus pending and untracked changes,
+   * one entry per file. `base` is resolved as `origin/<base>` first, then local.
+   */
+  async baseDiff(worktreePath: string, base = 'develop'): Promise<BaseDiff> {
+    const git = this.getGit(worktreePath)
+    const ref = await resolveRef(git, base)
+    if (!ref) throw new Error(`ramo base '${base}' non trovato`)
+    const mergeBase = (await git.raw(['merge-base', ref, 'HEAD'])).trim()
+    const [changed, untracked] = await Promise.all([
+      git.raw(['diff', '--name-status', '-z', '-M', mergeBase]),
+      git.raw(['ls-files', '--others', '--exclude-standard', '-z'])
+    ])
+    const files = parseNameStatusZ(changed)
+    for (const path of untracked.split('\0').filter(Boolean)) files.push({ path, status: 'A' })
+    files.sort((a, b) => a.path.localeCompare(b.path))
+    return { base: ref, mergeBase, files }
+  }
+}
+
+export interface BaseDiffFile {
+  path: string
+  status: 'A' | 'M' | 'D' | 'R'
+  /** path at the base, for a rename */
+  oldPath?: string
+}
+
+export interface BaseDiff {
+  /** resolved base ref (e.g. origin/develop) */
+  base: string
+  mergeBase: string
+  files: BaseDiffFile[]
+}
+
+/** `git diff --name-status -z` output: `S\0path\0`, renames and copies `R100\0old\0new\0` */
+export function parseNameStatusZ(raw: string): BaseDiffFile[] {
+  const parts = raw.split('\0')
+  const files: BaseDiffFile[] = []
+  for (let i = 0; i < parts.length && parts[i]; ) {
+    const code = parts[i++][0]
+    if (code === 'R' || code === 'C') {
+      const oldPath = parts[i++]
+      const path = parts[i++]
+      files.push(code === 'R' ? { path, status: 'R', oldPath } : { path, status: 'A' })
+    } else {
+      files.push({ path: parts[i++], status: code === 'A' ? 'A' : code === 'D' ? 'D' : 'M' })
+    }
+  }
+  return files
 }

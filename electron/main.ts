@@ -467,6 +467,7 @@ function registerIpcHandlers(
   ipcMain.handle('worktree:removeSafe', (_e, repoPath: string, worktreePath: string, force?: boolean) =>
     worktree.removeSafe(repoPath, worktreePath, force ? () => destroyTerminalsUnderPath(worktreePath) : undefined))
   ipcMain.handle('worktree:prune', (_e, repoPath: string) => worktree.prune(repoPath))
+  ipcMain.handle('worktree:baseDiff', (_e, worktreePath: string, base?: string) => worktree.baseDiff(worktreePath, base))
 
   // ─── Diff ──────────────────────────────────────────
   ipcMain.handle('diff:unstaged', (_e, repoPath: string, file: string) => diff.unstaged(repoPath, file))

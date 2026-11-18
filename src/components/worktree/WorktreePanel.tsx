@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { PanelContainer } from '../layout/PanelContainer'
 import { ResizableSplitter } from '../layout/ResizableSplitter'
 import { WorktreeChanges, type WorktreeChangesHandle, type WorktreeChangesParts } from './WorktreeChanges'
+import { useWorktreeBaseDiff } from './WorktreeBaseDiff'
 import { TerminalDock } from '../terminal/TerminalDock'
 import { CompleteWorktreeDialog } from './CompleteWorktreeDialog'
 import { NewWorktreeDialog } from './NewWorktreeDialog'
@@ -16,7 +17,7 @@ import { useAdoFolder } from '../../hooks/useAdoFolder'
 import { AdoRepoChooser } from '../ado/AdoRepoChooser'
 import { useI18n, tr } from '../../i18n'
 import type { AdoWorkItem } from '../../types/ado'
-import { FolderOpen, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge, CheckCheckCircle, DownloadCloud, Loader2, GitBranch, Bug, Home, ClipboardCheck, GitCommitHorizontal, Check, type AppIcon } from '@/components/icons'
+import { FolderOpen, GitCompare, Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, GitPullRequest, EyeOff, Eye, Trash2, AlertTriangle, Layers, GitMerge, CheckCheckCircle, DownloadCloud, Loader2, GitBranch, Bug, Home, ClipboardCheck, GitCommitHorizontal, Check, type AppIcon } from '@/components/icons'
 import { WorktreeEntry } from '../../types/worktree'
 
 type CheckState = 'ok' | 'ko'
@@ -81,6 +82,8 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
   const [listCollapsed, setListCollapsed] = useState(false)
   const [leftTab, setLeftTab] = useState<'changes' | 'files'>('changes')
   const [checkMarks, setCheckMarks] = useState<CheckMarks>({})
+  // worktree whose Changes tab shows the comparison with its base (strip menu), instead of the pending changes
+  const [baseDiffPath, setBaseDiffPath] = useState<string | null>(null)
   const [explorerSelectedFile, setExplorerSelectedFile] = useState<string | null>(null)
   const [fileFilter, setFileFilter] = useState('')
   const [filterMode, setFilterMode] = useState<'startsWith' | 'like' | 'regex'>('like')
@@ -356,6 +359,22 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
       return { ...prev, [worktreePath]: wt }
     })
   }, [])
+
+  /** develop, or the parent of a stacked branch (the ref its PR targets) */
+  const baseOf = (entry: WorktreeEntry) => stack[shortRef(entry.branch)]?.mergeRef ?? 'develop'
+  const baseDiffEntry = baseDiffPath !== null && selectedWorktree && samePath(baseDiffPath, selectedWorktree)
+    ? entries.find(e => samePath(e.path, baseDiffPath)) : undefined
+  const baseDiff = useWorktreeBaseDiff(baseDiffEntry ? {
+    worktreePath: baseDiffEntry.path,
+    base: baseOf(baseDiffEntry),
+    checkMarks: checkMarks[baseDiffEntry.path] || {},
+    onToggleCheck: (file, state) => handleToggleCheck(baseDiffEntry.path, file, state),
+    onClose: () => setBaseDiffPath(null)
+  } : null)
+  // another worktree selected: its Changes tab shows the pending changes again
+  useEffect(() => {
+    if (baseDiffPath !== null && !(selectedWorktree && samePath(baseDiffPath, selectedWorktree))) setBaseDiffPath(null)
+  }, [baseDiffPath, selectedWorktree])
 
   useEffect(() => {
     if (repoPath) loadWorktrees()
@@ -709,7 +728,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
                 <div style={{ flex: 1, minHeight: 0, display: leftTab === 'files' ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden' }}>
                   <FileFilterBar value={fileFilter} onChange={setFileFilter} mode={filterMode} onModeChange={setFilterMode} caseSensitive={filterCaseSensitive} onCaseToggle={() => setFilterCaseSensitive(!filterCaseSensitive)} spaceSensitive={filterSpaceSensitive} onSpaceToggle={() => setFilterSpaceSensitive(!filterSpaceSensitive)} />
                   <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <FileTree rootPath={entry.path} onFileSelect={(f) => changesHandleRef.current?.openFile(f)} selectedFile={explorerSelectedFile} filter={filter} />
+                    <FileTree rootPath={entry.path} onFileSelect={(f) => { setBaseDiffPath(null); changesHandleRef.current?.openFile(f) }} selectedFile={explorerSelectedFile} filter={filter} />
                   </div>
                 </div>
               </div>
@@ -742,7 +761,7 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
           )}
           {selectedEntry ? (
             <WorktreeChanges worktreePath={selectedEntry.path} repoPath={repoPath} checkMarks={checkMarks[selectedEntry.path] || {}} onToggleCheck={(file, state) => handleToggleCheck(selectedEntry.path, file, state)} onFileSelected={setExplorerSelectedFile} handleRef={changesHandleRef}
-              onGitChanged={(paths) => void fetchOverview(paths)} sync={overview[selectedEntry.path]} layout={renderMain(selectedEntry)} />
+              onGitChanged={(paths) => void fetchOverview(paths)} sync={overview[selectedEntry.path]} layout={(parts) => renderMain(selectedEntry)(baseDiff ? { ...parts, ...baseDiff } : parts)} />
           ) : (
             <div style={{
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center',
@@ -783,6 +802,10 @@ export function WorktreePanel({ repoPath, onRepoSelected }: WorktreePanelProps) 
               )}
               {!isMain(entry.path) && (
                 <StripMenuItem icon={<GitPullRequest size={12} />} label={t('complete worktree')} onClick={() => handleComplete(entry)} />
+              )}
+              {!isMain(entry.path) && (
+                <StripMenuItem icon={<GitCompare size={12} />} label={t('diff with {base}', { base: baseOf(entry).replace(/^origin\//, '') })}
+                  onClick={() => { setStripMenu(null); selectEntry(entry.path); setBaseDiffPath(entry.path); setLeftTab('changes') }} />
               )}
               {info && (
                 <StripMenuItem icon={<GitMerge size={12} />} label={t('align')}

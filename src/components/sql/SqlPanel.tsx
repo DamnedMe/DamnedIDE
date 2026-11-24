@@ -8,7 +8,8 @@ import { ConnectionDialog } from './ConnectionDialog'
 import { RecentConnectionsMenu } from './RecentConnectionsMenu'
 import { DiagramView } from './DiagramView'
 import { useSqlStore, useSqlRecentStore, useToastStore, useSettingsStore } from '../../store'
-import { Plus, PanelLeftClose, PanelLeftOpen, Loader2, Check, XCircle, Database } from '@/components/icons'
+import { Plus, PanelLeftClose, PanelLeftOpen, Loader2, Check, XCircle, Database, FileCode } from '@/components/icons'
+import { SqlFilesPanel } from './SqlFilesPanel'
 import { SqlColumnInfo, SqlConnection, SqlConnectionConfig, SqlExecutionResult, SqlForeignKeyInfo, SqlGridQueryState, SqlHistoryEntry, SqlQuerySource, SqlTestResult, SqlWorkspaceState } from '../../types/sql'
 import { connectionLabel, quoteColumn, quoteTable, sqlLiteral as sqlLiteralForType } from './sqlForm'
 import { Modal } from '../layout/Modal'
@@ -26,6 +27,8 @@ import { AzureFirewallDialog, type AzureFirewallRequest } from './AzureFirewallD
 import { azureSqlServerRef, parseAzureFirewallError } from '../../shared/sqlAzureFirewall'
 import { tr, useI18n } from '../../i18n'
 import '../../styles/sql-workbench.css'
+
+const SIDEBAR_MODE_KEY = 'damnedide_sql_sidebar_mode'
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -84,6 +87,10 @@ export function SqlPanel() {
   const [showConnect, setShowConnect] = useState(false)
   const [edit, setEdit] = useState<Partial<SqlConnection> | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarMode, setSidebarMode] = useState<'database' | 'files'>(() => {
+    try { return localStorage.getItem(SIDEBAR_MODE_KEY) === 'files' ? 'files' : 'database' } catch { return 'database' }
+  })
+  const [activeFilePath, setActiveFilePath] = useState<string | undefined>(undefined)
   const [plusMenu, setPlusMenu] = useState<{ x: number; y: number } | null>(null)
   const [resultColumnInfo, setResultColumnInfo] = useState<Record<string, SqlColumnInfo> | null>(null)
   const [backupTarget, setBackupTarget] = useState<{ conn: SqlConnection; database: string } | null>(null)
@@ -140,6 +147,7 @@ export function SqlPanel() {
   }, [queueWorkspaceSave])
 
   const handleWorkspaceChange = useCallback((tabs: import('../../types/sql').SqlWorkspaceTab[], activeTabId: string) => {
+    setActiveFilePath(tabs.find(tab => tab.id === activeTabId)?.filePath)
     setWorkspace(current => {
       if (!current) return current
       const next = updateWorkspaceTabs(current, tabs.map(tab => ({ ...tab, gridQueryState: tabGridStates[tab.id] })), activeTabId)
@@ -637,6 +645,55 @@ export function SqlPanel() {
   }
 
   const activeConnectionInfo = connections.find(connection => connection.id === activeConnection)
+  const changeSidebarMode = (mode: 'database' | 'files') => {
+    setSidebarMode(mode)
+    try { localStorage.setItem(SIDEBAR_MODE_KEY, mode) } catch { /* remembered for this session only */ }
+  }
+
+  const openSqlFile = async (filePath: string) => {
+    try {
+      const text = await trackOperation(tr('Opening {file}', { file: filePath.split(/[\\/]/).pop() || filePath }), () => window.electronAPI.fs.readFile(filePath))
+      queryEditorRef.current?.openFile(filePath, text)
+    } catch (error) {
+      showToast(tr('could not open {file}: {error}', { file: filePath, error: cleanError(error) }), 'error')
+    }
+  }
+
+  const sidebarToggle = (
+    <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+      title={sidebarCollapsed ? t('show connections') : t('collapse connections')} data-tip-desc={t('expand or collapse the connections sidebar')}
+      aria-label={sidebarCollapsed ? t('show connections') : t('collapse connections')}
+      className="sql-icon-button"
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        width: '30px', height: '30px', background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
+        color: 'var(--text-secondary)', cursor: 'pointer'
+      }}>
+      {/* the arrow points where the explorer goes */}
+      {sidebarCollapsed !== sidebarRight ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
+    </button>
+  )
+
+  const newConnectionButton = (
+    <button
+      onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPlusMenu({ x: r.left, y: r.bottom + 4 }) }}
+      title={t('connection: new or recent')} data-tip-desc={t('choose a new or recent connection')}
+      aria-label={t('Connection')}
+      className="sql-primary-button"
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', flex: 1, minWidth: 0,
+        padding: '5px 10px', height: '30px',
+        background: 'var(--accent-color)', color: 'var(--text-inverse)',
+        border: 'none', borderRadius: 'var(--radius-md)',
+        cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600,
+        fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden'
+      }}
+    >
+      <Plus size={13} /> {t('New connection')}
+    </button>
+  )
+
   return (
     <PanelContainer
       className="sql-workbench"
@@ -644,6 +701,7 @@ export function SqlPanel() {
       contentClassName="sql-workbench__content"
       title={
         <div className="sql-page-title">
+          {sidebarCollapsed && sidebarToggle}
           <span className="sql-page-title__icon"><Database size={16} /></span>
           <span className="sql-page-title__copy">
             <strong>SQL Server</strong>
@@ -663,68 +721,64 @@ export function SqlPanel() {
           </span>
         </div>
       }
-      actions={
-        <div className="sql-page-actions">
-          <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            title={sidebarCollapsed ? t('show connections') : t('collapse connections')} data-tip-desc={t('expand or collapse the connections sidebar')}
-            className="sql-icon-button"
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '30px', height: '30px', background: 'var(--bg-card)',
-              border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-              color: 'var(--text-secondary)', cursor: 'pointer', transition: 'color 140ms ease'
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-color)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)' }}>
-            {/* the arrow points where the explorer goes */}
-            {sidebarCollapsed !== sidebarRight ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
-          </button>
-          <button
-            onClick={(e) => setPlusMenu({ x: e.currentTarget.getBoundingClientRect().right + 4, y: e.currentTarget.getBoundingClientRect().bottom + 4 })}
-            title={t('connection: new or recent')} data-tip-desc={t('choose a new or recent connection')}
-            aria-label={t('Connection')}
-            className="sql-primary-button"
-            style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              padding: '5px 14px', height: '30px',
-              background: 'var(--accent-color)', color: 'var(--text-inverse)',
-              border: 'none', borderRadius: 'var(--radius-md)',
-              cursor: 'pointer', fontSize: 'calc(11px * var(--ui-text-scale, 1))', fontWeight: 600,
-              fontFamily: 'var(--font-mono)', transition: 'transform 140ms ease'
-            }}
-            onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)' }}
-            onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
-          >
-            <Plus size={13} /> {t('New connection')}
-          </button>
-        </div>
-      }
     >
       <div className="sql-workbench__shell" style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
         <div className="sql-workbench__main" style={{ flex: 1, minHeight: 0 }}>
           <ResizableSplitter direction="horizontal" defaultSize={250} minSize={190} maxSize={390} collapsed={sidebarCollapsed} reverse={sidebarRight}>
-            <DatabaseExplorer
-              connections={connections}
-              activeConnection={activeConnection}
-              activeDatabases={activeDatabases}
-              onSelect={setActiveConnection}
-              onReconnect={handleReconnect}
-              onDisconnect={handleDisconnect}
-              onEdit={openEdit}
-              onRemove={(id) => setPendingConnectionRemoval(connections.find(c => c.id === id) || null)}
-              onRunQuery={runQuery}
-              onLoadQuery={loadQuery}
-              onAskConfirmSelectAll={(table, context, columns = []) => setConfirmSelectAll({ table, context, columns })}
-              onSetActiveDatabase={setActiveDatabase}
-              onOpenDiagram={(connId, database, tables) => setDiagram({ connId, database, tables })}
-              onAskRowLimit={(table, context, columns = []) => setRowLimitTable({ table, context, columns })}
-              onServerInfo={handleServerInfo}
-              onAzureFirewall={(conn) => void handleAzureFirewall(conn)}
-              onBackupDatabase={(conn, database) => setBackupTarget({ conn, database })}
-              onDataTier={(conn, database, action) => setDataTierTarget({ conn, database, action })}
-              onImportDatabase={(conn, database, source) => setImportTarget({ conn, database, source })}
-              trackOperation={trackOperation}
-            />
+            <div className="sql-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: '6px', height: '100%', minHeight: 0 }}>
+              <div className="sql-sidebar__actions" style={{ display: 'flex', gap: '6px', flexShrink: 0, flexDirection: sidebarRight ? 'row-reverse' : 'row' }}>
+                {newConnectionButton}
+                {sidebarToggle}
+              </div>
+              <div className="sql-sidebar__switch" role="tablist" aria-label={t('left panel view')} style={{
+                display: 'flex', gap: '3px', padding: '3px', flexShrink: 0,
+                background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)'
+              }}>
+                {([['database', t('Database'), <Database key="i" size={11} />], ['files', t('SQL files'), <FileCode key="i" size={11} />]] as const).map(([mode, label, icon]) => (
+                  <button key={mode} type="button" role="tab" aria-selected={sidebarMode === mode}
+                    onClick={() => changeSidebarMode(mode)}
+                    style={{
+                      flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px', height: '26px',
+                      border: 0, borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                      background: sidebarMode === mode ? 'var(--accent-bg)' : 'transparent',
+                      color: sidebarMode === mode ? 'var(--accent-color)' : 'var(--text-muted)',
+                      fontWeight: sidebarMode === mode ? 700 : 500,
+                      fontSize: 'calc(10.5px * var(--ui-text-scale, 1))', fontFamily: 'var(--font-mono)'
+                    }}>
+                    {icon}{label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ flex: 1, minHeight: 0, display: sidebarMode === 'database' ? 'flex' : 'none', flexDirection: 'column' }}>
+                <DatabaseExplorer
+                  connections={connections}
+                  activeConnection={activeConnection}
+                  activeDatabases={activeDatabases}
+                  onSelect={setActiveConnection}
+                  onReconnect={handleReconnect}
+                  onDisconnect={handleDisconnect}
+                  onEdit={openEdit}
+                  onRemove={(id) => setPendingConnectionRemoval(connections.find(c => c.id === id) || null)}
+                  onRunQuery={runQuery}
+                  onLoadQuery={loadQuery}
+                  onAskConfirmSelectAll={(table, context, columns = []) => setConfirmSelectAll({ table, context, columns })}
+                  onSetActiveDatabase={setActiveDatabase}
+                  onOpenDiagram={(connId, database, tables) => setDiagram({ connId, database, tables })}
+                  onAskRowLimit={(table, context, columns = []) => setRowLimitTable({ table, context, columns })}
+                  onServerInfo={handleServerInfo}
+                  onAzureFirewall={(conn) => void handleAzureFirewall(conn)}
+                  onBackupDatabase={(conn, database) => setBackupTarget({ conn, database })}
+                  onDataTier={(conn, database, action) => setDataTierTarget({ conn, database, action })}
+                  onImportDatabase={(conn, database, source) => setImportTarget({ conn, database, source })}
+                  trackOperation={trackOperation}
+                />
+              </div>
+              {sidebarMode === 'files' && (
+                <div className="sql-surface" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                  <SqlFilesPanel activeFilePath={activeFilePath} onOpenFile={(path) => { void openSqlFile(path) }} />
+                </div>
+              )}
+            </div>
           {/* the gap to the explorer: sql-workbench.css sets it with !important, the modifier moves it */}
           <main className={sidebarRight ? 'sql-workbench__stage sql-workbench__stage--right' : 'sql-workbench__stage'} style={{
             display: 'flex', flex: 1, width: '100%', height: '100%', minHeight: 0,

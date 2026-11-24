@@ -107,7 +107,7 @@ export const IDE_TOOLS: IdeTool[] = [
 
   // ─── release (Azure DevOps, as the desktop Release panel) ───
   { name: 'release_state', cmd: 'release.state', repo: true, readOnly: true, inputSchema: obj({ repoPath }),
-    description: 'Azure DevOps project of the open repository: BE / FE repositories and the release chains.' },
+    description: 'Azure DevOps project of the open repository: BE / FE repositories and the release chains. First step of "allinea prod".' },
   { name: 'release_preview', cmd: 'release.preview', repo: true, readOnly: true, inputSchema: obj({ stage, scope, repoPath }, ['stage', 'scope']),
     description: 'What a promotion would bring: branches, commits, work items and active PRs of each repository.' },
   { name: 'release_create', cmd: 'release.create', repo: true,
@@ -115,9 +115,64 @@ export const IDE_TOOLS: IdeTool[] = [
     description: 'Create the promotion pull requests (develop → qa or qa → prod). qa → prod is confirmed by the user in DamnedIDE.' },
   { name: 'release_chain_start', cmd: 'release.chainStart', repo: true,
     inputSchema: obj({ scope, autoComplete: bool('Arm auto-complete on the PRs the chain creates'), excluded: { type: 'array', items: { type: 'string' }, description: 'Work items not to link, as "BE:1234"' }, repoPath }, ['scope']),
-    description: 'Start the chain develop → qa → prod: DamnedIDE creates each qa → prod PR when its develop → qa one is completed. Confirmed by the user.' },
+    description: 'Start the chain develop → qa → prod: DamnedIDE creates each qa → prod PR when its develop → qa one is completed. Confirmed by the user. ' +
+      'When the user writes "allinea prod", follow the allinea_prod workflow (server instructions): ask BE, FE or both first, then start it with autoComplete true.' },
   { name: 'release_chain_cancel', cmd: 'release.chainCancel', inputSchema: obj({ id: str('Chain id (release_state)') }, ['id']),
     description: 'Stop a release chain; the PRs already created stay in Azure DevOps.' }
+]
+
+// ─── "allinea prod" ───
+// The user's phrase for "promote develop → qa → prod": the agent asks which side, showing the
+// repositories configured for the project, then starts the chain with auto-complete armed.
+// Served twice: in the server instructions (every agent reads them, the chat's Claude included)
+// and as the MCP prompt `allinea_prod` (a slash command in Claude Code).
+
+/** Steps the agent follows when the user writes "allinea prod". */
+export const ALLINEA_PROD_STEPS = [
+  'Call release_state. If it reports "unavailable", tell the user why and stop.',
+  'Ask the user (in Italian) whether to align BE, FE or both, showing the current repositories: ' +
+    '"BE: <be>" and "FE: <fe>" from release_state ("non configurato" when empty; offer only the configured sides). ' +
+    'Also mention any chain already running for the project. Wait for the answer: never pick the side yourself.',
+  'Call release_preview with stage "dev-qa-prod" and the chosen scope, and summarise per repository the branches ' +
+    '(develop → qa → prod) and how many commits and work items it brings; report errors, warnings and repositories already followed by a chain.',
+  'Call release_chain_start with the chosen scope and autoComplete true. DamnedIDE asks the user to confirm it on the desktop.',
+  'Report the PRs created and the chain: DamnedIDE creates each qa → prod PR, with auto-complete armed, once its develop → qa PR is completed. ' +
+    'Branch policies are never bypassed; a PR Azure DevOps did not arm (notArmed / qaNoAutoComplete) must be completed by hand.'
+]
+
+export const ALLINEA_PROD_INSTRUCTIONS =
+  'When the user writes "allinea prod" (or asks to align / promote to prod), run the release chain develop → qa → prod ' +
+  'with auto-complete: ' + ALLINEA_PROD_STEPS.map((s, i) => `(${i + 1}) ${s}`).join(' ')
+
+export interface IdePrompt {
+  name: string
+  title: string
+  description: string
+  arguments: { name: string; description: string; required: boolean }[]
+  /** the user message the prompt expands to */
+  text: (args: Record<string, string>) => string
+}
+
+const scopeLabel: Record<string, string> = { be: 'BE', fe: 'FE', both: 'BE e FE' }
+
+export const IDE_PROMPTS: IdePrompt[] = [
+  {
+    name: 'allinea_prod',
+    title: 'Allinea prod',
+    description: 'Promote develop → qa → prod with auto-complete: asks BE, FE or both (showing the current repositories), then starts the chain.',
+    arguments: [{ name: 'scope', description: 'be, fe or both; omitted: DamnedIDE asks', required: false }],
+    text: (args) => {
+      const scope = String(args.scope ?? '').trim().toLowerCase()
+      const steps = scopeLabel[scope]
+        // the side is already chosen: show the repositories as a recap instead of asking
+        ? ALLINEA_PROD_STEPS.map((s, i) => i === 1
+          ? `The user chose ${scopeLabel[scope]} (scope "${scope}"): show the current repositories ("BE: <be>", "FE: <fe>") as a recap, do not ask again.`
+          : s)
+        : ALLINEA_PROD_STEPS
+      return 'allinea prod: run the DamnedIDE release chain develop → qa → prod with auto-complete.\n' +
+        steps.map((s, i) => `${i + 1}. ${s}`).join('\n')
+    }
+  }
 ]
 
 /** Root the agent works in: the worktree selected in DamnedIDE, else the open repository. */

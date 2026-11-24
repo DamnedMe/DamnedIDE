@@ -10,7 +10,7 @@ import { randomBytes, timingSafeEqual } from 'crypto'
 import { join } from 'path'
 import { rmSync } from 'fs'
 import { readJson, writeJson } from '../ado/ado-settings.store'
-import { IDE_TOOLS, activeRoot, commandArgs, type IdeTool } from './ide-tools'
+import { ALLINEA_PROD_INSTRUCTIONS, IDE_PROMPTS, IDE_TOOLS, activeRoot, commandArgs, type IdeTool } from './ide-tools'
 import { remoteScopeFor } from '../remote/commands'
 import { ALL_SCOPES } from '../../../src/shared/remote/protocol'
 import type { ConfirmationChallenge, DeviceInfo, RemoteScope, WorkspaceSnapshot } from '../../../src/shared/remote/protocol'
@@ -258,11 +258,12 @@ export class McpServerService {
         const asked = String(msg.params?.protocolVersion ?? '')
         return ok({
           protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0],
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
           serverInfo: { name: 'DamnedIDE', version: this.deps.appVersion },
           instructions: 'Tools of the DamnedIDE desktop the user is working in: workspace, worktrees, git, files, ' +
             'SQL connections and Azure DevOps release. Call ide_workspace first. Destructive actions are confirmed ' +
-            'by the user in DamnedIDE; a tool missing from the list needs a permission in Settings › AI › MCP server.'
+            'by the user in DamnedIDE; a tool missing from the list needs a permission in Settings › AI › MCP server. ' +
+            ALLINEA_PROD_INSTRUCTIONS
         })
       }
       case 'ping':
@@ -274,6 +275,17 @@ export class McpServerService {
           annotations: { readOnlyHint: !!t.readOnly, destructiveHint: !t.readOnly }
         }))
         return ok({ tools })
+      }
+      case 'prompts/list':
+        return ok({ prompts: IDE_PROMPTS.map(({ text: _text, ...p }) => p) })
+      case 'prompts/get': {
+        const prompt = IDE_PROMPTS.find(p => p.name === String(msg.params?.name ?? ''))
+        if (!prompt) return fail(-32602, `unknown prompt: ${String(msg.params?.name)}`)
+        const raw = msg.params?.arguments
+        const args = raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? Object.fromEntries(Object.entries(raw as Record<string, unknown>).filter(([, v]) => typeof v === 'string')) as Record<string, string>
+          : {}
+        return ok({ description: prompt.description, messages: [{ role: 'user', content: { type: 'text', text: prompt.text(args) } }] })
       }
       case 'tools/call':
         return ok(await this.callTool(String(msg.params?.name ?? ''), msg.params?.arguments))

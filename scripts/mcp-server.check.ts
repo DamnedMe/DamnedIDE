@@ -120,6 +120,22 @@ assert.deepEqual([failed.isError, failed.content[0].text], [true, 'ENOENT: missi
 assert.equal((await rpc('tools/call', { name: 'nope' })).result.isError, true)
 assert.equal((await rpc('resources/list')).error.code, -32601)
 
+// "allinea prod": in the instructions every agent reads, and as a prompt (slash command)
+assert.ok(init.result.capabilities.prompts)
+assert.match(init.result.instructions, /allinea prod/)
+assert.match(init.result.instructions, /release_chain_start with the chosen scope and autoComplete true/)
+const prompts = (await rpc('prompts/list')).result.prompts
+assert.deepEqual(prompts.map((p: { name: string }) => p.name), ['allinea_prod'])
+assert.equal(prompts[0].text, undefined, 'the builder is not serialised')
+const ask = (await rpc('prompts/get', { name: 'allinea_prod' })).result
+assert.equal(ask.messages[0].role, 'user')
+assert.match(ask.messages[0].content.text, /BE, FE or both/)
+assert.match(ask.messages[0].content.text, /autoComplete true/)
+const chosen = (await rpc('prompts/get', { name: 'allinea_prod', arguments: { scope: 'FE' } })).result.messages[0].content.text
+assert.match(chosen, /The user chose FE \(scope "fe"\)/)
+assert.doesNotMatch(chosen, /Wait for the answer/, 'a chosen side is not asked again')
+assert.equal((await rpc('prompts/get', { name: 'nope' })).error.code, -32602)
+
 // git granted: the confirmation goes to the desktop dialog
 await server.update({ scopes: ['view', 'git'] })
 calls.length = 0

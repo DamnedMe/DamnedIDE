@@ -215,6 +215,34 @@ assert.equal(errCode(await a.req('git.file', { repoPath: repo, file: 'tracked.tx
 assert.ok(!existsSync(injected), 'git show never ran')
 assert.equal((await a.req('git.file', { repoPath: repo, file: 'tracked.txt', ref: 'HEAD' })).data?.content, 'v1\n', 'git.file with a ref')
 
+// worktree.baseDiff ("diff with develop"): the worktree's commits plus its pending changes, read-only
+const wtGit = (args: string[]) => execFileSync('git', args, { cwd: wt, windowsHide: true })
+wtGit(['config', 'user.email', 'test@test.local'])
+wtGit(['config', 'user.name', 'test'])
+writeFileSync(join(wt, 'feature.txt'), 'feature\n')
+wtGit(['add', 'feature.txt'])
+wtGit(['commit', '-q', '-m', 'feature'])
+writeFileSync(join(wt, 'tracked.txt'), 'wt edit\n') // pending on top of the commit
+git(['branch', 'develop']) // the base the desktop menu picks for a branch that is not stacked
+const baseDiff = await a.req('worktree.baseDiff', { repoPath: wt })
+assert.ok(baseDiff.ok, `worktree.baseDiff: ${baseDiff.error?.message}`)
+assert.equal(baseDiff.data.base, 'develop', 'no base: develop')
+assert.deepEqual(baseDiff.data.files, [
+  { path: 'feature.txt', status: 'A' },
+  { path: 'tracked.txt', status: 'M' }
+], 'committed and pending changes, one row per file')
+// the old side the app reads with git.file at the merge base (and the new one with fs.read): the
+// phone compares the worktree it selected, which the sandbox then allows
+assert.ok((await a.req('workspace.openWorktree', { path: wt })).ok)
+const oldSide = await a.req('git.file', { repoPath: wt, file: 'tracked.txt', ref: baseDiff.data.mergeBase })
+assert.equal(oldSide.data?.content, 'v1\n', `git.file at the merge base: ${oldSide.error?.message}`)
+assert.equal(errCode(await a.req('worktree.baseDiff', { repoPath: wt, base: '--output=x' })), 'invalid_args', 'a base read as an option')
+assert.equal(errCode(await a.req('worktree.baseDiff', { repoPath: other })), 'outside_workspace')
+assert.equal((await a.req('fs.read', { file: join(wt, 'tracked.txt') })).data?.content, 'wt edit\n')
+assert.ok((await a.req('workspace.openWorktree', { path: repo })).ok)
+git(['branch', '-D', 'develop'])
+wtGit(['checkout', '-q', '--', 'tracked.txt'])
+
 // the app still sends 'auth' after pairing (needed by older bridges): it keeps working
 assert.ok((await a.req('auth', { token: tokenA })).ok, 'auth after pair')
 

@@ -129,6 +129,13 @@ export class RemoteCommands {
       }
       case 'worktree.promote':
         return this.deps.worktree.retargetChildren(await this.repo(args), String(args.branch ?? args.worktreePath))
+      case 'worktree.baseDiff': {
+        // the desktop's "diff with develop": `repoPath` is the worktree, `base` defaults to the one its PR targets
+        const worktreePath = await this.repo(args)
+        const base = typeof args.base === 'string' && args.base ? args.base : await this.deps.worktree.baseOf(worktreePath)
+        if (base.startsWith('-')) throw new RemoteCommandError('invalid_args', `Ramo base non valido: "${base}"`)
+        return this.deps.worktree.baseDiff(worktreePath, base)
+      }
 
       // ─── Git ───────────────────────────────────────────────────────────────
       case 'git.status':

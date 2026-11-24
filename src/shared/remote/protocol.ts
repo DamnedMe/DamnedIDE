@@ -222,6 +222,24 @@ export interface ReleaseRunInput {
   confirm?: string
 }
 
+// ─── Diff with the base (worktree.baseDiff) ─────────────────────────────────
+
+export interface WorktreeBaseDiffFile {
+  /** relative to the worktree, '/' separated */
+  path: string
+  status: 'A' | 'M' | 'D' | 'R'
+  /** path at the merge base, for a rename */
+  oldPath?: string
+}
+
+export interface WorktreeBaseDiff {
+  /** resolved base ref (e.g. origin/develop) */
+  base: string
+  /** commit where the branch left the base: the old side of every file (git.file with this ref) */
+  mergeBase: string
+  files: WorktreeBaseDiffFile[]
+}
+
 // ─── Pairing ────────────────────────────────────────────────────────────────
 
 /**
@@ -396,6 +414,11 @@ export interface RemoteCommandMap {
   // nested worktrees answer { ok: false, skipped: true, error } with nothing touched
   'worktree.remove': { args: { repoPath: string; worktreePath: string; confirm?: string }; result: unknown }
   'worktree.promote': { args: { repoPath: string; worktreePath: string }; result: unknown }
+  // the desktop's "diff with develop": every change of the worktree's branch since it left `base`
+  // (commits, pushed or not, plus pending and untracked ones, one row per file), as its PR shows them.
+  // `repoPath`: the worktree; `base` omitted = the branch its PR targets (develop, or the parent of a
+  // stacked branch). Read-only ("view"); `unknown_command` on bridges up to IDE 0.1.2
+  'worktree.baseDiff': { args: { repoPath: string; base?: string }; result: WorktreeBaseDiff }
 
   'git.status': { args: { repoPath?: string }; result: unknown }
   'git.porcelain': { args: { repoPath?: string }; result: unknown }

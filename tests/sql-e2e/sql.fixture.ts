@@ -462,11 +462,28 @@ async function installElectronMock(page: Page) {
           check: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
           onState: () => () => {}
         },
-        fs: { watch: async () => {}, unwatch: async () => {}, onChanged: () => () => {} },
+        fs: {
+          watch: async () => {}, unwatch: async () => {}, onChanged: () => () => {},
+          // a small folder of scripts for the SQL files panel
+          readDir: async (dir: string) => {
+            const tree: Record<string, Array<{ name: string; isDirectory: boolean; isFile: boolean }>> = {
+              'C:\\mock\\scripts': [
+                { name: 'report', isDirectory: true, isFile: false },
+                { name: 'node_modules', isDirectory: true, isFile: false },
+                { name: 'offerte.sql', isDirectory: false, isFile: true },
+                { name: 'notes.txt', isDirectory: false, isFile: true }
+              ],
+              'C:\\mock\\scripts\\report': [{ name: 'assets.SQL', isDirectory: false, isFile: true }]
+            }
+            return tree[dir] || []
+          },
+          readFile: async (file: string) => `-- ${file.split('\\').pop()}\nSELECT 1;`
+        },
         window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
         dialog: {
-          openFolder: async () => null,
-          openFile: async () => 'C:\\mock\\import.bacpac',
+          openFolder: async () => 'C:\\mock\\scripts',
+          openFile: async (_title: string, filters: Array<{ extensions: string[] }>) =>
+            filters.some(filter => filter.extensions.includes('sql')) ? 'C:\\mock\\single\\hotfix.sql' : 'C:\\mock\\import.bacpac',
           saveSqlQuery: async (defaultName: string, content: string) => {
             ;(window as unknown as { __sqlMock: { savedQueries: Array<{ defaultName: string; content: string }> } }).__sqlMock.savedQueries.push({ defaultName, content })
             return `C:\\mock\\${defaultName}`

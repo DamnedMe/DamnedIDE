@@ -3,7 +3,7 @@ import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor as monacoEditor } from 'monaco-editor'
 import { defineThemes, THEME_DARK, THEME_LIGHT } from '../editor/monaco-theme'
 import { useSettingsStore, useSqlStore, useToastStore } from '../../store'
-import { Play, Square, Loader2, Database, Plus, X, History, Pencil, Save, Trash2, Server, ChevronRight } from '@/components/icons'
+import { Play, Square, Loader2, Database, Plus, X, History, Pencil, Save, Trash2, Server, ChevronRight, FileCode } from '@/components/icons'
 import { localSqlAssistant, registerSqlAssistant } from './sqlAssistant'
 import { appFontStack } from '../../utils/fonts'
 import { SqlQuerySource, SqlWorkspaceTab } from '../../types/sql'
@@ -39,7 +39,12 @@ export interface QueryEditorHandle {
   focus: () => void
   renameTab: (id: string, title: string) => void
   activateTab: (id: string) => void
+  /** opens a .sql file: activates its tab when already open, reuses an empty active tab, else adds one */
+  openFile: (filePath: string, text: string) => void
 }
+
+const samePath = (a: string, b: string) => a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+const isSqlFileName = (name: string) => /\.sql$/i.test(name)
 
 const newTab = (index: number, query = '', context?: QueryExecutionContext): QueryTab => ({
   id: crypto.randomUUID(),
@@ -54,6 +59,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
   const [tabs, setTabs] = useState<QueryTab[]>([firstTab.current])
   const [activeTabId, setActiveTabId] = useState(firstTab.current.id)
   const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [fileDragOver, setFileDragOver] = useState(false)
   const [renameTab, setRenameTab] = useState<{ id: string; title: string; x: number; y: number } | null>(null)
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null)
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null)
@@ -250,6 +256,67 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
     }
   }
 
+  const openFile = useCallback((filePath: string, text: string) => {
+    const existing = tabsRef.current.find(tab => tab.filePath && samePath(tab.filePath, filePath))
+    if (existing) {
+      setActiveTabId(existing.id)
+      activeTabIdRef.current = existing.id
+      replaceEditorValue(existing.query)
+      onActiveTabChange?.(existing.id, existing.context)
+      return
+    }
+    const fileName = filePath.split(/[\\/]/).pop() || filePath
+    const title = fileName.replace(/\.sql$/i, '') || fileName
+    const active = tabsRef.current.find(tab => tab.id === activeTabIdRef.current)
+    if (active && !active.query.trim() && !active.filePath) {
+      tabsRef.current = tabsRef.current.map(tab => tab.id === active.id ? { ...tab, title, filePath, query: text, dirty: false } : tab)
+      setTabs(tabsRef.current)
+      replaceEditorValue(text)
+      onQueryChanged?.(active.id, text)
+      return
+    }
+    const tab: QueryTab = { ...newTab(tabsRef.current.length + 1, text, active?.context), title, filePath, dirty: false }
+    tabsRef.current = [...tabsRef.current, tab]
+    setTabs(tabsRef.current)
+    setActiveTabId(tab.id)
+    activeTabIdRef.current = tab.id
+    replaceEditorValue(text)
+    onActiveTabChange?.(tab.id, tab.context)
+  }, [onActiveTabChange, onQueryChanged, replaceEditorValue])
+
+  // Files dropped from the OS: capture phase, so Monaco's own drop-into-editor never sees them.
+  const hasDraggedFiles = (event: React.DragEvent) => Array.from(event.dataTransfer.types).includes('Files')
+  const handleFileDragOver = (event: React.DragEvent) => {
+    if (!hasDraggedFiles(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'copy'
+    if (!fileDragOver) setFileDragOver(true)
+  }
+  const handleFileDragLeave = (event: React.DragEvent) => {
+    const next = event.relatedTarget as Node | null
+    if (next && event.currentTarget.contains(next)) return
+    setFileDragOver(false)
+  }
+  const handleFileDrop = async (event: React.DragEvent) => {
+    if (!hasDraggedFiles(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    setFileDragOver(false)
+    const files = Array.from(event.dataTransfer.files)
+    const sqlFiles = files.filter(file => isSqlFileName(file.name))
+    if (sqlFiles.length < files.length) showToast(tr('only .sql files can be opened here'), 'info')
+    for (const file of sqlFiles) {
+      try {
+        // Electron (≤ 31) exposes the file's path on File; a browser only has its name
+        const filePath = (file as File & { path?: string }).path || file.name
+        openFile(filePath, await file.text())
+      } catch (error) {
+        showToast(tr('could not open {file}: {error}', { file: file.name, error: (error as Error).message }), 'error')
+      }
+    }
+  }
+
   if (handleRef) handleRef.current = {
     getQuery: () => editorRef.current?.getValue() || '',
     setQuery: (text, execute, context) => {
@@ -268,7 +335,8 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
       tabsRef.current = tabsRef.current.map(tab => tab.id === id ? { ...tab, title: normalized } : tab)
       setTabs(tabsRef.current)
     },
-    activateTab
+    activateTab,
+    openFile
   }
 
   const activeTab = tabs.find(tab => tab.id === activeTabId)
@@ -279,7 +347,13 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
   }
 
   return (
-    <section ref={sectionZoom.ref} className="sql-query-editor sql-surface" aria-label={t('Query editor')} style={{
+    <section ref={sectionZoom.ref} className="sql-query-editor sql-surface" aria-label={t('Query editor')}
+      onDragEnterCapture={handleFileDragOver}
+      onDragOverCapture={handleFileDragOver}
+      onDragLeave={handleFileDragLeave}
+      onDropCapture={(event) => { void handleFileDrop(event) }}
+      style={{
+      position: 'relative',
       ...sectionZoom.style,
       background: 'var(--bg-card)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)', overflow: 'hidden',
@@ -290,6 +364,11 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
         display: 'flex', alignItems: 'stretch', minHeight: '30px',
         borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)'
       }}>
+        <button onClick={() => addTab()} title={t('new query tab')} data-tip-desc={t('open a new query editor tab')} aria-label={t('new query tab')}
+          className="sql-query-new"
+          style={{ width: '34px', flexShrink: 0, border: 'none', background: 'var(--accent-color)', color: 'var(--text-inverse)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Plus size={14} strokeWidth={2.6} />
+        </button>
         <nav className="sql-query-tabs" aria-label={t('Query tabs')} style={{ display: 'flex', flex: 1, overflowX: 'auto', minWidth: 0 }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => activateTab(tab.id)} title={tab.title} data-tip-desc={t('switch to this query tab')}
@@ -323,11 +402,6 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
             </button>
           ))}
         </nav>
-        <button onClick={() => addTab()} title={t('new query tab')} data-tip-desc={t('open a new query editor tab')} aria-label={t('new query tab')}
-          className="sql-query-action"
-          style={{ width: '30px', border: 'none', borderRight: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-          <Plus size={11} />
-        </button>
         {onOpenWorkspace && (
           <button onClick={onOpenWorkspace} title={t('workspace, history and favorites')} data-tip-desc={t('saved queries, history and favorites')} aria-label={t('open SQL workspace')}
             className="sql-query-action"
@@ -377,10 +451,24 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
             renderLineHighlight: 'line',
             fixedOverflowWidgets: true,
             padding: { top: 6, bottom: 6 },
+            dropIntoEditor: { enabled: false },
             scrollbar: { verticalScrollbarSize: 5, horizontalScrollbarSize: 5 }
           }}
         />
       </div>
+      {fileDragOver && (
+        <div className="sql-file-drop" role="presentation" style={{
+          position: 'absolute', inset: '8px', zIndex: 20, pointerEvents: 'none',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
+          border: '2px dashed var(--accent-color)', borderRadius: 'var(--radius-md)',
+          background: 'color-mix(in srgb, var(--bg-card) 70%, var(--accent-color) 18%)',
+          color: 'var(--text-primary)', fontSize: 'calc(13px * var(--ui-text-scale, 1))', fontWeight: 700
+        }}>
+          <FileCode size={24} style={{ color: 'var(--accent-color)' }} />
+          {t('Drop to open the .sql file')}
+          <span style={{ fontWeight: 400, fontSize: 'calc(10.5px * var(--ui-text-scale, 1))', color: 'var(--text-secondary)' }}>{t('each file opens in its own tab')}</span>
+        </div>
+      )}
       {tabMenu && (
         <>
           <div onMouseDown={() => setTabMenu(null)} onContextMenu={(event) => { event.preventDefault(); setTabMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />

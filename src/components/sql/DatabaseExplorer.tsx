@@ -397,11 +397,16 @@ export function DatabaseExplorer({
     return (
       <>
         <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setMenu(null)} />
-        <div style={{
+        <div ref={(element) => {
+          // keep the whole menu inside the window: a database menu is taller than the old fixed guess
+          if (!element) return
+          const top = Math.max(8, Math.min(menu.y, window.innerHeight - 8 - element.offsetHeight))
+          element.style.top = `${top}px`
+        }} style={{
           position: 'fixed', left: Math.min(menu.x, window.innerWidth - 230), top: Math.min(menu.y, window.innerHeight - 320),
           zIndex: 200, background: 'var(--bg-card)', border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '210px',
-          boxShadow: 'var(--shadow-lg)', animation: 'menuIn 140ms ease', maxHeight: '480px', overflow: 'auto'
+          boxShadow: 'var(--shadow-lg)', animation: 'menuIn 140ms ease', maxHeight: 'min(480px, calc(100vh - 16px))', overflow: 'auto'
         }}>
           <div style={{
             padding: '6px 12px 4px', fontSize: 'calc(9.5px * var(--ui-text-scale, 1))', color: 'var(--text-muted)',

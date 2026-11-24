@@ -823,6 +823,17 @@ export class WorktreeService {
     files.sort((a, b) => a.path.localeCompare(b.path))
     return { base: ref, mergeBase, files }
   }
+
+  /**
+   * The branch the worktree's PR targets, as the panel's "diff with" menu picks it: the parent
+   * of a stacked branch (develop once that parent is merged), develop otherwise.
+   */
+  async baseOf(worktreePath: string): Promise<string> {
+    const git = this.getGit(worktreePath)
+    const branch = (await git.raw(['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => '')).trim()
+    const link = branch && branch !== 'HEAD' ? await readStackLink(git, branch) : null
+    return link ? (await parentStatus(git, branch, link)).mergeRef : 'develop'
+  }
 }
 
 export interface BaseDiffFile {

@@ -639,3 +639,20 @@
     opacity: .3;
   }
 }
+
+/* new query tab: first in the tab row, in the accent color */
+.sql-query-new {
+  transition: filter var(--sql-transition), transform var(--sql-transition) !important;
+}
+
+.sql-query-new:hover {
+  filter: brightness(1.08);
+}
+
+.sql-query-new:active {
+  transform: scale(0.96);
+}
+
+.sql-files__row:not([data-active="true"]):hover {
+  background: var(--bg-hover) !important;
+}

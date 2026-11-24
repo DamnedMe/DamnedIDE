@@ -462,11 +462,31 @@ async function installElectronMock(page: Page) {
           check: async () => ({ packaged: false, currentVersion: '0.0.0', status: 'idle' }),
           onState: () => () => {}
         },
-        fs: { watch: async () => {}, unwatch: async () => {}, onChanged: () => () => {} },
+        fs: {
+          watch: async () => {}, unwatch: async () => {}, onChanged: () => () => {},
+          // a small folder of scripts for the SQL files panel
+          readDir: async (dir: string) => {
+            const tree: Record<string, Array<{ name: string; isDirectory: boolean; isFile: boolean }>> = {
+              'C:\\mock\\scripts': [
+                { name: 'report', isDirectory: true, isFile: false },
+                { name: 'node_modules', isDirectory: true, isFile: false },
+                { name: 'offerte.sql', isDirectory: false, isFile: true },
+                { name: 'notes.txt', isDirectory: false, isFile: true }
+              ],
+              'C:\\mock\\scripts\\report': [{ name: 'assets.SQL', isDirectory: false, isFile: true }]
+            }
+            return tree[dir] || []
+          },
+          writeFile: async (file: string, content: string) => {
+            ;(window as unknown as { __sqlMock: { writtenFiles: Array<{ file: string; content: string }> } }).__sqlMock.writtenFiles.push({ file, content })
+          },
+          readFile: async (file: string) => `-- ${file.split('\\').pop()}\nSELECT 1;`
+        },
         window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
         dialog: {
-          openFolder: async () => null,
-          openFile: async () => 'C:\\mock\\import.bacpac',
+          openFolder: async () => 'C:\\mock\\scripts',
+          openFile: async (_title: string, filters: Array<{ extensions: string[] }>) =>
+            filters.some(filter => filter.extensions.includes('sql')) ? 'C:\\mock\\single\\hotfix.sql' : 'C:\\mock\\import.bacpac',
           saveSqlQuery: async (defaultName: string, content: string) => {
             ;(window as unknown as { __sqlMock: { savedQueries: Array<{ defaultName: string; content: string }> } }).__sqlMock.savedQueries.push({ defaultName, content })
             return `C:\\mock\\${defaultName}`
@@ -489,13 +509,14 @@ async function installElectronMock(page: Page) {
         }
       }
     })
-    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }>; xlsx: unknown[]; clipboard: string[]; restores: unknown[]; dataTiers: unknown[] } }).__sqlMock = {
+    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }>; writtenFiles: Array<{ file: string; content: string }>; xlsx: unknown[]; clipboard: string[]; restores: unknown[]; dataTiers: unknown[] } }).__sqlMock = {
       queries: [],
       clipboard: [],
       completedQueries: [],
       diagramCalls: 0,
       connectConfigs: [],
       savedQueries: [],
+      writtenFiles: [],
       xlsx: [],
       restores: [],
       dataTiers: []
@@ -537,6 +558,8 @@ export async function runEditorQuery(page: Page, text: string) {
 export interface SqlMockState {
   queries: string[]
   clipboard: string[]
+  savedQueries: Array<{ defaultName: string; content: string }>
+  writtenFiles: Array<{ file: string; content: string }>
   xlsx: Array<{ defaultName: string; sheets: Array<{ name: string; columns: string[]; rows: unknown[][] }> }>
 }
 

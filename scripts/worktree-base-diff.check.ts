@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync, renameSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { WorktreeService, parseNameStatusZ } from '../electron/services/git/worktree.service.ts'
+import { WorktreeService, parseNameStatusZ, writeStackLink } from '../electron/services/git/worktree.service.ts'
 
 assert.deepEqual(parseNameStatusZ(''), [])
 assert.deepEqual(parseNameStatusZ('M\0a b.txt\0R087\0old.txt\0new.txt\0D\0gone.txt\0'), [
@@ -63,6 +63,14 @@ try {
   ], 'two commits + pending + untracked, one row per file, develop changes excluded')
 
   await assert.rejects(() => service.baseDiff(wt, 'missing'), /non trovato/)
+
+  // the base the remote "diff with develop" picks when the phone names none
+  assert.equal(await service.baseOf(wt), 'develop', 'a branch that is not stacked')
+  const child = join(root, 'child')
+  await service.add(repo, 'feature/y', child, 'feature/x')
+  const { simpleGit } = await import('simple-git')
+  await writeStackLink(simpleGit(child), 'feature/y', 'feature/x')
+  assert.equal(await service.baseOf(child), 'origin/feature/x', 'a stacked branch: its open parent')
   console.log('worktree-base-diff: ok')
 } finally {
   rmSync(root, { recursive: true, force: true })

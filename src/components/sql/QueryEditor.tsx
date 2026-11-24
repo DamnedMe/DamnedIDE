@@ -139,10 +139,23 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
     return onExecuteRef.current(query, context, tabId)
   }, [])
 
-  const saveTab = useCallback(async (id = activeTabIdRef.current) => {
+  // A tab tied to a file is saved in place; "save as" (or a tab with no file) asks where.
+  const saveTab = useCallback(async (id = activeTabIdRef.current, saveAs = false) => {
     const tab = tabsRef.current.find(item => item.id === id)
     if (!tab) return
     const baseTitle = tab.title.replace(/\.sql$/i, '').trim() || 'query'
+    if (tab.filePath && !saveAs) {
+      const fileName = tab.filePath.split(/[\\/]/).pop() || tab.filePath
+      try {
+        await window.electronAPI.fs.writeFile(tab.filePath, tab.query)
+        tabsRef.current = tabsRef.current.map(item => item.id === id ? { ...item, dirty: false } : item)
+        setTabs(tabsRef.current)
+        showToast(tr('query saved: {file}', { file: fileName }))
+      } catch (error) {
+        showToast(tr('query save failed: {error}', { error: (error as Error).message }), 'error')
+      }
+      return
+    }
     try {
       const filePath = await window.electronAPI.dialog.saveSqlQuery(`${baseTitle}.sql`, tab.query)
       if (!filePath) return
@@ -473,7 +486,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
         <>
           <div onMouseDown={() => setTabMenu(null)} onContextMenu={(event) => { event.preventDefault(); setTabMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
           <div role="menu" aria-label={t('query tab actions')} style={{
-            position: 'fixed', left: Math.min(tabMenu.x, window.innerWidth - 190), top: Math.min(tabMenu.y, window.innerHeight - 132), zIndex: 300,
+            position: 'fixed', left: Math.min(tabMenu.x, window.innerWidth - 190), top: Math.min(tabMenu.y, window.innerHeight - 164), zIndex: 300,
             width: 180, padding: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-mono)'
           }}>
@@ -483,6 +496,7 @@ export function QueryEditor({ connectionId, connectionLabel, activeDatabase, han
               setTabMenu(null)
             }} style={menuItemStyle}><Pencil size={11} /> {t('Rename')}</button>
             <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); void saveTab(id) }} style={menuItemStyle}><Save size={11} /> {t('Save query')}</button>
+            <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); void saveTab(id, true) }} style={menuItemStyle}><Save size={11} /> {t('Save query as…')}</button>
             <div style={{ height: 1, background: 'var(--border-subtle)', margin: '3px 2px' }} />
             <button className="sql-tab-menu-item" role="menuitem" onClick={() => { const id = tabMenu.id; setTabMenu(null); closeTab(id) }} style={{ ...menuItemStyle, color: 'var(--error-color)' }}><Trash2 size={11} /> {t('Close')}</button>
           </div>

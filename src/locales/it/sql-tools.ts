@@ -410,6 +410,7 @@ export const IT: Record<string, string> = {
   'or drag a .sql file onto the query area': 'oppure trascina un file .sql nell\'area query',
   'only .sql files can be opened here': 'qui si possono aprire solo file .sql',
   'could not open {file}: {error}': 'impossibile aprire {file}: {error}',
+  'Save query as…': 'Salva query con nome…',
   'Drop to open the .sql file': 'Rilascia per aprire il file .sql',
   'each file opens in its own tab': 'ogni file si apre nella sua scheda',
 }

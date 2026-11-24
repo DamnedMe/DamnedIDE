@@ -1,4 +1,4 @@
-import { test, expect } from './sql.fixture'
+import { test, expect, sqlMock } from './sql.fixture'
 
 test('the new query button is the first item of the tab row', async ({ page }) => {
   const chrome = page.locator('.sql-query-editor__chrome')
@@ -65,4 +65,21 @@ test('dropping .sql files on the query area opens them in tabs', async ({ page }
   await expect(page.getByTitle('vendite_q3', { exact: true })).toBeVisible()
   await expect(page.getByTitle('clienti', { exact: true })).toBeVisible()
   await expect(page.getByTitle('readme', { exact: true })).toHaveCount(0)
+})
+
+test('saving a tab opened from a file writes the file in place; save as asks where', async ({ page }) => {
+  await page.getByRole('tab', { name: 'SQL files' }).click()
+  await page.getByRole('button', { name: 'Open folder' }).click()
+  await page.locator('.sql-files').getByLabel('open file offerte.sql').click()
+
+  await page.getByTitle('offerte', { exact: true }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Save query', exact: true }).click()
+  await expect.poll(() => sqlMock(page, mock => mock.writtenFiles)).toEqual([
+    { file: 'C:\\mock\\scripts\\offerte.sql', content: '-- offerte.sql\nSELECT 1;' }
+  ])
+  expect(await sqlMock(page, mock => mock.savedQueries)).toEqual([])
+
+  await page.getByTitle('offerte', { exact: true }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Save query as…' }).click()
+  await expect.poll(() => sqlMock(page, mock => mock.savedQueries.map(item => item.defaultName))).toEqual(['offerte.sql'])
 })

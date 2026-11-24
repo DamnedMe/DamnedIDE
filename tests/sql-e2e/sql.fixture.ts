@@ -477,6 +477,9 @@ async function installElectronMock(page: Page) {
             }
             return tree[dir] || []
           },
+          writeFile: async (file: string, content: string) => {
+            ;(window as unknown as { __sqlMock: { writtenFiles: Array<{ file: string; content: string }> } }).__sqlMock.writtenFiles.push({ file, content })
+          },
           readFile: async (file: string) => `-- ${file.split('\\').pop()}\nSELECT 1;`
         },
         window: { minimize() {}, maximize() {}, close() {}, openDetached: async () => true },
@@ -506,13 +509,14 @@ async function installElectronMock(page: Page) {
         }
       }
     })
-    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }>; xlsx: unknown[]; clipboard: string[]; restores: unknown[]; dataTiers: unknown[] } }).__sqlMock = {
+    ;(window as unknown as { __sqlMock?: { queries: string[]; completedQueries: string[]; diagramCalls: number; connectConfigs: unknown[]; savedQueries: Array<{ defaultName: string; content: string }>; writtenFiles: Array<{ file: string; content: string }>; xlsx: unknown[]; clipboard: string[]; restores: unknown[]; dataTiers: unknown[] } }).__sqlMock = {
       queries: [],
       clipboard: [],
       completedQueries: [],
       diagramCalls: 0,
       connectConfigs: [],
       savedQueries: [],
+      writtenFiles: [],
       xlsx: [],
       restores: [],
       dataTiers: []
@@ -554,6 +558,8 @@ export async function runEditorQuery(page: Page, text: string) {
 export interface SqlMockState {
   queries: string[]
   clipboard: string[]
+  savedQueries: Array<{ defaultName: string; content: string }>
+  writtenFiles: Array<{ file: string; content: string }>
   xlsx: Array<{ defaultName: string; sheets: Array<{ name: string; columns: string[]; rows: unknown[][] }> }>
 }
 
